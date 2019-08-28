@@ -1,0 +1,6 @@
+_build
+apps
+_checkouts
+rebar3.crashdump
+rebar.lock
+log
