@@ -1,17 +1,9 @@
-%%%-------------------------------------------------------------------
-%% @doc REPL for Sophia
-%% @end
-%%%-------------------------------------------------------------------
+-module(aere_runtime).
 
--module(aerepl_app).
-
--export([start/0]).
-
--include("../apps/aecore/include/blocks.hrl").
--include("../apps/aecontract/src/aect_sophia.hrl").
 -include("../apps/aecontract/include/aecontract.hrl").
+-include("../apps/aecore/include/blocks.hrl").
 -include("../apps/aecontract/test/include/aect_sophia_vsn.hrl").
--include_lib("../apps/aecontract/include/hard_forks.hrl").
+
 -define(cid(__x__), {'@ct', __x__}).
 -define(hsh(__x__), {'#', __x__}).
 -define(sig(__x__), {'$sg', __x__}).
@@ -19,237 +11,10 @@
 -define(qid(__x__), {'@oq', __x__}).
 
 
--record(repl_state,
-        { %% type_env :: aeso_ast_infer_types:env()
-        }).
--type repl_state() :: #repl_state{}.
-
--type command() ::
-        default | parse | quit | eval | type | fcode | fate.
-
--type command_result() :: {new_state, repl_state()} | finito.
-
--spec whitespaces() -> string().
-whitespaces() ->
-    [$\n, $ , $\t, $ ].
-
--spec init_state() -> repl_state().
-init_state() ->
-    #repl_state{}.
-    %% aeso_ast_infer_types:global_env().
-
-
--spec start() -> finito.
-start() ->
-    application:set_env(aecore, network_id, <<"local_lima_testnet">>),
-    repl(init_state()).
-
--spec repl(repl_state()) -> finito.
-repl(State) ->
-    Inp = get_input(),
-    Res = process_input(State, Inp),
-    case Res of
-        finito -> finito;
-        {new_state, NewState} ->
-            repl(NewState)
-    end.
-
--spec commands() -> [{string(), command()}].
-commands() ->
-    [ {":p", parse}
-    , {":q", quit}
-    , {":e", eval}
-    , {":t", type}
-    , {":fcode", fcode}
-    , {":fate", fate}
-    ].
-
--spec process_input(repl_state(), string()) -> command_result().
-process_input(State, Inp) ->
-    Dispatch = fun D([]) ->
-                       process_input(State, default, Inp);
-                   D([{O, Handle}|Rest]) ->
-                       case lists:prefix(O, Inp) of
-                          true  -> process_input(State, Handle, string:trim(Inp -- O, leading, whitespaces()));
-                          false -> D(Rest)
-                       end
-               end,
-    try Dispatch(commands()) of
-        Res ->
-            Res
-    catch C:[E] ->
-            io:format("*** Call threw ~p:~n~p~n", [C, E]),
-            erlang:display(erlang:get_stacktrace()),
-            {new_state, State};
-          C:E ->
-            io:format("*** Call threw ~p:~n~p~n", [C, E]),
-            erlang:display(erlang:get_stacktrace()),
-            {new_state, State}
-    end.
-
--spec process_input(repl_state(), command(), string()) -> command_result().
-process_input(State, default, I) ->
-    process_input(State, parse, I);
-process_input(_, quit, _) ->
-    finito;
-process_input(State, parse, I) ->
-    case aeso_parser:string(I) of
-        {ok, Expr} ->
-            io:format("~p~n", [Expr]);
-        {error, {_, parse_error, Msg}} ->
-            io:format("~s~n", [Msg])
-    end,
-    {new_state, State};
-process_input(State, type, I) ->
-    case aeso_parser:expr(I) of
-        {ok, Expr} ->
-            try aeso_ast_infer_types:infer_constant({letval, [], "repl input", {id, [], "_"}, Expr}) of
-                Type ->
-                    io:format("~s : ~s~n", [ aeso_ast_infer_types:pp_expr("", Expr)
-                                           , aeso_ast_infer_types:pp_type("", Type)
-                                           ])
-            catch
-                _:{type_errors, Msg} -> io:format("~s\n", [Msg])
-            end;
-        {error, {_, parse_error, Msg}} ->
-            io:format("~s~n", [Msg])
-    end,
-    {new_state, State};
-process_input(State, fcode, I) ->
-    case aeso_parser:expr(I) of
-        {ok, Expr} ->
-            FC = aeso_ast_to_fcode:constant_to_fexpr(Expr),
-            io:format("~s~n", [aeso_ast_to_fcode:format_fexpr(FC)]);
-        {error, {_, parse_error, Msg}} ->
-            io:format("~s~n", [Msg])
-    end,
-    {new_state, State};
-process_input(State, fate, I) ->
-    case aeso_parser:expr(I) of
-        {ok, Expr} ->
-            FC = aeso_ast_to_fcode:constant_to_fexpr(Expr),
-            Fate = aeso_fcode_to_fate:compile_fexpr("REPL", FC),
-            io:format("~p~n", [Fate]);
-        {error, {_, parse_error, Msg}} ->
-            io:format("~s~n", [Msg])
-    end,
-    {new_state, State};
-process_input(State, eval, I) ->
-    case aeso_parser:expr(I) of
-        {ok, Expr} ->
-            Res = eval_contract(I, [mock_contract(Expr)]),
-            Res;
-        {error, {_, parse_error, Msg}} ->
-            io:format("~s~n", [Msg])
-    end,
-    {new_state, State}.
-
--spec get_input() -> string().
-get_input() ->
-    Line = io:get_line("AESO> "),
-    Inp = case Line of
-              ":{\n" ->
-                  multiline_input();
-              _ ->
-                  lists:flatten(string:replace(Line, ";", "\n", all))
-          end,
-    string:trim(Inp, both, whitespaces()).
-
--spec multiline_input() -> string().
-multiline_input() ->
-    multiline_input([]).
-multiline_input(Acc) ->
-    Line = io:get_line("| "),
-    case Line of
-        ":}\n" -> lists:flatten(lists:reverse(Acc));
-        _ -> multiline_input([Line|Acc])
-    end.
-
-
-%%%% Execution
-
-mock_contract(Expr) ->
-    {contract, [{file, no_file}], {con, [{file, no_file}], <<"mock_contract">>},
-     [{ letfun
-      , [{stateful, true}, {entrypoint, true}]
-      , {id, [{file, no_file}], "user_input"}
-      , []
-      , {id, [{file, no_file}, {origin, system}], "_"}
-      , Expr}]
-    }.
-
-compile_contract(fate, Src, Ast) ->
-    Options   = [{debug, [scode, opt, opt_rules, compile]}],
-    try
-        TypedAst = aeso_ast_infer_types:infer(Ast, Options),
-        FCode    = aeso_ast_to_fcode:ast_to_fcode(TypedAst, Options),
-        Fate     = aeso_fcode_to_fate:compile(FCode, Options),
-        ByteCode = aeb_fate_code:serialize(Fate, []),
-        {ok, Version}  = aeso_compiler:version(),
-        {ok, #{byte_code => ByteCode,
-               contract_source => Src,
-               type_info => [],
-               fate_code => Fate,
-               compiler_version => Version,
-               abi_version => aeb_fate_abi:abi_version(),
-               payable => maps:get(payable, FCode)
-              }}
-    catch _:E={type_errors, Err} ->
-            io:format("~s~n", [Err]),
-            E
-    end;
-
-compile_contract(aevm, Src, Ast) ->
-    Options   = [{debug, [scode, opt, opt_rules, compile]}],
-    TypedAst = aeso_ast_infer_types:infer(Ast, Options),
-    Icode = aeso_ast_to_icode:convert_typed(TypedAst, Options),
-    TypeInfo  = extract_type_info(Icode),
-    Assembler = assemble(Icode, Options),
-    ByteCodeList = to_bytecode(Assembler, Options),
-    ByteCode = << << B:8 >> || B <- ByteCodeList >>,
-    {ok, Version} = aeso_compiler:version(),
-    {ok, #{byte_code => ByteCode,
-           compiler_version => Version,
-           contract_source => Src,
-           type_info => TypeInfo,
-           abi_version => aeb_aevm_abi:abi_version(),
-           payable => maps:get(payable, Icode)
-          }}.
-extract_type_info(#{functions := Functions} =_Icode) ->
-    ArgTypesOnly = fun(As) -> [ T || {_, T} <- As ] end,
-    Payable = fun(Attrs) -> proplists:get_value(payable, Attrs, false) end,
-    TypeInfo = [aeb_aevm_abi:function_type_info(list_to_binary(lists:last(Name)),
-                                                Payable(Attrs), ArgTypesOnly(Args), TypeRep)
-                || {Name, Attrs, Args,_Body, TypeRep} <- Functions,
-                   not is_tuple(Name),
-                   not lists:member(private, Attrs)
-               ],
-    lists:sort(TypeInfo).
-
-assemble(Icode, Options) ->
-    aeso_icode_to_asm:convert(Icode, Options).
-
-to_bytecode(['COMMENT',_|Rest],_Options) ->
-    to_bytecode(Rest,_Options);
-to_bytecode([Op|Rest], Options) ->
-    [aeb_opcodes:m_to_op(Op)|to_bytecode(Rest, Options)];
-to_bytecode([], _) -> [].
-
-
-
-new_state() ->
-    #{}.
+-export([state/0, state/1, new_account/2, create_contract/5, call_contract/6]).
 
 state()  -> get(the_state).
 state(S) -> put(the_state, S).
-
-eval_contract(Src, C) ->
-    state(new_state()),
-    S0 = state(),
-    {Acc, S1} = new_account(100000021370000999, S0),
-    {Con, S2} = create_contract(Src, Acc, C, {}, S1),
-    {Resp, _} = call_contract(Acc, Con, user_input, word, {}, S2),
-    io:format("RESPONSE:\n\t~p\n", [Resp]).
 
 new_account(Balance, State) ->
     {PubKey, PrivKey} = new_key_pair(),
@@ -278,22 +43,11 @@ set_trees(Trees, S) ->
     S#{trees => Trees}.
 
 
-create_contract(Src, Owner, C, Args, S) ->
-    create_contract(Src, Owner, C, Args, #{}, S).
 
-create_contract(Src, Owner, C, Args, Options, S) ->
-    case compile_contract(aevm, Src, C) of
-        {ok, Code} ->
-            Serialized  = aect_sophia:serialize(Code, latest_sophia_contract_version()),
-            create_contract_with_code(Owner, Serialized, Args, Options, S);
-        {error, Reason} ->
-            error({fail, {error, compile_should_work, got, Reason}})
-    end.
+create_contract(Owner, Code, Args, Options, S) ->
+    create_contract(Owner, Code, Args, Options, S, false, false).
 
-create_contract_with_code(Owner, Code, Args, Options, S) ->
-    create_contract_with_code(Owner, Code, Args, Options, S, false, false).
-
-create_contract_with_code(Owner, Code, Args, Options, S, TxFail, InitFail) ->
+create_contract(Owner, Code, Args, Options, S, TxFail, InitFail) ->
     Nonce       = next_nonce(Owner, S),
     CallData    = make_calldata_from_code(Code, init, Args),
     Options1    = maps:merge(#{ nonce => Nonce
@@ -341,7 +95,7 @@ call_contract_with_calldata(Caller, ContractKey, Type, Calldata, Options, S) ->
     CallTx   = call_tx(Caller, ContractKey,
                 maps:merge(
                 #{ nonce       => Nonce
-                 , abi_version => latest_sophia_abi_version()
+                 , abi_version => aere_version:latest_sophia_abi_version()
                  , call_data   => Calldata
                  , fee         => maps:get(fee, Options, 1000000 * min_gas_price())
                  , amount      => 0
@@ -429,7 +183,7 @@ lookup_contract_by_id(ContractKey, S) ->
 make_calldata_from_code(Code, Fun, Args) when is_atom(Fun) ->
     make_calldata_from_code(Code, atom_to_binary(Fun, latin1), Args);
 make_calldata_from_code(Code, Fun, Args) when is_binary(Fun) ->
-    case latest_sophia_abi_version() of
+    case aere_version:latest_sophia_abi_version() of
         ?ABI_AEVM_SOPHIA_1 ->
             #{type_info := TypeInfo} = aect_sophia:deserialize(Code),
             case aeb_aevm_abi:type_hash_from_function_name(Fun, TypeInfo) of
@@ -508,8 +262,8 @@ format_fate_args(X) ->
 
 create_tx(Owner, Spec0, State) ->
     Spec = maps:merge(
-             #{ abi_version => latest_sophia_abi_version()
-              , vm_version  => maps:get(vm_version, Spec0, latest_sophia_vm_version())
+             #{ abi_version => aere_version:latest_sophia_abi_version()
+              , vm_version  => maps:get(vm_version, Spec0, aere_version:latest_sophia_vm_version())
               , fee         => 1000000 * min_gas_price()
               , deposit     => 10
               , amount      => 200
@@ -537,7 +291,7 @@ call_tx_default_spec(PubKey, ContractKey, State) ->
      , contract_id => aeser_id:create(contract, ContractKey)
      , caller_id   => aeser_id:create(account, PubKey)
      , nonce       => try next_nonce(PubKey, State) catch _:_ -> 0 end
-     , abi_version => latest_sophia_abi_version()
+     , abi_version => aere_version:latest_sophia_abi_version()
      , amount      => 100
      , gas         => 10000
      , gas_price   => 1 * min_gas_price()
@@ -555,8 +309,8 @@ create_tx_default_spec(PubKey, State) ->
      , owner_id    => aeser_id:create(account, PubKey)
      , nonce       => try next_nonce(PubKey, State) catch _:_ -> 0 end
      , code        => dummy_bytecode()
-     , vm_version  => latest_sophia_vm_version()
-     , abi_version => latest_sophia_abi_version()
+     , vm_version  => aere_version:latest_sophia_vm_version()
+     , abi_version => aere_version:latest_sophia_abi_version()
      , deposit     => 10
      , amount      => 200
      , gas         => 10
@@ -572,7 +326,7 @@ dummy_bytecode() ->
                             contract_source => "NOT PROPER SOURCE STRING",
                             compiler_version => Version,
                             payable => false},
-                          latest_sophia_contract_version()
+                          aere_version:latest_sophia_contract_version()
                          ).
 
 min_gas_price() ->
@@ -604,38 +358,3 @@ sign_tx(Tx, PrivKeys, SignHash) when is_list(PrivKeys) ->
     Signatures = [ enacl:sign_detached(BinForNetwork, PrivKey) || PrivKey <- PrivKeys ],
     aetx_sign:new(Tx, Signatures).
 
-
-latest_sophia_vm_version() ->
-    case latest_protocol_version() of
-        ?ROMA_PROTOCOL_VSN    -> ?VM_AEVM_SOPHIA_1;
-        ?MINERVA_PROTOCOL_VSN -> ?VM_AEVM_SOPHIA_2;
-        ?FORTUNA_PROTOCOL_VSN -> ?VM_AEVM_SOPHIA_3;
-        ?LIMA_PROTOCOL_VSN    -> ?VM_AEVM_SOPHIA_4
-    end.
-
-latest_sophia_abi_version() ->
-    case latest_protocol_version() of
-        ?ROMA_PROTOCOL_VSN    -> ?ABI_AEVM_SOPHIA_1;
-        ?MINERVA_PROTOCOL_VSN -> ?ABI_AEVM_SOPHIA_1;
-        ?FORTUNA_PROTOCOL_VSN -> ?ABI_AEVM_SOPHIA_1;
-        ?LIMA_PROTOCOL_VSN    -> ?ABI_AEVM_SOPHIA_1
-    end.
-
-%% latest_sophia_version() ->
-%%     case latest_protocol_version() of
-%%         ?ROMA_PROTOCOL_VSN    -> ?SOPHIA_ROMA;
-%%         ?MINERVA_PROTOCOL_VSN -> ?SOPHIA_MINERVA;
-%%         ?FORTUNA_PROTOCOL_VSN -> ?SOPHIA_FORTUNA;
-%%         ?LIMA_PROTOCOL_VSN    -> ?SOPHIA_LIMA_AEVM
-%%     end.
-
-latest_sophia_contract_version() ->
-    case latest_protocol_version() of
-        ?ROMA_PROTOCOL_VSN    -> ?SOPHIA_CONTRACT_VSN_1;
-        ?MINERVA_PROTOCOL_VSN -> ?SOPHIA_CONTRACT_VSN_2;
-        ?FORTUNA_PROTOCOL_VSN -> ?SOPHIA_CONTRACT_VSN_2;
-        ?LIMA_PROTOCOL_VSN    -> ?SOPHIA_CONTRACT_VSN_3
-    end.
-
-latest_protocol_version() ->
-    lists:last(aec_hard_forks:sorted_protocol_versions()).

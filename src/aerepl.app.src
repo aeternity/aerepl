@@ -2,7 +2,7 @@
  [{description, "Read-Eval-Print Loop for Sophia"},
   {vsn, "0.1.0"},
   {registered, []},
-  {mod, {aerepl_app, []}},
+  {mod, {aere_repl, []}},
   {applications,
    [kernel,
     stdlib,
