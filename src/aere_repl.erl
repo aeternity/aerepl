@@ -71,8 +71,11 @@ process_input(State, type, I) ->
 process_input(State, eval, I) ->
     case aeso_parser:expr(I) of
         {ok, Expr} ->
-            Res = eval_contract(I, mock_contract(State, Expr)),
-            {success, io_lib:format("~p", [Res]), State};
+            case eval_contract(I, mock_contract(State, Expr)) of
+                {ok, Res} -> {success, io_lib:format("~p", [Res]), State};
+                {error, Msg} = E when is_list(Msg) ->
+                    E
+            end;
         {error, {_, parse_error, Msg}} ->
             {error, io_lib:format("~s", [Msg])}
     end;
@@ -219,8 +222,7 @@ build_contract(Src, Owner, C, Args, Options, S) ->
         {ok, Code, RetType} ->
             Serialized  = aect_sophia:serialize(Code, aere_version:latest_sophia_contract_version()),
             {aere_runtime:create_contract(Owner, Serialized, Args, Options, S), RetType};
-        {error, Reason} ->
-            error({fail, {error, compile_should_work, got, Reason}})
+        {error, _} = E -> E
     end.
 
 new_state() ->
@@ -230,6 +232,9 @@ eval_contract(Src, C) ->
     aere_runtime:state(new_state()),
     S0 = aere_runtime:state(),
     {Acc, S1} = aere_runtime:new_account(100000021370000999, S0),
-    {{Con, S2}, RetType} = build_contract(Src, Acc, C, {}, S1),
-    {Resp, _} = aere_runtime:call_contract(Acc, Con, user_input, RetType, {}, S2),
-    Resp.
+    case  build_contract(Src, Acc, C, {}, S1) of
+        {{Con, S2}, RetType} ->
+            {Resp, _} = aere_runtime:call_contract(Acc, Con, user_input, RetType, {}, S2),
+            {ok, Resp};
+        {error, _} = E -> E
+    end.

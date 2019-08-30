@@ -111,12 +111,9 @@ call_contract_with_calldata(Caller, ContractKey, Type, Calldata, Options, S) ->
             {_, Tx}  = aetx:specialize_type(CallTx),
             ABI      = aect_call_tx:abi_version(Tx),
             Result   = call_result(ABI, Type, Call),
-            Result1 = case maps:get(return_logs, Options, false) of
-                        true -> {Result, aect_call:log(Call)};
-                        false -> Result end,
             case maps:get(return_gas_used, Options, false) of
-                false -> {Result1, S1};
-                true  -> {{Result1, aect_call:gas_used(Call)}, S1}
+                false -> {Result, S1};
+                true  -> {{Result, aect_call:gas_used(Call)}, S1}
             end;
         {error, R, S1} ->
             {{error, R}, S1}
