@@ -10,174 +10,92 @@
 -record(repl_state,
         { includes :: sets:set(string())
         }).
--type repl_state() :: #repl_state{}.
 
--type command() ::
-        default | parse | quit | eval | type | fcode | fate.
+-define(USER_INPUT, "user_input").
 
--type command_result() :: {new_state, repl_state()} | finito.
-
--spec whitespaces() -> string().
-whitespaces() ->
-    [$\n, $ , $\t, $ ].
-
--spec init_state() -> repl_state().
 init_state() ->
     #repl_state{includes = sets:new()}.
     %% aeso_ast_infer_types:global_env().
 
 
--spec start() -> finito.
 start() ->
     application:set_env(aecore, network_id, <<"local_lima_testnet">>),
     repl(init_state()).
 
--spec repl(repl_state()) -> finito.
 repl(State) ->
-    Inp = get_input(),
-    Res = process_input(State, Inp),
-    case Res of
-        finito -> finito;
-        {new_state, NewState} ->
-            repl(NewState)
+    Inp = aere_parse:get_input(),
+    case aere_parse:dispatch(Inp) of
+        {ok, {Command, Args}} ->
+            try process_input(State, Command, Args) of
+                {success, Output, State1} ->
+                    io:format("~s~n", [Output]),
+                    repl(State1);
+                skip ->
+                    repl(State);
+                {error, Err} ->
+                    io:format("~s:~n~s~n", [aere_color:red("Error"), Err]),
+                    repl(State);
+                finito ->
+                    finito
+            catch C:E ->
+                    CommandStr = aere_color:blue(io_lib:format("~p", [Command])),
+                    io:format("Call to ~s threw ~p:\n~p\n\nThis is internal error and most likely a bug.\n", [CommandStr, C, E]),
+                    repl(State)
+            end;
+        {error, {no_such_command, Command}} ->
+            io:format("No such command ~s\n", [Command]),
+            repl(State);
+        {error, {ambiguous_prefix, Propositions}} ->
+            io:format("Ambiguous command prefix. Matched commands: ~p\n", [Propositions]),
+            repl(State)
     end.
 
--spec commands() -> [{string(), command()}].
-commands() ->
-    [ {":p", parse}
-    , {":q", quit}
-    , {":e", eval}
-    , {":t", type}
-    , {":fcode", fcode}
-    , {":fate", fate}
-    , {":i", include}
-    ].
-
--spec process_input(repl_state(), string()) -> command_result().
-process_input(State, Inp) ->
-    Dispatch = fun D([]) ->
-                       process_input(State, default, Inp);
-                   D([{O, Handle}|Rest]) ->
-                       case lists:prefix(O, Inp) of
-                          true  -> process_input(State, Handle, string:trim(Inp -- O, leading, whitespaces()));
-                          false -> D(Rest)
-                       end
-               end,
-    try Dispatch(commands()) of
-        Res ->
-            Res
-    catch C:[E] ->
-            io:format("*** Call threw ~p:~n~p~n", [C, E]),
-            erlang:display(erlang:get_stacktrace()),
-            {new_state, State};
-          C:E ->
-            io:format("*** Call threw ~p:~n~p~n", [C, E]),
-            erlang:display(erlang:get_stacktrace()),
-            {new_state, State}
-    end.
-
--spec process_input(repl_state(), command(), string()) -> command_result().
-process_input(State, default, I) ->
-    process_input(State, eval, I);
 process_input(_, quit, _) ->
     finito;
-process_input(State, parse, I) ->
-    case aeso_parser:string(I) of
-        {ok, Expr} ->
-            io:format("~p~n", [Expr]);
-        {error, {_, parse_error, Msg}} ->
-            io:format("~s~n", [Msg])
-    end,
-    {new_state, State};
 process_input(State, type, I) ->
-    case aeso_parser:expr(I) of
-        {ok, Expr} ->
-            try aeso_ast_infer_types:infer_constant({letval, [], "repl input", {id, [], "_"}, Expr}) of
-                Type ->
-                    io:format("~s : ~s~n", [ aeso_ast_infer_types:pp_expr("", Expr)
-                                           , aeso_ast_infer_types:pp_type("", Type)
-                                           ])
-            catch
-                _:{type_errors, Msg} -> io:format("~s\n", [Msg])
-            end;
-        {error, {_, parse_error, Msg}} ->
-            io:format("~s~n", [Msg])
-    end,
-    {new_state, State};
+    todo;
 process_input(State, fcode, I) ->
-    case aeso_parser:expr(I) of
-        {ok, Expr} ->
-            FC = aeso_ast_to_fcode:constant_to_fexpr(Expr),
-            io:format("~s~n", [aeso_ast_to_fcode:format_fexpr(FC)]);
-        {error, {_, parse_error, Msg}} ->
-            io:format("~s~n", [Msg])
-    end,
-    {new_state, State};
+    todo;
 process_input(State, fate, I) ->
+    todo;
+process_input(State, eval, I) ->
     case aeso_parser:expr(I) of
         {ok, Expr} ->
-            FC = aeso_ast_to_fcode:constant_to_fexpr(Expr),
-            Fate = aeso_fcode_to_fate:compile_fexpr("REPL", FC),
-            io:format("~p~n", [Fate]);
+            Res = eval_contract(I, mock_contract(State, Expr)),
+            {success, io_lib:format("~p", [Res]), State};
         {error, {_, parse_error, Msg}} ->
-            io:format("~s~n", [Msg])
-    end,
-    {new_state, State};
-process_input(State = #repl_state{includes = Includes}, eval, I) ->
-    case aeso_parser:expr(I) of
-        {ok, Expr} ->
-            Libs = unfold_includes(sets:to_list(Includes)),
-            Res = eval_contract(I, Libs ++ [mock_contract(Expr)]),
-            Res;
-        {error, {_, parse_error, Msg}} ->
-            io:format("~s~n", [Msg])
-    end,
-    {new_state, State};
+            {error, io_lib:format("~s", [Msg])}
+    end;
 process_input(State = #repl_state{includes = Includes}, include, I) ->
-    {new_state, State#repl_state{includes = sets:add_element(I, Includes)}}.
+    {success, io_lib:format("Registered module ~s", [I]), State#repl_state{includes = sets:add_element(I, Includes)}}.
 
 
-unfold_includes([]) ->
-    [];
-unfold_includes(Is = [_|_]) ->
+unfold_includes(Is) ->
     Code = lists:flatmap(fun(I) -> "include \"" ++ I ++ "\"\n" end, Is),
     {ok, Parsed} = aeso_parser:string(Code),
     Parsed.
 
+mock_contract(#repl_state{includes = Includes}, Expr) ->
+    Libs = unfold_includes(sets:to_list(Includes)),
+    Mock = {contract, [{file, no_file}], {con, [{file, no_file}], <<"mock_contract">>},
+            [{ letfun
+             , [{stateful, true}, {entrypoint, true}]
+             , {id, [{file, no_file}], ?USER_INPUT}
+             , []
+             , {id, [{file, no_file}, {origin, system}], "_"}
+             , Expr}]
+           },
+    Libs ++ [Mock].
 
--spec get_input() -> string().
-get_input() ->
-    Line = io:get_line("AESO> "),
-    Inp = case Line of
-              ":{\n" ->
-                  multiline_input();
-              _ ->
-                  lists:flatten(string:replace(Line, ";", "\n", all))
-          end,
-    string:trim(Inp, both, whitespaces()).
-
--spec multiline_input() -> string().
-multiline_input() ->
-    multiline_input([]).
-multiline_input(Acc) ->
-    Line = io:get_line("| "),
-    case Line of
-        ":}\n" -> lists:flatten(lists:reverse(Acc));
-        _ -> multiline_input([Line|Acc])
+typecheck(Ast, Options) ->
+    try aeso_ast_infer_types:infer(Ast, Options) of
+        TypedAst ->
+            {ok, _, Type} = get_decode_type("user_input", TypedAst),
+            {TypedAst, Type}
+    catch {type_errors, Errs} ->
+            {error, aeso_ast_infer_types:pp_error(Errs)}
     end.
 
-
-%%%% Execution
-
-mock_contract(Expr) ->
-    {contract, [{file, no_file}], {con, [{file, no_file}], <<"mock_contract">>},
-     [{ letfun
-      , [{stateful, true}, {entrypoint, true}]
-      , {id, [{file, no_file}], "user_input"}
-      , []
-      , {id, [{file, no_file}, {origin, system}], "_"}
-      , Expr}]
-    }.
 
 compile_contract(fate, Src, Ast) ->
     Options   = [{debug, [scode, opt, opt_rules, compile]}],
@@ -277,4 +195,4 @@ eval_contract(Src, C) ->
     {Acc, S1} = aere_runtime:new_account(100000021370000999, S0),
     {{Con, S2}, RetType} = build_contract(Src, Acc, C, {}, S1),
     {Resp, _} = aere_runtime:call_contract(Acc, Con, user_input, RetType, {}, S2),
-    io:format("~p\n", [Resp]).
+    Resp.
