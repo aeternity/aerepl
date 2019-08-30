@@ -9,12 +9,15 @@
 
 -record(repl_state,
         { includes :: sets:set(string())
+        , include_hashes :: sets:set(aeso_parser:include_hash())
         }).
 
 -define(USER_INPUT, "user_input").
 
 init_state() ->
-    #repl_state{includes = sets:new()}.
+    #repl_state{ includes = []
+               , include_hashes = sets:new()
+               }.
     %% aeso_ast_infer_types:global_env().
 
 
@@ -39,7 +42,8 @@ repl(State) ->
                     finito
             catch C:E ->
                     CommandStr = aere_color:blue(io_lib:format("~p", [Command])),
-                    io:format("Call to ~s threw ~p:\n~p\n\nThis is internal error and most likely a bug.\n", [CommandStr, C, E]),
+                    io:format("Command ~s failed because of ~p:\n~p\n\nThis is internal error and most likely a bug.\n", [CommandStr, C, E]),
+                    io:format("Stacktrace:\n~p\n", [erlang:get_stacktrace()]),
                     repl(State)
             end;
         {error, {no_such_command, Command}} ->
@@ -53,11 +57,17 @@ repl(State) ->
 process_input(_, quit, _) ->
     finito;
 process_input(State, type, I) ->
-    todo;
-process_input(State, fcode, I) ->
-    todo;
-process_input(State, fate, I) ->
-    todo;
+    case aeso_parser:expr(I) of
+        {ok, Expr} ->
+            Contract = mock_contract(State, Expr),
+            case typecheck(Contract) of
+                {error, _} = E -> E;
+                {ok, {_, Type}} ->
+                    {success, aeso_ast_infer_types:pp_type("", Type), State}
+            end;
+        {error, {_, parse_error, Msg}} ->
+            {error, Msg}
+    end;
 process_input(State, eval, I) ->
     case aeso_parser:expr(I) of
         {ok, Expr} ->
@@ -66,17 +76,39 @@ process_input(State, eval, I) ->
         {error, {_, parse_error, Msg}} ->
             {error, io_lib:format("~s", [Msg])}
     end;
-process_input(State = #repl_state{includes = Includes}, include, I) ->
-    {success, io_lib:format("Registered module ~s", [I]), State#repl_state{includes = sets:add_element(I, Includes)}}.
 
-
-unfold_includes(Is) ->
-    Code = lists:flatmap(fun(I) -> "include \"" ++ I ++ "\"\n" end, Is),
-    {ok, Parsed} = aeso_parser:string(Code),
-    Parsed.
+process_input(State = #repl_state{ includes = Includes
+                                 , include_hashes = Hashes
+                                 }
+             , include, Inp) ->
+    Files = string:tokens(Inp, aere_parse:whitespaces()),
+    Mock = lists:flatmap(fun(I) -> "include \"" ++ I ++ "\"\n" end, Files),
+    case aeso_parser:string(Mock, Hashes, [keep_included]) of
+        {ok, {Contract, NewHashes}} ->
+            try aeso_ast_infer_types:infer(Includes ++ Contract, []) of
+                _ ->
+                    Colored = aere_color:yellow(Inp),
+                    {success, io_lib:format("Registered includes ~s", [Colored]),
+                     State#repl_state{ includes = Includes ++ Contract
+                                     , include_hashes = NewHashes
+                                     }
+                    }
+            catch _:{type_errors, Errs} ->
+                    {error, Errs}
+            end;
+        {error, {Pos, scan_error}} ->
+            {error, io_lib:format("Scan error at ~p", [Pos])};
+        {error, {Pos, scan_error_no_state}} ->
+            {error, io_lib:format("Scan error at ~p", [Pos])};
+        {error, {_, parse_error, Error}} ->
+            {error, io_lib:format("Parse error:\n~s", [Error])};
+        {error, {_, ambiguous_parse, As}} ->
+            {error, io_lib:format("Ambiguous parse:\n~p", [As])};
+        {error, {_, include_error, File}} ->
+            {error, io_lib:format("Could not find ~p", [File])}
+    end.
 
 mock_contract(#repl_state{includes = Includes}, Expr) ->
-    Libs = unfold_includes(sets:to_list(Includes)),
     Mock = {contract, [{file, no_file}], {con, [{file, no_file}], <<"mock_contract">>},
             [{ letfun
              , [{stateful, true}, {entrypoint, true}]
@@ -85,57 +117,62 @@ mock_contract(#repl_state{includes = Includes}, Expr) ->
              , {id, [{file, no_file}, {origin, system}], "_"}
              , Expr}]
            },
-    Libs ++ [Mock].
+    Includes ++ [Mock].
 
+
+typecheck(Ast) ->
+    typecheck(Ast, []).
 typecheck(Ast, Options) ->
     try aeso_ast_infer_types:infer(Ast, Options) of
         TypedAst ->
-            {ok, _, Type} = get_decode_type("user_input", TypedAst),
-            {TypedAst, Type}
-    catch {type_errors, Errs} ->
-            {error, aeso_ast_infer_types:pp_error(Errs)}
+            {ok, _, Type} = get_decode_type(?USER_INPUT, TypedAst),
+            {ok, {TypedAst, Type}}
+    catch _:{type_errors, Errs} ->
+            {error, Errs}
     end.
 
 
-compile_contract(fate, Src, Ast) ->
-    Options   = [{debug, [scode, opt, opt_rules, compile]}],
-    try
-        TypedAst = aeso_ast_infer_types:infer(Ast, Options),
-        FCode    = aeso_ast_to_fcode:ast_to_fcode(TypedAst, Options),
-        Fate     = aeso_fcode_to_fate:compile(FCode, Options),
-        ByteCode = aeb_fate_code:serialize(Fate, []),
-        {ok, Version}  = aeso_compiler:version(),
-        {ok, #{byte_code => ByteCode,
-               contract_source => Src,
-               type_info => [],
-               fate_code => Fate,
-               compiler_version => Version,
-               abi_version => aeb_fate_abi:abi_version(),
-               payable => maps:get(payable, FCode)
-              }}
-    catch _:E={type_errors, Err} ->
-            io:format("~s~n", [Err]),
-            E
-    end;
+%% compile_contract(fate, Src, Ast) ->
+%%     Options   = [{debug, [scode, opt, opt_rules, compile]}],
+%%     try
+%%         TypedAst = aeso_ast_infer_types:infer(Ast, Options),
+%%         FCode    = aeso_ast_to_fcode:ast_to_fcode(TypedAst, Options),
+%%         Fate     = aeso_fcode_to_fate:compile(FCode, Options),
+%%         ByteCode = aeb_fate_code:serialize(Fate, []),
+%%         {ok, Version}  = aeso_compiler:version(),
+%%         {ok, #{byte_code => ByteCode,
+%%                contract_source => Src,
+%%                type_info => [],
+%%                fate_code => Fate,
+%%                compiler_version => Version,
+%%                abi_version => aeb_fate_abi:abi_version(),
+%%                payable => maps:get(payable, FCode)
+%%               }}
+%%     catch _:E={type_errors, Err} ->
+%%             io:format("~s~n", [Err]),
+%%             E
+%%     end;
 
 compile_contract(aevm, Src, Ast) ->
     Options   = [{debug, [scode, opt, opt_rules, compile]}],
-    TypedAst = aeso_ast_infer_types:infer(Ast, Options),
-    {ok, _, Type0} = get_decode_type("user_input", TypedAst),
-    Icode = aeso_ast_to_icode:convert_typed(TypedAst, Options),
-    RetType = aeso_ast_to_icode:ast_typerep(Type0, Icode),
-    TypeInfo  = extract_type_info(Icode),
-    Assembler = assemble(Icode, Options),
-    ByteCodeList = to_bytecode(Assembler, Options),
-    ByteCode = << << B:8 >> || B <- ByteCodeList >>,
-    {ok, Version} = aeso_compiler:version(),
-    {ok, #{byte_code => ByteCode,
-           compiler_version => Version,
-           contract_source => Src,
-           type_info => TypeInfo,
-           abi_version => aeb_aevm_abi:abi_version(),
-           payable => maps:get(payable, Icode)
-          }, RetType}.
+    case typecheck(Ast, Options) of
+        {error, _} = E -> E;
+        {ok, {TypedAst, ExprType}} ->
+            Icode = aeso_ast_to_icode:convert_typed(TypedAst, Options),
+            RetType = aeso_ast_to_icode:ast_typerep(ExprType, Icode),
+            TypeInfo  = extract_type_info(Icode),
+            Assembler = assemble(Icode, Options),
+            ByteCodeList = to_bytecode(Assembler, Options),
+            ByteCode = << << B:8 >> || B <- ByteCodeList >>,
+            {ok, Version} = aeso_compiler:version(),
+            {ok, #{byte_code => ByteCode,
+                   compiler_version => Version,
+                   contract_source => Src,
+                   type_info => TypeInfo,
+                   abi_version => aeb_aevm_abi:abi_version(),
+                   payable => maps:get(payable, Icode)
+                  }, RetType}
+    end.
 
 get_decode_type(FunName, [{contract, _, _, Defs}]) ->
     GetType = fun({letfun, _, {id, _, Name}, Args, Ret, _})               when Name == FunName -> [{Args, Ret}];

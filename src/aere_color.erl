@@ -1,5 +1,6 @@
 -module(aere_color).
 -export([ reset/0
+        , emph/0, emph/1
         , black/0, black/1
         , red/0, red/1
         , green/0, green/1
@@ -12,6 +13,9 @@
 
 reset() ->
     "\e[0m".
+
+emph() ->
+    "\e[1m".
 
 black() ->
     "\e[1;30m".
@@ -39,6 +43,9 @@ white() ->
 
 with_color(Color, Text) ->
     Color ++ Text ++ reset().
+
+emph(Text) ->
+    with_color(emph(), Text).
 
 black(Text) ->
     with_color(black(), Text).

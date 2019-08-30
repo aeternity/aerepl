@@ -1,6 +1,6 @@
 -module(aere_parse).
 
--export([get_input/0, dispatch/1]).
+-export([get_input/0, dispatch/1, whitespaces/0]).
 
 -spec whitespaces() -> list(char()).
 whitespaces() ->
@@ -25,8 +25,8 @@ dispatch(Input) ->
         ":" ->
             skip;
         [$:|CommandAndArg] ->
-            [Command | _] = string:tokens(CommandAndArg, " "),
-            Arg = string:trim(CommandAndArg -- Command, leading, " "),
+            [Command | _] = string:tokens(CommandAndArg, whitespaces()),
+            Arg = string:trim(CommandAndArg -- Command, leading, whitespaces()),
             CommandStrs = [atom_to_list(C) || C <- commands()],
             case lists:filter(fun(C) -> lists:prefix(Command, C) end, CommandStrs) of
                 [C] -> {ok, {list_to_existing_atom(C), Arg}};
