@@ -127,9 +127,13 @@ typecheck(Ast) ->
     typecheck(Ast, []).
 typecheck(Ast, Options) ->
     try aeso_ast_infer_types:infer(Ast, Options) of
-        TypedAst ->
+        Res ->
+            TypedAst = case Res of
+                           {_Env, TAst} -> TAst;
+                           _ -> Res
+                       end,
             {ok, _, Type} = get_decode_type(?USER_INPUT, TypedAst),
-            {ok, {TypedAst, Type}}
+            {ok, {Res, Type}}
     catch _:{type_errors, Errs} ->
             {error, Errs}
     end.
@@ -162,7 +166,7 @@ compile_contract(aevm, Src, Ast) ->
         {error, _} = E -> E;
         {ok, {TypedAst, ExprType}} ->
             Icode = aeso_ast_to_icode:convert_typed(TypedAst, Options),
-            RetType = aeso_ast_to_icode:ast_typerep(ExprType, Icode),
+            RetType = aere_response:convert_type(build_type_map(TypedAst), ExprType),
             TypeInfo  = extract_type_info(Icode),
             Assembler = assemble(Icode, Options),
             ByteCodeList = to_bytecode(Assembler, Options),
@@ -238,3 +242,14 @@ eval_contract(Src, C) ->
             {ok, Resp};
         {error, _} = E -> E
     end.
+
+build_type_map(Ast) ->
+    build_type_map([], Ast, #{}).
+build_type_map(_Scope, [], Acc) ->
+    Acc;
+build_type_map(Scope, [{namespace, _, {con, _, Name}, Defs} | Rest], Acc) ->
+    build_type_map(Scope, Rest, build_type_map(Scope ++ [Name], Defs, Acc));
+build_type_map(Scope, [{type_def, _, {id, _, Name}, Args, {variant_t, Cons}} | Rest], Acc) ->
+    build_type_map(Scope, Rest, Acc#{Scope ++ [Name] => {Args, Cons}});
+build_type_map(Scope, [_|Rest], Acc) ->
+    build_type_map(Scope, Rest, Acc).
