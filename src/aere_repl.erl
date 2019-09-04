@@ -8,15 +8,17 @@
 -export([start/0]).
 
 -record(repl_state,
-        { includes :: sets:set(string())
+        { include_ast :: list(aeso_ast:ast())
         , include_hashes :: sets:set(aeso_parser:include_hash())
+        , include_files :: list(string())
         }).
 
 -define(USER_INPUT, "user_input").
 
 init_state() ->
-    #repl_state{ includes = []
+    #repl_state{ include_ast = []
                , include_hashes = sets:new()
+               , include_files = []
                }.
     %% aeso_ast_infer_types:global_env().
 
@@ -42,9 +44,9 @@ repl(State) ->
                     finito
             catch error:E ->
                     CommandStr = aere_color:blue(io_lib:format("~p", [Command])),
-                    io:format("Command ~s failed because of error:\n" ++ aere_color:red("~p\n"), [CommandStr, E]),
-                    io:format("Stacktrace:\n" ++ aere_color:emph("~p") ++"\n", [erlang:get_stacktrace()]),
-                    io:format(aere_color:emph("This is internal error and most likely a bug.\n")),
+                    io:format("Command ~s failed:\n" ++ aere_color:red("~p\n"), [CommandStr, E]),
+                    io:format("Stacktrace:\n" ++ aere_color:emph("~p") ++"\n\n", [erlang:get_stacktrace()]),
+                    io:format(aere_color:emph("*** This is an internal error and most likely a bug.\n")),
                     repl(State)
             end;
         {error, {no_such_command, Command}} ->
@@ -80,44 +82,67 @@ process_input(State, eval, I) ->
         {error, {_, parse_error, Msg}} ->
             {error, io_lib:format("~s", [Msg])}
     end;
-
-process_input(State = #repl_state{ includes = Includes
-                                 , include_hashes = Hashes
-                                 }
-             , include, Inp) ->
+process_input(State, include, Inp) ->
     Files = string:tokens(Inp, aere_parse:whitespaces()),
-    Mock = lists:flatmap(fun(I) -> "include \"" ++ I ++ "\"\n" end, Files),
-    case aeso_parser:string(Mock, Hashes, [keep_included]) of
-        {ok, {Contract, NewHashes}} ->
-            try aeso_ast_infer_types:infer(Includes ++ Contract, []) of
-                _ ->
-                    Colored = aere_color:yellow(Inp),
-                    IncludeWord = case Files of
-                                      []  -> "nothing";
-                                      [_] -> "include";
-                                      _   -> "includes"
-                                  end,
-                    {success, io_lib:format("Registered ~s ~s", [IncludeWord, Colored]),
-                     State#repl_state{ includes = Includes ++ Contract
-                                     , include_hashes = NewHashes
+    register_includes(State, Files);
+process_input(State = #repl_state{include_files = IFiles}, reinclude, _) ->
+    register_includes(State#{ include_ast := []
+                            , include_hashes := sets:new()
+                            , include_files := []
+                            }, IFiles);
+process_input(State, uninclude, _) ->
+    {success, "Unregistered all includes",
+     State#repl_state{ include_ast = []
+                     , include_hashes = sets:new()
+                     , include_files = []
+                     }}.
+
+register_includes(State = #repl_state{ include_ast = Includes
+                                     , include_hashes = Hashes
+                                     , include_files = PrevFiles
                                      }
-                    }
-            catch _:{type_errors, Errs} ->
-                    {error, Errs}
+                 , Files) ->
+    case Files -- (Files -- PrevFiles) of
+        [] ->
+            IncludingContract = lists:flatmap(fun(I) -> "include \"" ++ I ++ "\"\n" end, Files),
+            case aeso_parser:string(IncludingContract, Hashes, [keep_included]) of
+                {ok, {Addition, NewHashes}} ->
+                    NewIncludes = Includes ++ Addition,
+                    try aeso_ast_infer_types:infer(NewIncludes, []) of
+                        _ ->
+                            Colored = aere_color:yellow(lists:flatten([" " ++ F || F <- Files])),
+                            IncludeWord = case Files of
+                                              []  -> "nothing";
+                                              [_] -> "include";
+                                              _   -> "includes"
+                                          end,
+                            {success, "Registered " ++ IncludeWord ++ Colored,
+                             State#repl_state{ include_ast = NewIncludes
+                                             , include_hashes = NewHashes
+                                             , include_files = Files ++ PrevFiles
+                                             }
+                            }
+                    catch _:{type_errors, Errs} ->
+                            {error, Errs}
+                    end;
+                {error, {Pos, scan_error}} ->
+                    {error, io_lib:format("Scan error at ~p", [Pos])};
+                {error, {Pos, scan_error_no_state}} ->
+                    {error, io_lib:format("Scan error at ~p", [Pos])};
+                {error, {_, parse_error, Error}} ->
+                    {error, io_lib:format("Parse error:\n~s", [Error])};
+                {error, {_, ambiguous_parse, As}} ->
+                    {error, io_lib:format("Ambiguous parse:\n~p", [As])};
+                {error, {_, include_error, File}} ->
+                    {error, io_lib:format("Could not find ~p", [File])}
             end;
-        {error, {Pos, scan_error}} ->
-            {error, io_lib:format("Scan error at ~p", [Pos])};
-        {error, {Pos, scan_error_no_state}} ->
-            {error, io_lib:format("Scan error at ~p", [Pos])};
-        {error, {_, parse_error, Error}} ->
-            {error, io_lib:format("Parse error:\n~s", [Error])};
-        {error, {_, ambiguous_parse, As}} ->
-            {error, io_lib:format("Ambiguous parse:\n~p", [As])};
-        {error, {_, include_error, File}} ->
-            {error, io_lib:format("Could not find ~p", [File])}
+        Duplicates ->
+            Colored = aere_color:yellow(lists:flatten([" " ++ D || D <- Duplicates])),
+            {error, io_lib:format("Following imports are already included: ~s", [Colored])}
     end.
 
-mock_contract(#repl_state{includes = Includes}, Expr) ->
+
+mock_contract(#repl_state{include_ast = Includes}, Expr) ->
     Mock = {contract, [{file, no_file}], {con, [{file, no_file}], <<"mock_contract">>},
             [{ letfun
              , [{stateful, true}, {entrypoint, true}]
@@ -264,3 +289,4 @@ build_type_map(Scope, [{type_def, _, {id, _, Name}, Args, {record_t, Fields}} | 
     build_type_map(Scope, Rest, Acc#{Scope ++ [Name] => {record, Args, Fields}});
 build_type_map(Scope, [_|Rest], Acc) ->
     build_type_map(Scope, Rest, Acc).
+
