@@ -31,19 +31,20 @@ repl(State) ->
         {ok, {Command, Args}} ->
             try process_input(State, Command, Args) of
                 {success, Output, State1} ->
-                    io:format("~s~n", [Output]),
+                    io:format("~s~n", [aere_color:emph(Output)]),
                     repl(State1);
                 skip ->
                     repl(State);
                 {error, Err} ->
-                    io:format("~s:~n~s~n", [aere_color:red("Error"), Err]),
+                    io:format("~s:~n~s~n", [aere_color:red("Error"), aere_color:emph(Err)]),
                     repl(State);
                 finito ->
                     finito
-            catch C:E ->
+            catch error:E ->
                     CommandStr = aere_color:blue(io_lib:format("~p", [Command])),
-                    io:format("Command ~s failed because of ~p:\n~p\n\nThis is internal error and most likely a bug.\n", [CommandStr, C, E]),
-                    io:format("Stacktrace:\n~p\n", [erlang:get_stacktrace()]),
+                    io:format("Command ~s failed because of error:\n" ++ aere_color:red("~p\n"), [CommandStr, E]),
+                    io:format("Stacktrace:\n" ++ aere_color:emph("~p") ++"\n", [erlang:get_stacktrace()]),
+                    io:format(aere_color:emph("This is internal error and most likely a bug.\n")),
                     repl(State)
             end;
         {error, {no_such_command, Command}} ->
@@ -57,7 +58,7 @@ repl(State) ->
 process_input(_, quit, _) ->
     finito;
 process_input(State, type, I) ->
-    case aeso_parser:expr(I) of
+    case aeso_parser:body(I) of
         {ok, Expr} ->
             Contract = mock_contract(State, Expr),
             case typecheck(Contract) of
@@ -69,10 +70,10 @@ process_input(State, type, I) ->
             {error, Msg}
     end;
 process_input(State, eval, I) ->
-    case aeso_parser:expr(I) of
+    case aeso_parser:body(I) of
         {ok, Expr} ->
             case eval_contract(I, mock_contract(State, Expr)) of
-                {ok, Res} -> {success, io_lib:format("~p", [Res]), State};
+                {ok, Res} -> {success, io_lib:format("~s", [Res]), State};
                 {error, Msg} = E when is_list(Msg) ->
                     E
             end;
@@ -91,7 +92,12 @@ process_input(State = #repl_state{ includes = Includes
             try aeso_ast_infer_types:infer(Includes ++ Contract, []) of
                 _ ->
                     Colored = aere_color:yellow(Inp),
-                    {success, io_lib:format("Registered includes ~s", [Colored]),
+                    IncludeWord = case Files of
+                                      []  -> "nothing";
+                                      [_] -> "include";
+                                      _   -> "includes"
+                                  end,
+                    {success, io_lib:format("Registered ~s ~s", [IncludeWord, Colored]),
                      State#repl_state{ includes = Includes ++ Contract
                                      , include_hashes = NewHashes
                                      }
@@ -236,11 +242,14 @@ eval_contract(Src, C) ->
     aere_runtime:state(new_state()),
     S0 = aere_runtime:state(),
     {Acc, S1} = aere_runtime:new_account(100000021370000999, S0),
-    case  build_contract(Src, Acc, C, {}, S1) of
+    try build_contract(Src, Acc, C, {}, S1) of
         {{Con, S2}, RetType} ->
             {Resp, _} = aere_runtime:call_contract(Acc, Con, user_input, RetType, {}, S2),
-            {ok, Resp};
+            {ok, prettypr:format(aere_response:pp_response(Resp))};
         {error, _} = E -> E
+    catch
+        error:{code_errors, E} ->
+            {error, io_lib:format("~p", [E])}
     end.
 
 build_type_map(Ast) ->
@@ -250,6 +259,8 @@ build_type_map(_Scope, [], Acc) ->
 build_type_map(Scope, [{namespace, _, {con, _, Name}, Defs} | Rest], Acc) ->
     build_type_map(Scope, Rest, build_type_map(Scope ++ [Name], Defs, Acc));
 build_type_map(Scope, [{type_def, _, {id, _, Name}, Args, {variant_t, Cons}} | Rest], Acc) ->
-    build_type_map(Scope, Rest, Acc#{Scope ++ [Name] => {Args, Cons}});
+    build_type_map(Scope, Rest, Acc#{Scope ++ [Name] => {variant, Args, Cons}});
+build_type_map(Scope, [{type_def, _, {id, _, Name}, Args, {record_t, Fields}} | Rest], Acc) ->
+    build_type_map(Scope, Rest, Acc#{Scope ++ [Name] => {record, Args, Fields}});
 build_type_map(Scope, [_|Rest], Acc) ->
     build_type_map(Scope, Rest, Acc).
