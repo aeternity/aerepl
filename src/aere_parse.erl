@@ -8,7 +8,7 @@ whitespaces() ->
 
 -spec commands() -> list(aere_repl:command()).
 commands() ->
-    [quit, type, eval, fate, fcode, aevm, include, reinclude, uninclude, skip].
+    [quit, type, eval, fate, fcode, aevm, include, reinclude, uninclude, set, load].
 
 -spec default_command() -> aere_repl:command().
 default_command() ->
