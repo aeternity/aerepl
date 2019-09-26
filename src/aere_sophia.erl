@@ -1,28 +1,24 @@
 -module(aere_sophia).
 
--export([ typecheck/1, typecheck/2, parse/2, compile_contract/3
-        , parse_body/1, parse_letdef/1, parse_type/1
+-export([ typecheck/1, parse/2, compile_contract/3
+        , parse_body/1, parse_letdef/1, parse_type/1, type_of/2
         ]).
 
 -include("aere_repl.hrl").
 
 -spec typecheck(aeso_syntax:ast()) -> {ok, {aeso_syntax:ast(), aeso_syntax:type()}} | {error, string()}.
 typecheck(Ast) ->
-    typecheck(Ast, []).
-typecheck(Ast, Options) ->
-    try aeso_ast_infer_types:infer(Ast, Options) of
+    try aeso_ast_infer_types:infer(Ast, []) of
         Res ->
-            TypedAst = case Res of
-                           {_Env, TAst} -> TAst;
-                           _ -> Res
-                       end,
-            {ok, _, Type} = get_decode_type(?USER_INPUT, TypedAst),
-            {ok, {Res, Type}}
+            {ok, Res}
     catch _:{error, Errs} ->
             {error, lists:flatten([What ++ When || {err, _, type_error, What, When} <- Errs, is_list(When)]
                                   ++ [What || {err, _, type_error, What, none} <- Errs])}
     end.
 
+type_of(TypedAst, Name) ->
+    {ok, _, Type} = get_decode_type(Name, TypedAst),
+    Type.
 
 -spec compile_contract(aevm | fate, string(), aeso_syntax:ast()) -> any.
 compile_contract(fate, Src, TypedAst) ->
