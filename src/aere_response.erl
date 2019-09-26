@@ -123,8 +123,7 @@ pp_response(L) when is_list(L) ->
     comma_brackets("[", "]", [pp_response(X) || X <- L]);
 pp_response(M) when is_map(M) ->
     comma_brackets
-      ( "{"
-      , "}"
+      ( "{", "}"
       , [ beside(
             [ text("[")
             , pp_response(K)

@@ -256,7 +256,7 @@ call_tx_default_spec(PubKey, ContractKey, State) ->
      , contract_id => aeser_id:create(contract, ContractKey)
      , caller_id   => aeser_id:create(account, PubKey)
      , nonce       => try next_nonce(PubKey, State) catch _:_ -> 0 end
-     , abi_version => aere_version:abi_version(aevm)
+     , abi_version => aere_version:abi_version(fate)
      , amount      => 100000
      , gas         => 100000
      , gas_price   => 1 * min_gas_price()
@@ -267,8 +267,8 @@ create_tx_default_spec(PubKey, State) ->
     #{ fee         => 1000000 * min_gas_price()
      , owner_id    => aeser_id:create(account, PubKey)
      , nonce       => try next_nonce(PubKey, State) catch _:_ -> 0 end
-     , vm_version  => aere_version:vm_version(aevm)
-     , abi_version => aere_version:abi_version(aevm)
+     , vm_version  => aere_version:vm_version(fate)
+     , abi_version => aere_version:abi_version(fate)
      , deposit     => 2137
      , amount      => 100000
      , gas         => 100000

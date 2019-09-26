@@ -9,8 +9,6 @@
 
 -include("aere_repl.hrl").
 
--define(USER_INPUT, "user_input").
-
 -spec default_options() -> options().
 default_options() ->
     #options{ display_call_gas = false
@@ -27,6 +25,11 @@ init_state() ->
                , include_hashes = sets:new()
                , include_files = []
                , options = default_options()
+               , chain_state = new_state()
+               , user_contract_state_type = {tuple_t, [], []}
+               , user_contracts = []
+               , tracked_contracts = #{}
+               , let_defs = #{}
                }.
 
 -spec start() -> finito.
@@ -59,6 +62,11 @@ repl(State) ->
                     io:format("Command ~s failed:\n" ++ aere_color:red("~p\n"), [CommandStr, E]),
                     io:format("Stacktrace:\n" ++ aere_color:emph("~p") ++"\n\n", [erlang:get_stacktrace()]),
                     io:format(aere_color:emph("*** This is an internal error and most likely a bug.\n")),
+                    repl(State);
+                  X ->
+                    CommandStr = aere_color:blue(io_lib:format("~p", [Command])),
+                    io:format("Command ~s failed with\n~p\n", [CommandStr, X]),
+                    io:format(aere_color:emph("*** This is an internal error and most likely a bug.\n")),
                     repl(State)
             end;
         {error, {no_such_command, Command}} ->
@@ -75,14 +83,14 @@ repl(State) ->
 -define(ParseOptionBool(Field),
         if
             Val =:= "true" orelse Val =:= 1 ->
-                Opts#options{Field = true};
+                {options, Opts#options{Field = true}};
             Val =:= "false" orelse Val =:= 0 ->
-                Opts#options{Field = false};
+                {options, Opts#options{Field = false}};
             true ->
                 {error, "true/false value expected"}
         end).
 -define(ParseOptionInt(Field),
-        try Opts#options{Field = list_to_integer(Val)}
+        try {options, Opts#options{Field = list_to_integer(Val)}}
         catch error:badarg -> {error, "integer value expected"}
         end).
 -spec process_input(repl_state(), aere_parse:command(), string()) ->
@@ -93,8 +101,9 @@ process_input(_, quit, _) ->
 process_input(State, type, I) ->
     case aeso_parser:body(I) of
         {ok, Expr} ->
-            Contract = mock_contract(State, Expr),
-            case typecheck(Contract) of
+            Contract = State#repl_state.include_ast ++
+                [aere_mock:contract([aere_mock:entrypoint(?USER_INPUT, Expr, full)])],
+            case aere_sophia:typecheck(Contract) of
                 {error, _} = E -> E;
                 {ok, {_, Type}} ->
                     {success, aeso_ast_infer_types:pp_type("", Type), State}
@@ -102,20 +111,42 @@ process_input(State, type, I) ->
         {error, {_, parse_error, Msg}} ->
             {error, Msg}
     end;
-process_input(State, eval, I) ->
-    case aeso_parser:body(I) of
+process_input(State = #repl_state{ user_contract_state_type = StateType
+                                 , user_contracts = PrevContracts
+                                 }, eval, I) ->
+    case aere_sophia:parse_body(I) of
         {ok, Expr} ->
-            case eval_contract(I, mock_contract(State, Expr), State#repl_state.options) of
-                {ok, Res} -> {success, io_lib:format("~s", [Res]), State};
+            Mock = case StateType of
+                       {id, _, "unit"} ->
+                           State#repl_state.include_ast ++
+                               [aere_mock:contract([aere_mock:entrypoint(?USER_INPUT, Expr, full)])];
+                       {tuple_t, _, []} ->
+                           State#repl_state.include_ast ++
+                               [aere_mock:contract([aere_mock:entrypoint(?USER_INPUT, Expr, full)])];
+                       _ -> case PrevContracts of
+                                [] -> State#repl_state.include_ast ++ [aere_mock:contract(Expr)];
+                                [Prev|_] ->
+                                    PrevDecl = aere_mock:contract( ?PREV_CONTRACT
+                                                                 , [aere_mock:decl(?GET_STATE, StateType)]),
+                                    Init = {app,[],
+                                            {proj, aere_mock:ann(),
+                                             {contract_pubkey, aere_mock:ann(), Prev},
+                                             {id, aere_mock:ann(), ?GET_STATE}
+                                            }, []},
+                                    State#repl_state.include_ast ++
+                                        [PrevDecl,
+                                         aere_mock:contract([aere_mock:typedef("state", StateType),
+                                                        aere_mock:entrypoint("init", Init),
+                                                        aere_mock:entrypoint(?USER_INPUT, Expr),
+                                                        aere_mock:entrypoint(?GET_STATE, {id, [], "state"})])]
+                            end
+                   end,
+            case eval_contract(I, Mock, State) of
+                {ok, {NewState, Res}} -> {success, io_lib:format("~s", [Res]), NewState};
                 {error, Msg} = E when is_list(Msg) ->
                     E
             end;
-        {error, {_, parse_error, Msg}} ->
-            {error, io_lib:format("~s", [Msg])};
-        {error, {Pos, scan_error}} -> {error, io_lib:format("Scan error at ~p", [Pos])};
-        {error, {Pos, scan_error_no_state}} -> {error, io_lib:format("Scan error at ~p", [Pos])};
-        {error, {_, ambiguous_parse, As}} -> {error, io_lib:format("Ambiguous parse ~p", [As])};
-        {error, {_, include_error, File}} -> {error, io_lib:format("Could not include file ~p", [File])}
+        Er -> Er
     end;
 process_input(State, include, Inp) ->
     Files = string:tokens(Inp, aere_parse:whitespaces()),
@@ -131,7 +162,7 @@ process_input(State, uninclude, _) ->
                      , include_hashes = sets:new()
                      , include_files = []
                      }};
-process_input(State = #repl_state{options = Opts}, set, Inp) ->
+process_input(State = #repl_state{options = Opts, include_ast = Includes}, set, Inp) ->
     {Prop, Val0} = lists:splitwith(fun(X) -> X /= $  end, Inp),
     Val = string:trim(Val0),
     Parse =
@@ -140,16 +171,88 @@ process_input(State = #repl_state{options = Opts}, set, Inp) ->
             "deploy_gas" -> ?ParseOptionBool(display_deploy_gas);
             "gas" -> ?ParseOptionInt(gas);
             "value" -> ?ParseOptionInt(call_value);
-            "aevm" -> Opts#options{backend = aevm};
-            "fate" -> Opts#options{backend = fate};
+            "aevm" -> { options, "Not supported at all, use at your own responsibility"
+                      , Opts#options{backend = aevm}};
+            "fate" -> {options, Opts#options{backend = fate}};
+            "state" ->
+                case aere_sophia:parse_body(Val) of
+                    {ok, Expr} ->
+                        case aere_sophia:typecheck(
+                               Includes ++
+                                   [aere_mock:contract([aere_mock:entrypoint(?USER_INPUT, Expr, full)])]) of
+                            {ok, {_, Type}} ->
+                                Mock = Includes ++
+                                    [aere_mock:contract(
+                                       [ aere_mock:typedef("state", Type)
+                                       , aere_mock:entrypoint("init", Expr)])],
+                                S0 = State#repl_state.chain_state,
+                                case build_deploy_contract("no_src", Mock, {}, Opts, S0) of
+                                    {{Key, _, _}, S1} ->
+                                        {state, State#repl_state
+                                         { user_contract_state_type = Type
+                                         , user_contracts = [Key]
+                                         , chain_state = S1
+                                         }};
+                                    {error, _} = REr -> REr
+                                end;
+                            {error, _} = TEr -> TEr
+                        end;
+                    {error, _} = PEr -> PEr
+                end;
             _ -> {error, "Unknown property"}
         end,
     case Parse of
         {error, _} = E ->
             E;
-        NewOpts = #options{} ->
-            {success, State#repl_state{options = NewOpts}}
-    end.
+        {options, NewOpts} ->
+            {success, State#repl_state{options = NewOpts}};
+        {state, NewState} ->
+            {success, NewState};
+        {options, Msg, NewOpts} ->
+            {success, Msg, State#repl_state{options = NewOpts}};
+        {state, Msg, NewState} ->
+            {success, Msg, NewState}
+    end;
+process_input(State = #repl_state{ tracked_contracts = Contracts
+                                 , chain_state = S0
+                                 , options = Opts
+                                 }, deploy, Inp) ->
+    Pars =
+        case string:tokens(Inp, aere_parse:whitespaces()) of
+            [] -> {error, "What to deploy? Give me some file"};
+            [F] -> {ok, {F, io_lib:format("con~p", [maps:size(Contracts)])}};
+            [F, "as", N] -> {ok, {F, N}};
+            _ -> {error, "Bad input format"}
+        end,
+    case Pars of
+        {ok, {File, Name}} ->
+            case file:read_file(File) of
+                {ok, Src} ->
+                    case aere_sophia:parse_body(Src) of
+                        {ok, Ast} ->
+                            aere_runtime:state(S0),
+                            case build_deploy_contract(Src, Ast, {}, Opts, S0) of
+                                {{Con, _, _}, S1} ->
+                                    {success, "Contract deployed as " ++ aere_color:yellow(Name),
+                                     State#repl_state{ tracked_contracts = Contracts#{Name => Con}
+                                                     , chain_state = S1
+                                                     }
+                                    };
+                                {error, _} = DEr -> DEr
+                            end;
+                        {error, _} = PEr -> PEr
+                    end;
+                {error, _} -> {error, "Could not load file " ++ aere_color:yellow(Name)}
+            end;
+        {error, _} = E -> E
+    end;
+%% process_input(State, 'let', Inp) ->
+%%     case parse_letdef(Inp) of
+%%         {ok, Def = {letval, _, {id, _, Name}, _, Body}} ->
+%%             case typecheck()
+process_input(_, _, _) ->
+    {error, "This command is not defined yet."}.
+
 
 -spec register_includes(repl_state(), list(string())) -> repl_state().
 register_includes(State = #repl_state{ include_ast = Includes
@@ -172,9 +275,9 @@ register_includes(State = #repl_state{ include_ast = Includes
                                               _   -> "includes"
                                           end,
                             {success, "Registered " ++ IncludeWord ++ Colored,
-                             State#repl_state{ include_ast = NewIncludes
+                             State#repl_state{ include_ast    = NewIncludes
                                              , include_hashes = NewHashes
-                                             , include_files = Files ++ PrevFiles
+                                             , include_files  = Files ++ PrevFiles
                                              }
                             }
                     catch _:{type_errors, Errs} ->
@@ -184,119 +287,32 @@ register_includes(State = #repl_state{ include_ast = Includes
                     {error, io_lib:format("Scan error at ~p", [Pos])};
                   {error, {Pos, scan_error_no_state}} ->
                     {error, io_lib:format("Scan error at ~p", [Pos])};
-                  {error, {_, parse_error, Error}} ->
-                    {error, io_lib:format("Parse error:\n~s", [Error])};
                   {error, {_, ambiguous_parse, As}} ->
                     {error, io_lib:format("Ambiguous parse:\n~p", [As])};
                   {error, {_, include_error, File}} ->
-                    {error, io_lib:format("Could not find ~p", [File])}
+                    {error, io_lib:format("Could not find ~p", [File])};
+                  {error, Errs} when is_list(Errs) ->
+                    {error, lists:flatten([io_lib:format("Parse error at ~p: ~s\n", [Pos, Er]) ||
+                                              {err, Pos, parse_error, Er, _} <- Errs
+                                          ])}
             end;
         Duplicates ->
             Colored = aere_color:yellow(lists:flatten([" " ++ D || D <- Duplicates])),
             {error, io_lib:format("Following imports are already included: ~s", [Colored])}
     end.
 
--spec mock_contract(repl_state(), aeso_syntax:expr()) -> aeso_syntax:ast().
-mock_contract(#repl_state{include_ast = Includes}, Body) ->
-    Mock = {contract, [{file, no_file}], {con, [{file, no_file}], <<"mock_contract">>},
-            [{ letfun
-             , [{stateful, true}, {entrypoint, true}]
-             , {id, [{file, no_file}], ?USER_INPUT}
-             , []
-             , {id, [{file, no_file}, {origin, system}], "_"}
-             , Body}]
-           },
-    Includes ++ [Mock].
 
--spec typecheck(aeso_syntax:ast()) -> {ok, {aeso_syntax:ast(), aeso_syntax:type()}} | {error, string()}.
-typecheck(Ast) ->
-    typecheck(Ast, []).
-typecheck(Ast, Options) ->
-    try aeso_ast_infer_types:infer(Ast, Options) of
-        Res ->
-            TypedAst = case Res of
-                           {_Env, TAst} -> TAst;
-                           _ -> Res
-                       end,
-            {ok, _, Type} = get_decode_type(?USER_INPUT, TypedAst),
-            {ok, {Res, Type}}
-    catch _:{error, Errs} ->
-            {error, lists:flatten([What ++ When || {err, _, type_error, What, When} <- Errs, is_list(When)]
-                                  ++ [What || {err, _, type_error, What, none} <- Errs])}
-    end.
-
-
--spec compile_contract(aevm | fate, string(), aeso_syntax:ast()) -> any.
-compile_contract(fate, Src, TypedAst) ->
-    FCode    = aeso_ast_to_fcode:ast_to_fcode(TypedAst, []),
-    Fate     = aeso_fcode_to_fate:compile(FCode, []),
-    ByteCode = aeb_fate_code:serialize(Fate, []),
-    {ok, #{byte_code => ByteCode,
-            contract_source => Src,
-            type_info => [],
-            fate_code => Fate,
-            compiler_version => aere_version:sophia_version(fate),
-            abi_version => aere_version:abi_version(fate),
-            payable => maps:get(payable, FCode)
-           }};
-compile_contract(aevm, Src, TypedAst) ->
-    Icode = aeso_ast_to_icode:convert_typed(TypedAst, []),
-    TypeInfo  = extract_type_info(Icode),
-    Assembler = aeso_icode_to_asm:convert(Icode, []),
-    ByteCodeList = to_bytecode(Assembler, []),
-    ByteCode = << << B:8 >> || B <- ByteCodeList >>,
-    {ok, Version} = aeso_compiler:version(),
-    {ok, #{byte_code => ByteCode,
-            compiler_version => Version,
-            contract_source => Src,
-            type_info => TypeInfo,
-            abi_version => aeb_aevm_abi:abi_version(),
-            payable => maps:get(payable, Icode)
-           }}.
-
-get_decode_type(FunName, [{contract, _, _, Defs}]) ->
-    GetType = fun({letfun, _, {id, _, Name}, Args, Ret, _})               when Name == FunName -> [{Args, Ret}];
-                 ({fun_decl, _, {id, _, Name}, {fun_t, _, _, Args, Ret}}) when Name == FunName -> [{Args, Ret}];
-                 (_) -> [] end,
-    case lists:flatmap(GetType, Defs) of
-        [{Args, Ret}] -> {ok, Args, Ret};
-        []            ->
-            case FunName of
-                "init" -> {ok, [], {tuple_t, [], []}};
-                _ -> {error, missing_function}
-            end
-    end;
-get_decode_type(FunName, [_ | Contracts]) ->
-    get_decode_type(FunName, Contracts).
-
-
-extract_type_info(#{functions := Functions} =_Icode) ->
-    ArgTypesOnly = fun(As) -> [ T || {_, T} <- As ] end,
-    Payable = fun(Attrs) -> proplists:get_value(payable, Attrs, false) end,
-    TypeInfo = [aeb_aevm_abi:function_type_info(list_to_binary(lists:last(Name)),
-                                                Payable(Attrs), ArgTypesOnly(Args), TypeRep)
-                || {Name, Attrs, Args,_Body, TypeRep} <- Functions,
-                   not is_tuple(Name),
-                   not lists:member(private, Attrs)
-               ],
-    lists:sort(TypeInfo).
-
-to_bytecode(['COMMENT',_|Rest],_Options) ->
-    to_bytecode(Rest,_Options);
-to_bytecode([Op|Rest], Options) ->
-    [aeb_opcodes:m_to_op(Op)|to_bytecode(Rest, Options)];
-to_bytecode([], _) -> [].
-
-build_contract(Src, Owner, Ast, Args, Options = #options{backend = Backend}, S) ->
-    case typecheck(Ast) of
+build_deploy_contract(Src, Ast, Args, Options = #options{backend = Backend}, S0) ->
+    case aere_sophia:typecheck(Ast) of
         {ok, {TypedAst, ExprType}} ->
-            RetType  = aere_response:convert_type(build_type_map(TypedAst), ExprType),
-            try compile_contract(Backend, Src, TypedAst) of
+            RetType = aere_response:convert_type(build_type_map(TypedAst), ExprType),
+            try aere_sophia:compile_contract(Backend, Src, TypedAst) of
                 {ok, Code} ->
-                    Serialized  = aect_sophia:serialize(Code, aere_version:contract_version()),
-                    try aere_runtime:create_contract(Owner, Serialized, Args, Options, S) of
-                        {{Con, Gas}, S1} ->
-                            {{Con, Gas, RetType}, S1}
+                    Serialized = aect_sophia:serialize(Code, aere_version:contract_version()),
+                    {Owner, S1} = aere_runtime:new_account(100000021370000999, S0),
+                    try aere_runtime:create_contract(Owner, Serialized, Args, Options, S1) of
+                        {{Con, Gas}, S2} ->
+                            {{Con, Gas, RetType}, S2}
                     catch error:{failed_contract_create, Reason} ->
                             ReasonS = if is_binary(Reason) -> binary_to_list(Reason);
                                          is_list(Reason) -> Reason;
@@ -307,7 +323,8 @@ build_contract(Src, Owner, Ast, Args, Options = #options{backend = Backend}, S) 
                 {error, _} = E -> E
             catch
                 {error, Errs} when is_list(Errs) ->
-                    {error, lists:flatten([What ++ When || {err, _, code_error, What, When} <- Errs, is_list(When)]
+                    {error, lists:flatten([What ++ When ||
+                                              {err, _, code_error, What, When} <- Errs, is_list(When)]
                                           ++ [What || {err, _, code_error, What, none} <- Errs])}
             end;
         {error, _} = E -> E
@@ -316,13 +333,15 @@ build_contract(Src, Owner, Ast, Args, Options = #options{backend = Backend}, S) 
 new_state() ->
     #{}.
 
-eval_contract(Src, C, Options) ->
-    aere_runtime:state(new_state()),
-    S0 = aere_runtime:state(),
-    {Acc, S1} = aere_runtime:new_account(100000021370000999, S0),
-    case build_contract(Src, Acc, C, {}, Options, S1) of
-        {{Con, GasDeploy, RetType}, S2} ->
-            {{Resp, GasCall}, _} = aere_runtime:call_contract(Acc, Con, user_input, RetType, {}, Options, S2),
+eval_contract(Src, C, State = #repl_state{options = Options}) ->
+    S0 = State#repl_state.chain_state,
+    aere_runtime:state(S0),
+    case build_deploy_contract(Src, C, {}, Options, S0) of
+        {{Con, GasDeploy, RetType}, S1} ->
+            {Owner, S2} = aere_runtime:new_account(100000021370000999, S1),
+            {{Resp, GasCall}, S3} =
+                aere_runtime:call_contract(Owner, Con, list_to_binary(?USER_INPUT), RetType, {}, Options, S2),
+
             PPResp = prettypr:format(aere_response:pp_response(Resp)),
             DeployGasStr =
                 case Options#options.display_deploy_gas of
@@ -334,7 +353,10 @@ eval_contract(Src, C, Options) ->
                     true -> lists:concat([aere_color:yellow("\ncall gas"), ": ", GasCall]);
                     false -> ""
                 end,
-            {ok, lists:concat([PPResp, DeployGasStr, CallGasStr])};
+
+            {ok, { State#repl_state{ user_contracts = [Con|State#repl_state.user_contracts]
+                                   , chain_state = S3}
+                 , lists:concat([PPResp, DeployGasStr, CallGasStr])}};
         {error, _} = E -> E
     end.
 

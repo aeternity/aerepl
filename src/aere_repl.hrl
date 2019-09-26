@@ -14,6 +14,16 @@
         , include_hashes :: sets:set(aeso_parser:include_hash())
         , include_files :: list(string())
         , options :: options()
+        , chain_state
+        , user_contract_state_type
+        , user_contracts
+        , tracked_contracts
+        , let_defs
         }).
 
 -type repl_state() :: repl_state().
+
+-define(USER_INPUT, "__user_input__").
+-define(GET_STATE, "__get_state__").
+-define(MOCK_CONTRACT, <<"__mock_contract__">>).
+-define(PREV_CONTRACT, <<"__prev_contract__">>).
