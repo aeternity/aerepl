@@ -23,7 +23,7 @@
 
 -type repl_state() :: repl_state().
 
--define(USER_INPUT, "__user_input__").
--define(GET_STATE, "__get_state__").
--define(MOCK_CONTRACT, <<"__mock_contract__">>).
--define(PREV_CONTRACT, <<"__prev_contract__">>).
+-define(USER_INPUT, "user_input__INTERNAL_REPL").
+-define(GET_STATE, "get_state__INTERNAL_REPL").
+-define(MOCK_CONTRACT, <<"mock_contract__INTERNAL_REPL">>).
+-define(PREV_CONTRACT, <<"prev_contract__INTERNAL_REPL">>).
