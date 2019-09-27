@@ -4,11 +4,13 @@
 
 -export([ ann/0, contract/1, contract/2, typedef/2, entrypoint/3, entrypoint/2
         , decl/3, decl/2, simple_query_contract/2, chained_query_contract/2
-        , chained_initial_contract/3
+        , chained_initial_contract/3, with_prelude/2, with_letvals/2, letval_provider/3
         ]).
+
 
 ann() ->
     [{file, <<"REPL">>}].
+
 
 contract(Body) ->
     contract(?MOCK_CONTRACT, Body).
@@ -17,11 +19,13 @@ contract(Name, Body) ->
      Body
     }.
 
+
 typedef(Name, Type) ->
     {type_def, ann(),
      {id, ann(), Name},
      [],
      {alias_t, Type}}.
+
 
 entrypoint(Name, Body) ->
     entrypoint(Name, Body, []).
@@ -35,6 +39,7 @@ entrypoint(Name, Body, Attrs) when is_list(Attrs) ->
     , {id, ann(), "_"}
     , Body}.
 
+
 decl(Name, Type) ->
     decl(Name, Type, []).
 decl(Name, Type, full) ->
@@ -46,6 +51,7 @@ decl(Name, Type, Attrs) ->
     , {fun_t, ann(), [], [], Type}
     }.
 
+
 call_to_remote(Ref, FName) ->
     {app,[],
      {proj, aere_mock:ann(),
@@ -53,8 +59,11 @@ call_to_remote(Ref, FName) ->
       {id, aere_mock:ann(), FName}
      }, []}.
 
-simple_query_contract(#repl_state{include_ast = Includes}, Expr) ->
-    Includes ++ [contract([entrypoint(?USER_INPUT, Expr, full)])].
+
+simple_query_contract(State, Expr) ->
+    with_prelude( State
+                , contract([entrypoint(?USER_INPUT, with_letvals(State, Expr), full)])).
+
 
 chained_query_contract(
   State = #repl_state{user_contract_state_type = {id, _, "unit"}}, Expr) ->
@@ -65,7 +74,7 @@ chained_query_contract(
 chained_query_contract(
   State = #repl_state{user_contracts = []}, Expr) ->
     simple_query_contract(State, Expr);
-chained_query_contract(#repl_state
+chained_query_contract(State = #repl_state
                        { include_ast = Includes
                        , tracked_contracts = TContracts
                        , user_contract_state_type = StType
@@ -76,13 +85,56 @@ chained_query_contract(#repl_state
     Query = contract(
               [ typedef("state", StType)
               , entrypoint("init", call_to_remote(PrevRef, ?GET_STATE))
-              , entrypoint(?USER_INPUT, Expr, full)
+              , entrypoint(?USER_INPUT, with_letvals(State, Expr), full)
               , entrypoint(?GET_STATE, {id, ann(), "state"})
               ]),
-    Includes ++ [Prev, Query].
+    LetValProviders = letval_provider_decls(State),
+    Includes ++ LetValProviders ++ [Prev, Query].
 
-chained_initial_contract(#repl_state{include_ast = Includes}, Expr, Type) ->
-    Includes ++ [contract([ typedef("state", Type)
-                          , entrypoint("init", Expr)
-                          , entrypoint(?GET_STATE, {id, ann(), "state"})
-                          ])].
+
+chained_initial_contract(State, Expr, Type) ->
+    with_prelude(State, contract([ typedef("state", Type)
+                                 , entrypoint("init", Expr)
+                                 , entrypoint(?GET_STATE, {id, ann(), "state"})
+                                 ])).
+
+
+letval_provider(State, Name, Body) ->
+    with_prelude(State, contract(?LETVAL_PROVIDER(Name)
+                                , [entrypoint(Name, with_letvals(State, Body))])).
+
+
+letval_provider_decls(#repl_state{let_defs = LetDefMap}) ->
+    [contract(?LETVAL_PROVIDER(Name), [decl(Name, Type)])
+     || {Name, {letval, _, Type}} <- LetDefMap
+    ].
+
+
+letval_defs(#repl_state{let_defs = LetDefs}) ->
+    [ { letval, ann(), {id, ann(), Name}, Type
+      , call_to_remote(ProviderRef, Name)}
+      || {Name, {letval, ProviderRef, Type}} <- LetDefs].
+
+
+letfun_defs(#repl_state{let_defs = LetDefs}) ->
+    [ { letfun
+      , ann() ++ [{entrypoint, true}, {payable, true}, {stateful, true}]
+      , {id, ann(), Name}
+      , Args
+      , {id, ann(), "_"}
+      , Body}
+      || {Name, {letfun, Args, Body}} <- LetDefs].
+
+
+with_prelude(State = #repl_state{include_ast = Includes},
+             {contract, Ann, Id,
+              ConBody
+             }
+            ) ->
+    LetFuns = letfun_defs(State),
+    LetValProviders = letval_provider_decls(State),
+    Includes ++ LetValProviders ++ [{contract, Ann, Id, LetFuns ++ ConBody}].
+
+
+with_letvals(State, Expr) ->
+    {block, ann(), letval_defs(State) ++ [Expr]}.

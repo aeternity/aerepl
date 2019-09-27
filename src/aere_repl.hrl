@@ -27,3 +27,4 @@
 -define(GET_STATE, "get_state__INTERNAL_REPL").
 -define(MOCK_CONTRACT, <<"mock_contract__INTERNAL_REPL">>).
 -define(PREV_CONTRACT, <<"prev_contract__INTERNAL_REPL">>).
+-define(LETVAL_PROVIDER(X), list_to_binary("letval_prov_" ++ X ++ "_INTERNAL_REPL")).

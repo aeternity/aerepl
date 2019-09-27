@@ -31,7 +31,7 @@ init_state() ->
                , user_contract_state_type = {tuple_t, [], []}
                , user_contracts = []
                , tracked_contracts = #{}
-               , let_defs = #{}
+               , let_defs = []
                }.
 
 
@@ -182,7 +182,7 @@ process_input(State = #repl_state{ tracked_contracts = Contracts
         {ok, Src} ->
             Ast = aere_sophia:parse_body(Src),
             TAst = aere_sophia:typecheck(Ast),
-            {{Con, _, _}, S1} = build_deploy_contract(Src, TAst, {}, Opts, S0),
+            {{Con, _}, S1} = build_deploy_contract(Src, TAst, {}, Opts, S0),
             {success, "Contract deployed as " ++ aere_color:yellow(Name),
              State#repl_state{ tracked_contracts = Contracts#{Name => Con}
                              , chain_state = S1
@@ -190,13 +190,36 @@ process_input(State = #repl_state{ tracked_contracts = Contracts
             };
         {error, _} -> throw({error, "Could not load file " ++ aere_color:yellow(Name)})
     end;
-%% process_input(State, 'let', Inp) ->
-%%     case parse_letdef(Inp) of
-%%         {ok, Def = {letval, _, {id, _, Name}, _, Body}} ->
-%%             case typecheck()
+process_input(State = #repl_state{ options = Opts
+                                 , chain_state = S0
+                                 }, 'let', Inp) ->
+    case aere_sophia:parse_letdef(Inp) of
+        {letval, _, {id, _, Name}, _, Body} ->
+            Provider = aere_mock:letval_provider(unregister_letdef(State, Name), Name, Body),
+            TProvider = aere_sophia:typecheck(Provider),
+            {_, Type} = aere_sophia:type_of(TProvider, Name),
+            {{Con, _}, S1} = build_deploy_contract(Inp, TProvider, {}, Opts, S0),
+            NewState = register_letdef( State#repl_state{ chain_state = S1}
+                                      , Name, {letval, Con, Type}),
+            {success, NewState};
+        {letfun, _, {id, _, Name}, Args, _, Body} ->
+            NewState = register_letdef(State, Name, {letfun, Args, Body}),
+            aere_sophia:typecheck(
+              aere_mock:with_prelude(NewState,
+                aere_mock:contract(
+                  [aere_mock:entrypoint(?USER_INPUT, {id, aere_mock:ann(), "state"})]))),
+            {success, NewState}
+    end;
 process_input(_, _, _) ->
     {error, "This command is not defined yet."}.
 
+unregister_letdef(State = #repl_state{let_defs = LetDefs}, Name) ->
+    State#repl_state{let_defs = proplists:delete(Name, LetDefs)}.
+
+register_letdef(State = #repl_state{let_defs = LetDefs}, Name, Def) ->
+    [ throw({error, "Function redefinition is not supported"})
+      || {N, {letfun, _, _}} <- LetDefs, N == Name],
+    State#repl_state{let_defs = proplists:delete(Name, LetDefs) ++ [{Name, Def}]}.
 
 -spec register_includes(repl_state(), list(string())) -> repl_state().
 register_includes(State = #repl_state{ include_ast = Includes
@@ -244,6 +267,7 @@ build_deploy_contract(Src, TypedAst, Args, Options = #options{backend = Backend}
 
 
 eval_contract(Src, Ast, State = #repl_state{options = Options}) ->
+    io:format("~p~n~n", [Ast]),
     TypedAst = aere_sophia:typecheck(Ast),
     RetType = aere_response:convert_type( build_type_map(TypedAst)
                                         , element(2, aere_sophia:type_of(TypedAst, ?USER_INPUT))),
