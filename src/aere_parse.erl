@@ -8,7 +8,8 @@ whitespaces() ->
 
 -spec commands() -> list(aere_repl:command()).
 commands() ->
-    [quit, type, eval, include, reinclude, uninclude, set, load, deploy, 'let'].
+    [ quit, type, eval, include, reinclude
+    , uninclude, set, load, deploy, 'let', def, unlet, undef].
 
 -spec default_command() -> aere_repl:command().
 default_command() ->

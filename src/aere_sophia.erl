@@ -17,8 +17,8 @@ typecheck(Ast) ->
 
 -spec compile_contract(aevm | fate, string(), aeso_syntax:ast()) -> any.
 compile_contract(fate, Src, TypedAst) ->
-    FCode    = aeso_ast_to_fcode:ast_to_fcode(TypedAst, []),
-    Fate     = aeso_fcode_to_fate:compile(FCode, []),
+    FCode    = with_error_handle(catch aeso_ast_to_fcode:ast_to_fcode(TypedAst, [])),
+    Fate     = with_error_handle(catch aeso_fcode_to_fate:compile(FCode, [])),
     ByteCode = aeb_fate_code:serialize(Fate, []),
     #{byte_code => ByteCode,
       contract_source => Src,
@@ -29,7 +29,7 @@ compile_contract(fate, Src, TypedAst) ->
       payable => maps:get(payable, FCode)
      };
 compile_contract(aevm, Src, TypedAst) ->
-    Icode = aeso_ast_to_icode:convert_typed(TypedAst, []),
+    Icode = with_error_handle(catch aeso_ast_to_icode:convert_typed(TypedAst, [])),
     TypeInfo  = extract_type_info(Icode),
     Assembler = aeso_icode_to_asm:convert(Icode, []),
     ByteCodeList = to_bytecode(Assembler, []),
@@ -43,13 +43,14 @@ compile_contract(aevm, Src, TypedAst) ->
      }.
 
 type_of([{contract, _, _, Defs}], FunName) ->
+    ArgType = fun(A) -> [T || {arg, _, _, T} <- A] end,
     GetType = fun({letfun, _, {id, _, Name}, Args, Ret, _})
                     when Name == FunName -> [{Args, Ret}];
                  ({fun_decl, _, {id, _, Name}, {fun_t, _, _, Args, Ret}})
                     when Name == FunName -> [{Args, Ret}];
                  (_) -> [] end,
     case lists:flatmap(GetType, Defs) of
-        [{Args, Ret}] -> {Args, Ret};
+        [{Args, Ret}] -> {ArgType(Args), Ret};
         []            ->
             case FunName of
                 "init" -> {[], {tuple_t, [], []}};
@@ -72,6 +73,7 @@ extract_type_info(#{functions := Functions} =_Icode) ->
                ],
     lists:sort(TypeInfo).
 
+
 to_bytecode(['COMMENT',_|Rest],_Options) ->
     to_bytecode(Rest,_Options);
 to_bytecode([Op|Rest], Options) ->
@@ -79,20 +81,21 @@ to_bytecode([Op|Rest], Options) ->
 to_bytecode([], _) -> [].
 
 
-handle_parse_result(Res) ->
+parse_body(I) ->
+    with_error_handle(catch aeso_parser:body(I)).
+parse_type(I) ->
+    with_error_handle(catch aeso_parser:type(I)).
+parse_letdef(I) ->
+    with_error_handle(catch aeso_parser:letdef(I)).
+parse_file(I, Opts) ->
+    parse_file(I, sets:new(), Opts).
+parse_file(I, Includes, Opts) ->
+    with_error_handle(catch aeso_parser:string(I, Includes, Opts)).
+
+
+with_error_handle(Res) ->
     case Res of
         {error, Errs} ->
             throw({error, lists:concat([aeso_errors:err_msg(E) || E <- Errs])});
         Val -> Val
     end.
-
-parse_body(I) ->
-    handle_parse_result(catch aeso_parser:body(I)).
-parse_type(I) ->
-    handle_parse_result(catch aeso_parser:type(I)).
-parse_letdef(I) ->
-    handle_parse_result(catch aeso_parser:letdef(I)).
-parse_file(I, Opts) ->
-    parse_file(I, sets:new(), Opts).
-parse_file(I, Includes, Opts) ->
-    handle_parse_result(catch aeso_parser:string(I, Includes, Opts)).

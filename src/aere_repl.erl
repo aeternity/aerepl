@@ -32,11 +32,13 @@ init_state() ->
                , user_contracts = []
                , tracked_contracts = #{}
                , let_defs = []
+               , local_funs = []
                }.
 
 
 -spec start() -> finito.
 start() ->
+    erlang:system_flag(backtrace_depth, 100),
     application:set_env(aecore, network_id, <<"local_lima_testnet">>),
     repl(init_state()).
 
@@ -143,14 +145,15 @@ process_input(State = #repl_state{options = Opts}, set, Inp) ->
                       , Opts#options{backend = aevm}};
             "fate" -> {options, Opts#options{backend = fate}};
             "state" ->
+                State1 = State#repl_state{local_funs = []},
                 Expr = aere_sophia:parse_body(Val),
-                TExprAst = aere_sophia:typecheck(aere_mock:simple_query_contract(State, Expr)),
+                TExprAst = aere_sophia:typecheck(aere_mock:simple_query_contract(State1, Expr)),
                 {_, Type} = aere_sophia:type_of(TExprAst, ?USER_INPUT),
-                Mock = aere_mock:chained_initial_contract(State, Expr, Type),
+                Mock = aere_mock:chained_initial_contract(State1, Expr, Type),
                 TMock = aere_sophia:typecheck(Mock),
                 S0 = State#repl_state.chain_state,
                 {{Key, _}, S1} = build_deploy_contract("no_src", TMock, {}, Opts, S0),
-                {state, State#repl_state
+                {state, State1#repl_state
                  { user_contract_state_type = Type
                  , user_contracts = [Key]
                  , chain_state = S1
@@ -195,31 +198,86 @@ process_input(State = #repl_state{ options = Opts
                                  }, 'let', Inp) ->
     case aere_sophia:parse_letdef(Inp) of
         {letval, _, {id, _, Name}, _, Body} ->
-            Provider = aere_mock:letval_provider(unregister_letdef(State, Name), Name, Body),
+            [ throw({error,
+                     "This name already belongs to repl-local function\n"
+                     "Use different name or vanish repl-local defs by typing :undef"
+                    })
+              || {LF, _} <- State#repl_state.local_funs, LF == Name
+            ],
+            Provider = aere_mock:letdef_provider(State, Name, Body),
             TProvider = aere_sophia:typecheck(Provider),
-            {_, Type} = aere_sophia:type_of(TProvider, Name),
-            {{Con, _}, S1} = build_deploy_contract(Inp, TProvider, {}, Opts, S0),
+            {[], Type} = aere_sophia:type_of(TProvider, ?LETVAL_GETTER(Name)),
+            {{Ref, _}, S1} = build_deploy_contract(Inp, TProvider, {}, Opts, S0),
             NewState = register_letdef( State#repl_state{ chain_state = S1}
-                                      , Name, {letval, Con, Type}),
-            {success, NewState};
+                                      , Name, {letval, Ref, Type});
         {letfun, _, {id, _, Name}, Args, _, Body} ->
-            NewState = register_letdef(State, Name, {letfun, Args, Body}),
-            aere_sophia:typecheck(
-              aere_mock:with_prelude(NewState,
-                aere_mock:contract(
-                  [aere_mock:entrypoint(?USER_INPUT, {id, aere_mock:ann(), "state"})]))),
-            {success, NewState}
+            [ throw({error,
+                     "This function is already defined as repl-local\n"
+                     "Use different name or vanish repl-local defs by typing :undef"
+                    })
+             || {LF, _} <- State#repl_state.local_funs, LF == Name
+            ],
+            State1 = State#repl_state{
+                       let_defs = [L || L = {N, Def} <- State#repl_state.let_defs,
+                                         element(1, Def) =:= letval orelse N =/= Name
+                                  ]},
+            Provider = aere_mock:letdef_provider(State1, Name, Args, Body),
+            TProvider = aere_sophia:typecheck(Provider),
+            {ArgsT, RetT} = aere_sophia:type_of(TProvider, Name),
+            {{Ref, _}, S1} = build_deploy_contract(Inp, TProvider, {}, Opts, S0),
+            NewState = register_letdef( State1#repl_state{ chain_state = S1}
+                                      , Name, {letfun, Ref, Args, {ArgsT, RetT}})
+    end,
+    {success, NewState};
+process_input(State = #repl_state{ local_funs = LocFuns
+                                 , let_defs = LetDefs
+                                 }, def, Inp) ->
+    case aere_sophia:parse_letdef(Inp) of
+        {letfun, _, {id, _, Name}, Args, _, Body} ->
+            [ throw({error,
+                     "This function is already defined as repl-local\n"
+                     "Use different name or vanish repl-local defs by typing :undef"
+                    })
+              || {LF, _} <- LocFuns, LF == Name
+            ],
+            [ throw({error,
+                     "This function is already defined as let-fun\n"
+                     "Use different name or free it by typing :unlet " ++ Name
+                    })
+              || {LF, {letfun, _, _, _}} <- LetDefs, LF == Name
+            ],
+            LetDefs1 = proplists:delete(Name, LetDefs),  % remove letval
+            State1 = State#repl_state
+                { local_funs = [{Name, {letfun_local, Args, Body, LetDefs1}} | LocFuns]
+                , let_defs = LetDefs1
+                },
+            TestMock = aere_mock:chained_query_contract
+                         ( State1#repl_state{let_defs = [L || L = {letval, _, _} <- LetDefs1]}
+                        , {id, aere_mock:ann(), "state"}),
+            aere_sophia:typecheck(TestMock),
+            {success, State1};
+        {letval, _, _, _, _} -> throw({error, "Use :let to define constants"})
     end;
+process_input(State = #repl_state{ let_defs = LetDefs }, unlet, Inp) ->
+    case proplists:is_defined(Inp, LetDefs) of
+        true -> {success, State#repl_state{let_defs = proplists:delete(Inp, LetDefs)}};
+        false -> throw({error, Inp ++ " is not in letdef scope"})
+    end;
+process_input(State, undef, "") ->
+    {success, State#repl_state{local_funs = []}};
+process_input(_, undef, _) ->
+    throw({error, "Arguments are not expected here"});
 process_input(_, _, _) ->
     {error, "This command is not defined yet."}.
+
 
 unregister_letdef(State = #repl_state{let_defs = LetDefs}, Name) ->
     State#repl_state{let_defs = proplists:delete(Name, LetDefs)}.
 
+
 register_letdef(State = #repl_state{let_defs = LetDefs}, Name, Def) ->
-    [ throw({error, "Function redefinition is not supported"})
-      || {N, {letfun, _, _}} <- LetDefs, N == Name],
     State#repl_state{let_defs = proplists:delete(Name, LetDefs) ++ [{Name, Def}]}.
+
 
 -spec register_includes(repl_state(), list(string())) -> repl_state().
 register_includes(State = #repl_state{ include_ast = Includes
@@ -267,7 +325,7 @@ build_deploy_contract(Src, TypedAst, Args, Options = #options{backend = Backend}
 
 
 eval_contract(Src, Ast, State = #repl_state{options = Options}) ->
-    io:format("~p~n~n", [Ast]),
+    %% io:format("~p\n\n", [Ast]), %% TODO: REMOVE IT
     TypedAst = aere_sophia:typecheck(Ast),
     RetType = aere_response:convert_type( build_type_map(TypedAst)
                                         , element(2, aere_sophia:type_of(TypedAst, ?USER_INPUT))),
