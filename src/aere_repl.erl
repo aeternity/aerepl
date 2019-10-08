@@ -5,7 +5,7 @@
 
 -module(aere_repl).
 
--export([start/0]).
+-export([start/0, main/1]).
 
 -include("aere_repl.hrl").
 
@@ -30,11 +30,13 @@ init_state() ->
                , chain_state = #{}
                , user_contract_state_type = {tuple_t, [], []}
                , user_contracts = []
-               , tracked_contracts = #{}
+               , tracked_contracts = []
                , let_defs = []
                , local_funs = []
                }.
 
+main(_Args) ->
+    start().
 
 -spec start() -> finito.
 start() ->
@@ -174,36 +176,81 @@ process_input(State = #repl_state{ tracked_contracts = Contracts
                                  , chain_state = S0
                                  , options = Opts
                                  }, deploy, Inp) ->
-    {File, Name} =
+    {File, MaybeRefName} =
         case string:tokens(Inp, aere_parse:whitespaces()) of
             [] -> throw({error, "What to deploy? Give me some file"});
-            [F] -> {F, io_lib:format("con~p", [maps:size(Contracts)])};
-            [F, "as", N] -> {F, N};
+            [F] -> {F, none};
+            [F, "as", N] ->
+                Valid = fun(C) -> ((C >= $a) and (C =< $z))
+                                      or ((C >= $A) and (C =< $Z))
+                                      or ((C >= $0) and (C =< $9))
+                                      or (C == $_)
+                        end,
+                [throw({error, "Name must begin with a lowercase letter"})
+                 || (lists:nth(1, N) < $a) or (lists:nth(1, N) > $z)],
+                [throw({error, "Name must consist of letters, numbers or underscore"})
+                 || not lists:all(Valid, N)],
+                {F, N};
             _ -> throw({error, "Bad input format"})
         end,
     case file:read_file(File) of
         {ok, Src} ->
-            Ast = aere_sophia:parse_body(Src),
+            Ast = aere_sophia:parse_file(binary_to_list(Src), []),
             TAst = aere_sophia:typecheck(Ast),
-            {{Con, _}, S1} = build_deploy_contract(Src, TAst, {}, Opts, S0),
-            {success, "Contract deployed as " ++ aere_color:yellow(Name),
-             State#repl_state{ tracked_contracts = Contracts#{Name => Con}
-                             , chain_state = S1
-                             }
-            };
-        {error, _} -> throw({error, "Could not load file " ++ aere_color:yellow(Name)})
+            BCode = aere_sophia:compile_contract(Opts#options.backend, binary_to_list(Src), TAst),
+            {{con, DecAnn, StrDeclName}, Interface}
+                = aere_sophia:generate_interface_decl(TAst),
+            RefName =
+                case MaybeRefName of
+                    none ->
+                        [FstChar|OrigNameRest] = StrDeclName,
+                        NameWithIndex =
+                            fun(X) -> string:lowercase([FstChar]) ++
+                                          OrigNameRest ++ integer_to_list(X) end,
+                        MakeIndex =
+                            fun R(X) ->
+                                    case name_status(State, NameWithIndex(X)) of
+                                        free -> X;
+                                        _    -> R(X + 1)
+                                    end
+                            end,
+                        NameWithIndex(MakeIndex(0));
+                    _ ->
+                        check_name_conflicts(State, MaybeRefName, [letfun_local]),
+                        MaybeRefName
+                end,
+            ConDeclName1 =
+                    {con, DecAnn, ?TrackedContractName(RefName, StrDeclName)},
+            Interface1 =
+                begin
+                    {contract, IAnn, _, Body} = Interface,
+                    {contract, IAnn, ConDeclName1, Body}
+                end,
+
+            {{Con, DeployGas}, S1} = deploy_contract(BCode, {}, Opts, S0),
+            DepGasStr = case Opts#options.display_deploy_gas of
+                            true -> lists:concat([aere_color:yellow("\ndeploy gas"), ": ", DeployGas]);
+                            false -> ""
+                        end,
+            NewState = State#repl_state
+                { chain_state = S1
+                , tracked_contracts =
+                      [{RefName, {tracked_contract, Con, ConDeclName1, Interface1}}
+                       | proplists:delete(RefName, Contracts)]
+                },
+            { success, lists:concat([ aere_color:green(RefName ++ " : " ++ StrDeclName)
+                                    , aere_color:emph(" was successfully deployed")
+                                    , DepGasStr
+                                    ])
+            , NewState};
+        {error, _} -> throw({error, "Could not load file " ++ aere_color:yellow(File)})
     end;
 process_input(State = #repl_state{ options = Opts
                                  , chain_state = S0
                                  }, 'let', Inp) ->
     case aere_sophia:parse_letdef(Inp) of
         {letval, _, {id, _, Name}, _, Body} ->
-            [ throw({error,
-                     "This name already belongs to repl-local function\n"
-                     "Use different name or vanish repl-local defs by typing :undef"
-                    })
-              || {LF, _} <- State#repl_state.local_funs, LF == Name
-            ],
+            check_name_conflicts(State, Name, [letfun_local]),
             Provider = aere_mock:letdef_provider(State, Name, Body),
             TProvider = aere_sophia:typecheck(Provider),
             {[], Type} = aere_sophia:type_of(TProvider, ?LETVAL_GETTER(Name)),
@@ -211,12 +258,7 @@ process_input(State = #repl_state{ options = Opts
             NewState = register_letdef( State#repl_state{ chain_state = S1}
                                       , Name, {letval, Ref, Type});
         {letfun, _, {id, _, Name}, Args, _, Body} ->
-            [ throw({error,
-                     "This function is already defined as repl-local\n"
-                     "Use different name or vanish repl-local defs by typing :undef"
-                    })
-             || {LF, _} <- State#repl_state.local_funs, LF == Name
-            ],
+            check_name_conflicts(State, Name, [letfun_local]),
             State1 = State#repl_state{
                        let_defs = [L || L = {N, Def} <- State#repl_state.let_defs,
                                          element(1, Def) =:= letval orelse N =/= Name
@@ -234,18 +276,7 @@ process_input(State = #repl_state{ local_funs = LocFuns
                                  }, def, Inp) ->
     case aere_sophia:parse_letdef(Inp) of
         {letfun, _, {id, _, Name}, Args, _, Body} ->
-            [ throw({error,
-                     "This function is already defined as repl-local\n"
-                     "Use different name or vanish repl-local defs by typing :undef"
-                    })
-              || {LF, _} <- LocFuns, LF == Name
-            ],
-            [ throw({error,
-                     "This function is already defined as let-fun\n"
-                     "Use different name or free it by typing :unlet " ++ Name
-                    })
-              || {LF, {letfun, _, _, _}} <- LetDefs, LF == Name
-            ],
+            check_name_conflicts(State, Name, [letfun_local, letfun]),
             LetDefs1 = proplists:delete(Name, LetDefs),  % remove letval
             State1 = State#repl_state
                 { local_funs = [{Name, {letfun_local, Args, Body, LetDefs1}} | LocFuns]
@@ -258,17 +289,38 @@ process_input(State = #repl_state{ local_funs = LocFuns
             {success, State1};
         {letval, _, _, _, _} -> throw({error, "Use :let to define constants"})
     end;
-process_input(State = #repl_state{ let_defs = LetDefs }, unlet, Inp) ->
-    case proplists:is_defined(Inp, LetDefs) of
-        true -> {success, State#repl_state{let_defs = proplists:delete(Inp, LetDefs)}};
-        false -> throw({error, Inp ++ " is not in letdef scope"})
-    end;
+process_input(State, unlet, Inp) ->
+    check_name_conflicts(State, Inp, [free]),
+    {success, unregister_letdef(State, Inp)};
 process_input(State, undef, "") ->
     {success, State#repl_state{local_funs = []}};
 process_input(_, undef, _) ->
     throw({error, "Arguments are not expected here"});
+process_input(State, undeploy, Inp) ->
+    check_name_conflicts(State, Inp, [free]),
+    {success, unregister_contract(State, Inp)};
+process_input(State, rm, Inp) ->
+    {success, free_name(State, Inp)};
+process_input(S, pwd, _) ->
+    shell_default:pwd(),
+    {success, S};
+process_input(S, cd, Inp) ->
+    shell_default:cd(Inp),
+    {success, S};
+process_input(S, list, Inp) ->
+    Out = case Inp of
+              "contracts" -> io_lib:format("~p", [N || {N, _} <- S#repl_state.tracked_contracts]);
+              "let" -> io_lib:format("~p", [N || {N, _} <- S#repl_state.let_defs]);
+              "def" -> io_lib:format("~p", [N || {N, _} <- S#repl_state.local_funs]);
+              "letval" -> io_lib:format("~p", [N || {N, L} <- S#repl_state.let_defs, element(1, L) =:= letval]);
+              "letfun" -> io_lib:format("~p", [N || {N, L} <- S#repl_state.let_defs, element(1, L) =:= letfun]);
+              "names" -> io_lib:format("~p", [N || {N, _} <- S#repl_state.tracked_contracts ++
+                                                       S#repl_state.let_defs ++ S#repl_state.local_funs]);
+              _ -> throw({error, "I don't understand. I can print you list of: contracts, let, def, letval, letfun, names"})
+          end,
+    {success, Out, S};
 process_input(_, _, _) ->
-    {error, "This command is not defined yet."}.
+    throw({error, "This command is not defined yet (but should be)."}).
 
 
 unregister_letdef(State = #repl_state{let_defs = LetDefs}, Name) ->
@@ -277,6 +329,72 @@ unregister_letdef(State = #repl_state{let_defs = LetDefs}, Name) ->
 
 register_letdef(State = #repl_state{let_defs = LetDefs}, Name, Def) ->
     State#repl_state{let_defs = proplists:delete(Name, LetDefs) ++ [{Name, Def}]}.
+
+
+unregister_contract(State = #repl_state{tracked_contracts = Cons}, Name) ->
+    State#repl_state{tracked_contracts = proplists:delete(Name, Cons)}.
+
+
+free_name(State, Name) ->
+    check_name_conflicts(State, Name, [free, letfun_local]),
+    unregister_contract(unregister_letdef(State, Name), Name).
+
+
+name_status(#repl_state
+            { let_defs = LetDefs
+            , local_funs = LocFuns
+            , tracked_contracts = TCons
+            }, Name) ->
+    % Beware, the state-of-the-art solution is approaching!
+    case { proplists:is_defined(Name, LetDefs)
+         , proplists:is_defined(Name, LocFuns)
+         , proplists:is_defined(Name, TCons)
+         } of
+        {true, _, _} ->
+            case proplists:lookup(Name, LetDefs) of
+                {_, {letval, _, _}}    -> letval;
+                {_, {letfun, _, _, _}} -> letfun
+            end;
+        {_, true, _} -> letfun_local;
+        {_, _, true} -> tracked_contract;
+        _            -> free
+    end.
+
+
+check_name_conflicts(State, Name, Conflicts) ->
+    Status = name_status(State, Name),
+    case lists:member(Status, Conflicts) of
+        true ->
+            case Status of
+                letfun_local ->
+                    throw({error,
+                           "This name already belongs to a def-function\n"
+                           "Use different name or clear def-function index by typing :undef"
+                          });
+                letfun ->
+                    throw({error,
+                           "This name already belongs to a let-function\n"
+                           "Use different name or free it by typing :unlet " ++ Name
+                          });
+                letval ->
+                    throw({error,
+                           "This name already belongs to a let-value\n"
+                           "Use different name or free it by typing :unlet " ++ Name
+                          });
+                tracked_contract ->
+                    throw({error,
+                           "This name already belongs to a tracked contract\n"
+                           "Use different name or free it by typing :undeploy " ++ Name
+                          });
+                free ->
+                    throw({error,
+                           "This name is not taken by any repl object\n"
+                          });
+                _ -> error("Unknown status?")
+            end;
+        false ->
+            ok
+    end.
 
 
 -spec register_includes(repl_state(), list(string())) -> repl_state().
@@ -311,8 +429,12 @@ register_includes(State = #repl_state{ include_ast = Includes
 
 build_deploy_contract(Src, TypedAst, Args, Options = #options{backend = Backend}, S0) ->
     Code = aere_sophia:compile_contract(Backend, Src, TypedAst),
+    deploy_contract(Code, Args, Options, S0).
+
+
+deploy_contract(ByteCode, Args, Options, S0) ->
     aere_runtime:state(S0),
-    Serialized = aect_sophia:serialize(Code, aere_version:contract_version()),
+    Serialized = aect_sophia:serialize(ByteCode, aere_version:contract_version()),
     {Owner, S1} = aere_runtime:new_account(100000021370000999, S0),
     try aere_runtime:create_contract(Owner, Serialized, Args, Options, S1)
     catch error:{failed_contract_create, Reason} ->
@@ -320,7 +442,7 @@ build_deploy_contract(Src, TypedAst, Args, Options = #options{backend = Backend}
                          is_list(Reason) -> Reason;
                          true -> io_lib:format("~p", [Reason])
                       end,
-            throw({error, ReasonS})
+            throw({error, "Failed to create contract: " ++ ReasonS})
     end.
 
 

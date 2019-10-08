@@ -203,7 +203,6 @@ to_words(Bin) ->
 
 
 make_fate_function_id(FunctionName) when is_binary(FunctionName) ->
-    %% FunctionName.
     aeb_fate_code:symbol_identifier(FunctionName).
 
 format_fate_args(?cid(B)) ->

@@ -12,6 +12,8 @@ convert_type(_TEnv, {id, _, "int"}) ->
     signed_word;
 convert_type(_TEnv, {id, _, "bool"}) ->
     bool;
+convert_type(_TEnv, {bytes_t, _, _}) ->
+    word;
 convert_type(_TEnv, {id, _, "bits"}) ->
     word;
 convert_type(_TEnv, {id, _, "string"}) ->
@@ -19,6 +21,8 @@ convert_type(_TEnv, {id, _, "string"}) ->
 convert_type(_TEnv, {id, _, "address"}) ->
     word;
 convert_type(_TEnv, {id, _, "hash"}) ->
+    word;
+convert_type(_TEnv, {con, _, _}) ->
     word;
 convert_type(_TEnv, {id, _, "unit"}) ->
     {tuple, []};
@@ -141,6 +145,22 @@ pp_response({variant, Cons}) ->
     text(Cons);
 pp_response({revert, Msg}) ->
     text("REVERT{" ++ binary_to_list(Msg) ++ "}");
+pp_response({address, Addr}) -> % TODO FORMAT
+    text(io_lib:format("~p", [Addr]));
+pp_response({bytes, Bs}) ->
+    beside([text("#")|
+            [text(io_lib:format("~.16b", [X || X <- Bs]))]
+           ]);
+pp_response({contract, Addr}) ->
+    text(io_lib:format("~p", [Addr]));
+pp_response({oracle, Addr}) ->
+    text(io_lib:format("~p", [Addr]));
+pp_response({oracle_query, Addr}) ->
+    text(io_lib:format("~p", [Addr]));
+pp_response({channel, Addr}) ->
+    text(io_lib:format("~p", [Addr]));
+pp_response({bits, Addr}) ->
+    text(io_lib:format("~p", [Addr]));
 pp_response(T) when is_tuple(T) ->
     case tuple_to_list(T) of
         [{variant, Cons}|Args] ->
@@ -152,7 +172,7 @@ pp_response(T) when is_tuple(T) ->
         TL -> comma_brackets("(", ")", [pp_response(X) || X <- TL])
     end;
 pp_response(R) ->
-    text(io_lib:format("Unknown rep: ~p", [R])).
+    text(io_lib:format("~p", [R])).
 
 
 apply_subst(Subst, {fun_t, Ann, NArgs, Args, Res}) ->

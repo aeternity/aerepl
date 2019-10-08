@@ -2,9 +2,16 @@
 
 -export([ typecheck/1, parse_file/2, parse_file/3, compile_contract/3
         , parse_body/1, parse_letdef/1, parse_type/1, type_of/2
+        , generate_interface_decl/1
         ]).
 
 -include("aere_repl.hrl").
+
+process_err(Errs) when is_list(Errs) ->
+    throw({error, lists:concat([aeso_errors:err_msg(E) || E <- Errs])});
+process_err(E) -> %% idk, rethrow
+    throw(E).
+
 
 typecheck(Ast) ->
     try aeso_ast_infer_types:infer(Ast, [])
@@ -15,10 +22,11 @@ typecheck(Ast) ->
     end.
 
 
--spec compile_contract(aevm | fate, string(), aeso_syntax:ast()) -> any.
 compile_contract(fate, Src, TypedAst) ->
-    FCode    = with_error_handle(catch aeso_ast_to_fcode:ast_to_fcode(TypedAst, [])),
-    Fate     = with_error_handle(catch aeso_fcode_to_fate:compile(FCode, [])),
+    FCode    = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, [])
+               catch {error, Ec} -> process_err(Ec) end,
+    Fate     = try aeso_fcode_to_fate:compile(FCode, [])
+               catch {error, Ef} -> process_err(Ef) end,
     ByteCode = aeb_fate_code:serialize(Fate, []),
     #{byte_code => ByteCode,
       contract_source => Src,
@@ -29,7 +37,8 @@ compile_contract(fate, Src, TypedAst) ->
       payable => maps:get(payable, FCode)
      };
 compile_contract(aevm, Src, TypedAst) ->
-    Icode = with_error_handle(catch aeso_ast_to_icode:convert_typed(TypedAst, [])),
+    Icode = try aeso_ast_to_icode:convert_typed(TypedAst, [])
+            catch {error, Ei} -> process_err(Ei) end,
     TypeInfo  = extract_type_info(Icode),
     Assembler = aeso_icode_to_asm:convert(Icode, []),
     ByteCodeList = to_bytecode(Assembler, []),
@@ -81,21 +90,39 @@ to_bytecode([Op|Rest], Options) ->
 to_bytecode([], _) -> [].
 
 
+-define(with_error_handle(X), try X catch {error, Errs} -> process_err(Errs) end).
 parse_body(I) ->
-    with_error_handle(catch aeso_parser:body(I)).
+    ?with_error_handle(aeso_parser:body(I)).
 parse_type(I) ->
-    with_error_handle(catch aeso_parser:type(I)).
+    ?with_error_handle(aeso_parser:type(I)).
 parse_letdef(I) ->
-    with_error_handle(catch aeso_parser:letdef(I)).
+    ?with_error_handle(aeso_parser:letdef(I)).
 parse_file(I, Opts) ->
     parse_file(I, sets:new(), Opts).
 parse_file(I, Includes, Opts) ->
-    with_error_handle(catch aeso_parser:string(I, Includes, Opts)).
+    ?with_error_handle(aeso_parser:string(I, Includes, Opts)).
 
 
-with_error_handle(Res) ->
-    case Res of
-        {error, Errs} ->
-            throw({error, lists:concat([aeso_errors:err_msg(E) || E <- Errs])});
-        Val -> Val
-    end.
+generate_interface_decl([{contract, Ann, Name, Funs}]) ->
+    {Name, {contract, Ann, Name, get_funs_decls(Funs)}};
+generate_interface_decl([_|Rest]) ->
+    generate_interface_decl(Rest);
+generate_interface_decl([]) ->
+    error("Empty contract?").
+
+
+get_funs_decls(Funs) ->
+    get_funs_decls(Funs, []).
+get_funs_decls([], Acc) ->
+    Acc;
+get_funs_decls([{letfun, Ann, Name, Args, RetType, _}|Rest], Acc) ->
+    TArgs = [T || {arg, _, _, T} <- Args],
+    get_funs_decls(Rest, [{fun_decl, Ann, Name, {fun_t, Ann, [], TArgs, RetType}}|Acc]);
+get_funs_decls([Decl | Rest], Acc) when element(1, Decl) =:= fun_decl
+                                        orelse element(1, Decl) =:= type_decl
+                                        orelse element(1, Decl) =:= type_def
+                                        ->
+    get_funs_decls(Rest, [Decl | Acc]).
+
+
+

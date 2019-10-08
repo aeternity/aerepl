@@ -33,3 +33,5 @@
 -define(LETDEF_PROVIDER_DECL(X), "#letdef_prov_decl#" ++ X ++ "#INTERNAL_REPL").
 -define(LETVAL_GETTER(X), "#val_get#" ++ X ++ "#INTERNAL_REPL").
 -define(ADD_OWNER(Owner, X), X ++ "#for#" ++ Owner).
+-define(TrackedContractName(Ref, TypeName),
+        "#contract#" ++ Ref ++ "#" ++ TypeName ++ "#INTERNAL_REPL").
