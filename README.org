@@ -1,0 +1,279 @@
+#+TITILE: AEREPL
+#+SUBTITLE: The Read-Eval-Print Loop for Sophia
+
+Try Sophia, test your contracts, check "what if", calculate a factorial. Completely offline,
+not depending on any remote (readonly sync may be included later).
+
+** Setup
+
+Currently, to launch the REPL you need to:
+
+Clone the repo:
+#+BEGIN_SRC
+git clone https://github.com/radrow/aerepl.git
+#+END_SRC
+
+Clone the node:
+#+BEGIN_SRC
+git clone https://github.com/aeternity/aeternity.git
+#+END_SRC
+
+
+Copy apps:
+#+BEGIN_SRC
+cp -r aeternity/apps aerepl
+#+END_SRC
+
+
+Launch the rebar3 shell
+#+BEGIN_SRC
+cd aerepl
+./rebar3 shell
+#+END_SRC
+
+
+After it loads, launch the repl
+#+BEGIN_SRC
+aerepl:start()
+#+END_SRC
+
+Future relases will simplify it.
+
+** Usage
+
+You can type any arbitrary Sophia expression to evaluate it, for instance
+#+BEGIN_SRC
+AESO> 2 + 2
+4
+#+END_SRC
+
+Beside that, the REPL supports other functionally via /commands/ that are prepended by ~:~. The default command is ~:eval~, which is executed when no other command was chosen, for instance
+#+BEGIN_SRC
+AESO> :eval 2 + 2
+4
+#+END_SRC
+
+*** Currently supported commands
+
++------------+--------------------------------------------+---------------+
+|~eval~      |Evaluates an expression and prints out      |~:eval 2 + 2~  |
+|            |computed result. issue: record types are    |               |
+|            |printed as tuples                           |               |
+|            |                                            |               |
+|            |                                            |               |
++------------+--------------------------------------------+---------------+
+|~type~      |Typechecks the following expression         |~:type 2 + 2~  |
+|            |                                            |               |
+|            |                                            |               |
+|            |                                            |               |
+|            |                                            |               |
++------------+--------------------------------------------+---------------+
+|~import~    |Finds a file and adds it to the import list |~:import       |
+|            |                                            |List.aes~      |
+|            |                                            |               |
+|            |                                            |               |
+|            |                                            |               |
++------------+--------------------------------------------+---------------+
+|~unimport~  |Clears the import list                      |~:unimport~    |
+|            |                                            |               |
+|            |                                            |               |
++------------+--------------------------------------------+---------------+
+|~reinclude~ |Reloads all imports                         |~:reinclude~   |
+|            |                                            |               |
+|            |                                            |               |
++------------+--------------------------------------------+---------------+
+|~cd~        |Changes the working directory               |~:cd src~      |
+|            |                                            |               |
+|            |                                            |               |
++------------+--------------------------------------------+---------------+
+|~pwd~       |Prints out the current working directory    |~:pwd~         |
+|            |                                            |               |
+|            |                                            |               |
+|            |                                            |               |
++------------+--------------------------------------------+---------------+
+|~set~       |Sets a REPL variable or in-REPL state       |~:set call_gas |
+|            |                                            |true~          |
+|            |                                            |               |
+|            |                                            |               |
+|            |                                            |               |
+|            |                                            |               |
+|            |                                            |               |
++------------+--------------------------------------------+---------------+
+|~load~      |Reads a file and evaluates all its contents |~:load         |
+|            |in REPL                                     |aerepl.rc~     |
+|            |                                            |               |
+|            |                                            |               |
+|            |                                            |               |
+|            |                                            |               |
++------------+--------------------------------------------+---------------+
+|~quit~      |Shuts the REPL down                         |~:quit~        |
+|            |                                            |               |
++------------+--------------------------------------------+---------------+
+|~let~       |Defines a statically bound value or         |~:let x = 2~   |
+|            |function. Check [[let-definitions][this]]   |~:let f(x) = x~|
+|            |for more info                               |               |
+|            |                                            |               |
+|            |                                            |               |
+|            |                                            |               |
+|            |                                            |               |
++------------+--------------------------------------------+---------------+
+|~def~       |Defines sealed stateful function. Check     |~:def inc(k) = |
+|            |[[def-definitions][this]] for more info     |put(state + k)~|
+|            |                                            |               |
+|            |                                            |               |
++------------+--------------------------------------------+---------------+
+|~unlet~     |Removes variable from the namespace. Note it|~:unlet x~     |
+|            |will still be accessible for other          |               |
+|            |let-values                                  |               |
+|            |                                            |               |
++------------+--------------------------------------------+---------------+
+|~undef~     |Removes *all* def-functions.                |~:undef~       |
+|            |                                            |               |
++------------+--------------------------------------------+---------------+
+|~deploy~    |Builds a contract from file, deploys it in  |~:deploy C.aes~|
+|            |the REPL environment and makes it accessible|~:deploy C.aes |
+|            |similarly to ~let~ definition. Explicit name|as c~          |
+|            |can be optionally provided                  |               |
+|            |                                            |               |
+|            |                                            |               |
+|            |                                            |               |
+|            |                                            |               |
++------------+--------------------------------------------+---------------+
+|~undeploy~  |Removes a contract from the environment     |~:undeploy c~  |
+|            |                                            |               |
++------------+--------------------------------------------+---------------+
+|~rm~        |Removes value or contract from the          |~:rm x~        |
+|            |environment                                 |               |
+|            |                                            |               |
++------------+--------------------------------------------+---------------+
+|~list~      |Lists all names in current environment. See |~:list names~  |
+|            |[[list command][this]] for usage                              |               |
+|            |                                            |               |
+|            |                                            |               |
++------------+--------------------------------------------+---------------+
+|~quit~      |Shuts the REPL down                         |~:quit~        |
++------------+--------------------------------------------+---------------+
+
+
+*** Command shortcuts
+
+It is not required to type whole command in every case – a prefix is just enough if it is not ambiguous.
+For example, at the moment of writing ~:t 3~ is equivalent to ~:type 3~ , while ~:un~ will return an
+error, because it could mean both ~:unlet~ and ~undeploy~. If a valid command is a proper prefix of another
+one, it will take the prtiority.
+
+*** let-definitions
+
+~let-definitions~ are all values assigned using ~:let~ command. They are statically bound, meaning that
+the following behavior is expected:
+#+BEGIN_SRC
+AESO> :let x = 1
+AESO> :let y = x
+AESO> :let x = 0
+AESO> x
+0
+AESO> y
+1
+#+END_SRC
+Here, we do not redefine existing ~x~, but we just /shadow/ it. The ~y~ still sees the previous definition.
+This applies to functions as well. If a value depends on in-REPL state, its value *won't* change if the state
+is altered.
+
+Functions defined as ~:let~ are not stateful, nor payable. They cannot interact with [def-definitions].
+
+Use of ~:let~ definitions may increase (but not decrease) displayed gas usage, so they shouldn't be used while
+testing this property.
+
+*** def-definitions
+
+~def-definitions~ are functions defined by ~:def~ command. They cannot be redefined or shadowed, but are allowed to
+be both ~stateful~ and ~payable~. They are vanished when user changes in-REPL state by using ~:set state~ command or
+when they do it explicitly by calling ~:undef~. While they cannot interact with ~:let~  functions, they can use ~:let~ values.
+
+They do not introduce any artificial gas overhead as long as there are no ~:let~ values in the environment.
+
+
+*** list command
+
+~:list~ supports following arguments:
+
++-------------------+------------------------------+
+| ~contracts~       | Displays tracked contracts'  |
+|                   |names                         |
++-------------------+------------------------------+
+| ~let~             | Displays all ~:let~          |
+|                   |definitions                   |
++-------------------+------------------------------+
+| ~def~             | Displays all ~:def~          |
+|                   |definitions                   |
++-------------------+------------------------------+
+| ~letval~          | Displays all non-functional  |
+|                   |~:let~ values                 |
++-------------------+------------------------------+
+| ~letfun~          | Displays all functional      |
+|                   |~:let~ values                 |
++-------------------+------------------------------+
+| ~names~           | Displays all names that      |
+|                   |belong to current env         |
++-------------------+------------------------------+
+
+*** REPL values
+
+These can be adjusted using ~:set~ commands. Currently supported options are:
+
++------------------------------+------------------------------+------------------------------+
+| Value                        | Type of next arg             | Description                  |
++------------------------------+------------------------------+------------------------------+
+| ~call_gas~                   | ~true~ or ~false~            | Toggles display of used gas  |
+|                              |                              |during evaluations            |
++------------------------------+------------------------------+------------------------------+
+| ~gas~                        | Positive integer             | Sets amount of has to provide|
+|                              |                              |to every evaluation           |
++------------------------------+------------------------------+------------------------------+
+| ~aevm~                       | No args                      | Switches to aevm. Not        |
+|                              |                              |maintained at all.            |
++------------------------------+------------------------------+------------------------------+
+| ~fate~                       | No args                      | Switches to fate. Default.   |
++------------------------------+------------------------------+------------------------------+
+| ~state~                      | Sophia expresion             | See [in-REPL state]          |
++------------------------------+------------------------------+------------------------------+
+
+*** in-REPL state
+
+The REPL tracks its own internal state that works similarly to the contracts' states. By default its state is set to ~() : unit~, but it can be changed at any time via ~:set~ command:
+#+BEGIN_SRC
+AESO> state
+()
+AESO> :set state 1
+AESO> put(state + 1)
+()
+AESO> state
+1
+#+END_SRC
+
+State altering routines can be defined through ~:def~ definitions. Note that if you change the state via ~:set~ command all ~:def~ functions will be erased (since the type of the state may change). ~:let~ definitions may read the state, but they cannot change it. They will always use the state from the moment they were created, see the following snippet:
+#+BEGIN_SRC
+AESO> :set state 1
+AESO> :let f() = state
+AESO> f()
+1
+AESO> put(2)
+AESO> f()
+1
+AESO> :set state true
+AESO> f()
+1
+#+END_SRC
+
+*** Misc.
+
+Newline symbol can be replaced by colon. This is very straightforward and it is a temporary "feature" that will be removed. It just allows to write quick oneliners like ~let x = 2;put(x)~.
+
+If you want to insert more complex multiline you can do it in GHCi's style using ~:{~ to open and ~:}~ to close your expression
+#+BEGIN_SRC
+AESO> :{
+| let id(x) = x
+| id(2138)
+:}
+2138
+#+END_SRC
