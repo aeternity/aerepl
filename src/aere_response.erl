@@ -146,13 +146,13 @@ pp_response({variant, Cons}) ->
 pp_response({revert, Msg}) ->
     text("REVERT{" ++ binary_to_list(Msg) ++ "}");
 pp_response({address, Addr}) -> % TODO FORMAT
-    text(io_lib:format("~p", [Addr]));
+    text(io_lib:format("ak_~.16b", [Addr]));
 pp_response({bytes, Bs}) ->
     beside([text("#")|
-            [text(io_lib:format("~.16b", [X || X <- Bs]))]
+            [text(io_lib:format("~.16b", [X])) || X <- binary_to_list(Bs)]
            ]);
 pp_response({contract, Addr}) ->
-    text(io_lib:format("~p", [Addr]));
+    text(io_lib:format("ct_~.16b", [Addr]));
 pp_response({oracle, Addr}) ->
     text(io_lib:format("~p", [Addr]));
 pp_response({oracle_query, Addr}) ->

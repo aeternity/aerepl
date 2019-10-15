@@ -2,7 +2,7 @@
 
 -export([ typecheck/1, parse_file/2, parse_file/3, compile_contract/3
         , parse_body/1, parse_letdef/1, parse_type/1, type_of/2
-        , generate_interface_decl/1
+        , generate_interface_decl/1, process_err/1
         ]).
 
 -include("aere_repl.hrl").
@@ -16,9 +16,7 @@ process_err(E) -> %% idk, rethrow
 typecheck(Ast) ->
     try aeso_ast_infer_types:infer(Ast, [])
     catch _:{error, Errs} ->
-            throw({error, lists:flatten(
-                            [What ++ When || {err, _, type_error, What, When} <- Errs, is_list(When)]
-                            ++ [What || {err, _, type_error, What, none} <- Errs])})
+            throw({error, process_err(Errs)})
     end.
 
 

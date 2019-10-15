@@ -21,7 +21,12 @@ black() ->
     "\e[1;30m".
 
 red() ->
-    "\e[1;31m".
+    case get(wololo) of
+        undefined ->
+            "\e[1;31m";
+        _ ->
+            blue()
+    end.
 
 green() ->
     "\e[1;32m".

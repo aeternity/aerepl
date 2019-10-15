@@ -3,7 +3,7 @@
 %% @end
 %%%-------------------------------------------------------------------
 
--module(aere_repl).
+-module(aerepl).
 
 -export([start/0, main/1]).
 
@@ -80,6 +80,8 @@ repl(State) ->
                     io:format(aere_color:emph("*** This is an internal error and most likely a bug.\n")),
                     repl(State)
             end;
+        {error, {no_such_command, "wololo"}} ->
+            put(wololo, wololo), repl(State);
         {error, {no_such_command, Command}} ->
             io:format("No such command " ++ aere_color:blue("~p") ++ "\n", [Command]),
             repl(State);
@@ -309,13 +311,13 @@ process_input(S, cd, Inp) ->
     {success, S};
 process_input(S, list, Inp) ->
     Out = case Inp of
-              "contracts" -> io_lib:format("~p", [N || {N, _} <- S#repl_state.tracked_contracts]);
-              "let" -> io_lib:format("~p", [N || {N, _} <- S#repl_state.let_defs]);
-              "def" -> io_lib:format("~p", [N || {N, _} <- S#repl_state.local_funs]);
-              "letval" -> io_lib:format("~p", [N || {N, L} <- S#repl_state.let_defs, element(1, L) =:= letval]);
-              "letfun" -> io_lib:format("~p", [N || {N, L} <- S#repl_state.let_defs, element(1, L) =:= letfun]);
-              "names" -> io_lib:format("~p", [N || {N, _} <- S#repl_state.tracked_contracts ++
-                                                       S#repl_state.let_defs ++ S#repl_state.local_funs]);
+              "contracts" -> io_lib:format("~p", [[N || {N, _} <- S#repl_state.tracked_contracts]]);
+              "let" -> io_lib:format("~p", [[N || {N, _} <- S#repl_state.let_defs]]);
+              "def" -> io_lib:format("~p", [[N || {N, _} <- S#repl_state.local_funs]]);
+              "letval" -> io_lib:format("~p", [[N || {N, L} <- S#repl_state.let_defs, element(1, L) =:= letval]]);
+              "letfun" -> io_lib:format("~p", [[N || {N, L} <- S#repl_state.let_defs, element(1, L) =:= letfun]]);
+              "names" -> io_lib:format("~p", [[N || {N, _} <- S#repl_state.tracked_contracts ++
+                                                        S#repl_state.let_defs ++ S#repl_state.local_funs]]);
               _ -> throw({error, "I don't understand. I can print you list of: contracts, let, def, letval, letfun, names"})
           end,
     {success, Out, S};
@@ -408,19 +410,19 @@ register_includes(State = #repl_state{ include_ast = Includes
             IncludingContract = lists:flatmap(fun(I) -> "include \"" ++ I ++ "\"\n" end, Files),
             {Addition, NewHashes} = aere_sophia:parse_file(IncludingContract, Hashes, [keep_included]),
             NewIncludes = Includes ++ Addition,
-            aere_sophia:typecheck(NewIncludes),
+            NewState = State#repl_state{ include_ast    = NewIncludes
+                                       , include_hashes = NewHashes
+                                       , include_files  = Files ++ PrevFiles
+                                       },
+            aere_sophia:typecheck(
+                  aere_mock:simple_query_contract(NewState, {id, [], "state"})),
             Colored = aere_color:yellow(lists:flatten([" " ++ F || F <- Files])),
             IncludeWord = case Files of
                               []  -> "nothing";
                               [_] -> "include";
                               _   -> "includes"
                           end,
-            {success, "Registered " ++ IncludeWord ++ Colored,
-             State#repl_state{ include_ast    = NewIncludes
-                             , include_hashes = NewHashes
-                             , include_files  = Files ++ PrevFiles
-                             }
-            };
+            {success, "Registered " ++ IncludeWord ++ Colored, NewState};
         Duplicates ->
             Colored = aere_color:yellow(lists:flatten([" " ++ D || D <- Duplicates])),
             {error, io_lib:format("Following files are already included: ~s", [Colored])}

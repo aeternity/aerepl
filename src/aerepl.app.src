@@ -6,7 +6,8 @@
    [kernel,
     stdlib,
     aesophia,
-    aebytecode
+    aebytecode,
+    enacl
    ]},
   {env,[]},
   {modules, []},
