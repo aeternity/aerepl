@@ -46,6 +46,10 @@ get_input() ->
     Inp = case Line of
               ":{\n" ->
                   multiline_input();
+              "" ->
+                  "";
+              eof -> % that's dirty
+                  ":quit";
               _ ->
                   lists:flatten(string:replace(Line, ";", "\n", all))
           end,
