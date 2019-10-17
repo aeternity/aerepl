@@ -88,7 +88,7 @@ one, it will take the prtiority.
 :CUSTOM_ID: let-definitions
 :END:
 
-~let-definitions~ are all values assigned using ~:let~ command. They are statically bound, meaning that
+~let-definitions~ are these made using ~:let~ command. They are statically bound, meaning that
 the following behavior is expected:
 #+BEGIN_SRC
 AESO> :let x = 1
@@ -99,11 +99,11 @@ AESO> x
 AESO> y
 1
 #+END_SRC
-Here, we do not redefine existing ~x~, but we just /shadow/ it. The ~y~ still sees the previous definition.
+Here, the existing ~x~ is not being redefined, but /shadowed/. The ~y~ still can see the previous definition.
 This applies to functions as well. If a value depends on in-REPL state, its value *won't* change if the state
 is altered.
 
-Functions defined as ~:let~ are not stateful, nor payable. They cannot interact with [def-definitions].
+Functions defined as ~:let~ are neither stateful nor payable. They cannot interact with [[#def-definitions]].
 
 Use of ~:let~ definitions may increase (but not decrease) displayed gas usage, so they shouldn't be used while
 testing this property.
@@ -113,9 +113,9 @@ testing this property.
 :CUSTOM_ID: def-definitions
 :END:
 
-~def-definitions~ are functions defined by ~:def~ command. They cannot be redefined or shadowed, but are allowed to
-be both ~stateful~ and ~payable~. They are vanished when user changes in-REPL state by using ~:set state~ command or
-when they do it explicitly by calling ~:undef~. While they cannot interact with ~:let~  functions, they can use ~:let~ values.
+~def-definitions~ describe functions defined by ~:def~ command. They cannot be redefined or shadowed, but are allowed to
+be both ~stateful~ and ~payable~. They are vanished when the user changes in-REPL state by ~:set state~ command or
+when they do it explicitly by calling ~:undef~. While they cannot interact with ~:let~  functions, they can freely depend on ~:let~ values.
 
 They do not introduce any artificial gas overhead as long as there are no ~:let~ values in the environment.
 
@@ -143,11 +143,15 @@ These can be adjusted using ~:set~ commands. Currently supported options are:
 | ~gas~                        | Positive integer                                           | Sets amount of has to provide to every evaluation                              |
 | ~aevm~                       | No args                                                    | Switches to aevm. Not maintained at all.                                       |
 | ~fate~                       | No args                                                    | Switches to fate. Default.                                                     |
-| ~state~                      | Sophia expresion                                           | See [in-REPL state]                                                            |
+| ~state~                      | Sophia expresion                                           | See [[#in-repl-state]]                                          |
 
 *** in-REPL state
+:PROPERTIES:
+:CUSTOM_ID: in-repl-state
+:END:
 
-The REPL tracks its own internal state that works similarly to the contracts' states. By default its state is set to ~() : unit~, but it can be changed at any time via ~:set~ command:
+The REPL tracks its own internal state that works similarly to the contracts' states.
+By default its state is set to ~() : unit~, but it can be changed at any time via ~:set~ command:
 #+BEGIN_SRC
 AESO> state
 ()
@@ -155,16 +159,20 @@ AESO> :set state 1
 AESO> put(state + 1)
 ()
 AESO> state
-1
+2
 #+END_SRC
 
-State altering routines can be defined through ~:def~ definitions. Note that if you change the state via ~:set~ command all ~:def~ functions will be erased (since the type of the state may change). ~:let~ definitions may read the state, but they cannot change it. They will always use the state from the moment they were created, see the following snippet:
+State altering routines can be defined through ~:def~ definitions.
+Note that if you change the state via ~:set~ command all ~:def~ functions will be erased (since the type of the state may change).
+~:let~ definitions may read the state, but they cannot change it.
+They will always use the state from the moment they were created – check the following snippet:
 #+BEGIN_SRC
 AESO> :set state 1
 AESO> :let f() = state
 AESO> f()
 1
 AESO> put(2)
+()
 AESO> f()
 1
 AESO> :set state true
@@ -174,7 +182,8 @@ AESO> f()
 
 *** Misc.
 
-Newline symbol can be replaced by colon. This is very straightforward and it is a temporary "feature" that will be removed. It just allows to write quick oneliners like ~let x = 2;put(x)~.
+Newline symbol can be replaced by colon. This is very straightforward and it is a temporary "feature" that will be removed.
+It just allows to write quick oneliners like ~let x = 2;put(x)~.
 
 If you want to insert more complex multiline you can do it in GHCi's style using ~:{~ to open and ~:}~ to close your expression
 #+BEGIN_SRC
