@@ -65,8 +65,8 @@ AESO> :eval 2 + 2
 | ~set~       |Sets a REPL variable or in-REPL state                                                                                                                                                                                                                                   | ~:set call_gas true~              |
 | ~load~      |Reads a file and evaluates all its contents in REPL                                                                                                                                                                                                                     | ~:load aerepl.rc~                 |
 | ~quit~      |Shuts the REPL down                                                                                                                                                                                                                                                     | ~:quit~                           |
-| ~let~       |Defines a statically bound value or function. Check [[#letdefs][this]] for more info                                                                                                                                                                            | ~:let x = 2~ ~:let f(x) = x~      |
-| ~def~       |Defines sealed stateful function. Check [[#defdefs][this]] for more info                                                                                                                                                                                        | ~:def inc(k) = put(state + k)~    |
+| ~let~       |Defines a statically bound value or function. Check [[#let-definitions][this]] for more info                                                                                                                                                                            | ~:let x = 2~ ~:let f(x) = x~      |
+| ~def~       |Defines sealed stateful function. Check [[#def-definitions][this]] for more info                                                                                                                                                                                        | ~:def inc(k) = put(state + k)~    |
 | ~unlet~     |Removes variable from the namespace. Note it will still be accessible for other let-values                                                                                                                                                                              | ~:unlet x~                        |
 | ~undef~     |Removes *all* def-functions.                                                                                                                                                                                                                                            | ~:undef~                          |
 | ~deploy~    |Builds a contract from file, deploys it in the REPL environment and makes it accessible similarly to ~let~ definition. Explicit name can be optionally provided                                                                                                         | ~:deploy C.aes~ ~:deploy C.aes as c~ |
@@ -85,7 +85,7 @@ one, it will take the prtiority.
 
 *** let-definitions
 :PROPERTIES:
-:CUSTOM_ID: letdefs
+:CUSTOM_ID: let-definitions
 :END:
 
 ~let-definitions~ are all values assigned using ~:let~ command. They are statically bound, meaning that
@@ -110,7 +110,7 @@ testing this property.
 
 *** def-definitions
 :PROPERTIES:
-:CUSTOM_ID: defdefs
+:CUSTOM_ID: def-definitions
 :END:
 
 ~def-definitions~ are functions defined by ~:def~ command. They cannot be redefined or shadowed, but are allowed to
