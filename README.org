@@ -138,9 +138,7 @@ They do not introduce any artificial gas overhead as long as there are no ~:let~
 
 These can be adjusted using ~:set~ commands. Currently supported options are:
 
-+------------------------------+------------------------------------------------------------+--------------------------------------------------------------------------------+
 | Value                        | Type of next arg                                           | Description                                                                    |
-+------------------------------+------------------------------------------------------------+--------------------------------------------------------------------------------+
 | ~call_gas~                   | ~true~ or ~false~                                          | Toggles display of used gas during evaluations                                 |
 | ~gas~                        | Positive integer                                           | Sets amount of has to provide to every evaluation                              |
 | ~aevm~                       | No args                                                    | Switches to aevm. Not maintained at all.                                       |
