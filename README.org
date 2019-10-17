@@ -34,7 +34,7 @@ cd aerepl
 
 After it loads, launch the repl
 #+BEGIN_SRC
-aerepl:start()
+aerepl:start().
 #+END_SRC
 
 Future relases will simplify it.
