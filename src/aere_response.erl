@@ -144,15 +144,15 @@ pp_response({some, X}) ->
 pp_response({variant, Cons}) ->
     text(Cons);
 pp_response({revert, Msg}) ->
-    text("REVERT{" ++ binary_to_list(Msg) ++ "}");
-pp_response({address, Addr}) -> % TODO FORMAT
-    text(io_lib:format("ak_~.16b", [Addr]));
+    text(aere_color:red("REVERT: ") ++ binary_to_list(Msg));
+pp_response({address, Addr}) ->
+    text(binary_to_list(aeser_api_encoder:encode(peer_pubkey, <<Addr:256>>)));
 pp_response({bytes, Bs}) ->
     beside([text("#")|
             [text(io_lib:format("~.16b", [X])) || X <- binary_to_list(Bs)]
            ]);
 pp_response({contract, Addr}) ->
-    text(io_lib:format("ct_~.16b", [Addr]));
+    text(binary_to_list(aeser_api_encoder:encode(contract_pubkey, <<Addr:256>>)));
 pp_response({oracle, Addr}) ->
     text(io_lib:format("~p", [Addr]));
 pp_response({oracle_query, Addr}) ->
