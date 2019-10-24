@@ -13,15 +13,9 @@ Clone the repo:
 git clone https://github.com/radrow/aerepl.git
 #+END_SRC
 
-Clone the node:
+Setup the rebar env:
 #+BEGIN_SRC
-git clone https://github.com/aeternity/aeternity.git
-#+END_SRC
-
-
-Copy apps:
-#+BEGIN_SRC
-cp -r aeternity/apps aerepl
+make
 #+END_SRC
 
 
@@ -32,12 +26,12 @@ cd aerepl
 #+END_SRC
 
 
-After it loads, launch the repl
+After the erlang prompt loads, launch the repl
 #+BEGIN_SRC
 aerepl:start().
 #+END_SRC
 
-Future relases will simplify it.
+Future relases will simplify this process.
 
 ** Usage
 
