@@ -6,6 +6,7 @@
         , height :: non_neg_integer()
         , call_value :: non_neg_integer()
         , backend :: fate | aevm
+        , silent :: boolean()
         }).
 -type options() :: options().
 

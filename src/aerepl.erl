@@ -18,6 +18,7 @@ default_options() ->
             , height = 1
             , call_value = 0
             , backend = fate
+            , silent = false
             }.
 
 
@@ -74,8 +75,11 @@ handle_dispatch(State, skip) ->
     {continue, State};
 handle_dispatch(State, {ok, {Command, Args}}) ->
     try process_input(State, Command, Args) of
-        {success, Output, State1} ->
-            io:format("~s~n", [aere_color:emph(Output)]),
+        {success, Output, State1 = #repl_state{options = #options{silent = Silent}}} ->
+            case Silent of
+                false -> io:format("~s~n", [aere_color:emph(Output)]);
+                true -> ok
+            end,
             {continue, State1};
         {success, State1} ->
             {continue, State1};
@@ -163,6 +167,7 @@ process_input(State = #repl_state{options = Opts}, set, Inp) ->
         case Prop of
             "call_gas" -> ?ParseOptionBool(display_call_gas);
             "deploy_gas" -> ?ParseOptionBool(display_deploy_gas);
+            "silent" -> ?ParseOptionBool(silent);
             "gas" -> ?ParseOptionInt(gas);
             "value" -> ?ParseOptionInt(call_value);
             "aevm" -> { options, "Not supported at all, use at your own responsibility"
@@ -342,15 +347,19 @@ process_input(S, list, Inp) ->
           end,
     {success, Out, S};
 process_input(S, load, Inp) ->
+    Silent = S#repl_state.options#options.silent,
+    SilentState = S#repl_state{options = S#repl_state.options#options{silent = true}},
     C = lists:foldl(fun(Command, Prev) ->
                             case Prev of
                                 {continue, PrevS} ->
                                     handle_dispatch(PrevS, Command);
                                 finito -> finito
                             end
-                    end, {continue, S}, aere_parse:eval_from_file(Inp)),
+                    end, {continue, SilentState}, aere_parse:eval_from_file(Inp)),
     case C of
-        {continue, NS} -> {success, NS};
+        {continue, NS} ->
+            { success
+            , NS#repl_state{options = NS#repl_state.options#options{silent = Silent}}};
         finito -> finito
     end;
 process_input(_, _, _) ->

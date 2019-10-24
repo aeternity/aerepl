@@ -138,6 +138,7 @@ These can be adjusted using ~:set~ commands. Currently supported options are:
 | ~aevm~                       | No args                                                    | Switches to aevm. Not maintained at all.                                       |
 | ~fate~                       | No args                                                    | Switches to fate. Default.                                                     |
 | ~state~                      | Sophia expresion                                           | See [[#in-repl-state]]                                          |
+| ~silent~                     | ~true~ or ~false~                                          | Toggles whether REPL should print non-error messages                |
 
 *** in-REPL state
 :PROPERTIES:
