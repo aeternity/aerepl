@@ -5,7 +5,7 @@
 
 -module(aerepl).
 
--export([start/0, main/1, register_includes/2]).
+-export([start/0, main/1, register_includes/2, init_state/0, process_string/2]).
 
 -include("aere_repl.hrl").
 
@@ -64,57 +64,63 @@ start() ->
 -spec repl(repl_state()) -> finito.
 repl(State) ->
     Inp = aere_parse:get_input(fun(Prompt) -> io:get_line(Prompt) end),
-    case handle_dispatch(State, aere_parse:dispatch(Inp)) of
+    case process_string(State, Inp) of
         finito -> finito;
-        {continue, NewState} ->
+        {continue, Msg, NewState} ->
+            io:format(Msg),
             repl(NewState)
     end.
 
 
+process_string(State, String) ->
+    handle_dispatch(State, aere_parse:dispatch(String)).
+
+
 handle_dispatch(State, skip) ->
-    {continue, State};
+    {continue, "", State};
 handle_dispatch(State, {ok, {Command, Args}}) ->
     try process_input(State, Command, Args) of
         {success, Output, State1 = #repl_state{options = #options{silent = Silent}}} ->
-            case Silent of
-                false -> io:format("~s~n", [aere_color:emph(Output)]);
+            Msg  = case Silent of
+                false -> io_lib:format("~s\n", [aere_color:emph(Output)]);
                 true -> ok
             end,
-            {continue, State1};
+            {continue, Msg, State1};
         {success, State1} ->
-            {continue, State1};
+            {continue, "", State1};
         skip ->
-            {continue, State};
+            {continue, "", State};
         {error, Err} ->
-            io:format("~s:~n~s~n", [aere_color:red("Error"), aere_color:emph(Err)]),
-            {continue, State};
+            Msg = io_lib:format("~s:~n~s~n", [aere_color:red("Error"), aere_color:emph(Err)]),
+            {continue, Msg, State};
         finito ->
             finito
     catch error:E ->
-            CommandStr = aere_color:blue(io_lib:format("~p", [Command])),
-            io:format("Command ~s failed:\n" ++ aere_color:red("~p\n"), [CommandStr, E]),
-            io:format("Stacktrace:\n" ++ aere_color:emph("~p") ++"\n\n", [erlang:get_stacktrace()]),
-            io:format(aere_color:red("*** This is an internal error and most likely a bug.\n")),
-            {continue, State};
+            CommandStr = lists:flatten(aere_color:blue(io_lib:format("~p", [Command]))),
+            ErStr = lists:flatten(aere_color:red(io_lib:format("~p", [E]))),
+            ErMsg = io_lib:format("Command ~s failed:\n~s\n", [CommandStr, ErStr])
+                ++ io_lib:format("Stacktrace:\n" ++ aere_color:emph("~p") ++"\n\n", [erlang:get_stacktrace()])
+                ++ aere_color:red("*** This is an internal error and most likely a bug.\n"),
+            {continue, ErMsg, State};
           {error, Err} ->
-            io:format("~s:~n~s~n", [aere_color:red("Error"), aere_color:emph(Err)]),
-            {continue, State};
+            ErMsg = io_lib:format("~s:~n~s~n", [aere_color:red("Error"), aere_color:emph(Err)]),
+            {continue, ErMsg, State};
           X ->
-            CommandStr = aere_color:blue(io_lib:format("~p", [Command])),
-            io:format("Command ~s failed with\n~p\n", [CommandStr, X]),
-            io:format(aere_color:red("*** This is an internal error and most likely a bug.\n")),
-            {continue, State}
+            CommandStr = lists:flatten(aere_color:blue(io_lib:format("~p", [Command]))),
+            ErMsg = io_lib:format("Command ~s failed with\n~p\n", [CommandStr, X])
+                ++ aere_color:red("*** This is an internal error and most likely a bug.\n"),
+            {continue, ErMsg, State}
     end;
 handle_dispatch(State, {error, {no_such_command, "wololo"}}) ->
-    put(wololo, wololo), {continue, State};
+    put(wololo, wololo), {continue, "", State};
 handle_dispatch(State, {error, {no_such_command, Command}}) ->
-    io:format("No such command " ++ aere_color:blue("~p") ++ "\n", [Command]),
-    {continue, State};
+    Msg = io_lib:format("No such command " ++ aere_color:blue("~p") ++ "\n", [Command]),
+    {continue, Msg, State};
 handle_dispatch(State, {error, {ambiguous_prefix, Propositions}}) ->
     PropsString =
         aere_color:blue(lists:flatten([io_lib:format(" ~p", [P]) || P <- Propositions])),
-    io:format("Ambiguous command prefix. Matched commands: ~s\n", [PropsString]),
-    {continue, State}.
+    Msg = io_lib:format("Ambiguous command prefix. Matched commands: ~s\n", [PropsString]),
+    {continue, Msg, State}.
 
 
 -define(ParseOptionBool(Field),
@@ -345,21 +351,20 @@ process_input(S, list, Inp) ->
                                                         S#repl_state.let_defs ++ S#repl_state.local_funs]]);
               _ -> throw({error, "I don't understand. I can print you list of: contracts, let, def, letval, letfun, names"})
           end,
-    {success, Out, S};
+    {success, Out, S}; %% TODO: zjebane
 process_input(S, load, Inp) ->
-    Silent = S#repl_state.options#options.silent,
-    SilentState = S#repl_state{options = S#repl_state.options#options{silent = true}},
-    C = lists:foldl(fun(Command, Prev) ->
+    {M, C} = lists:foldl(fun(Command, {Msgs, Prev}) ->
                             case Prev of
-                                {continue, PrevS} ->
-                                    handle_dispatch(PrevS, Command);
-                                finito -> finito
+                                {continue, Msg, PrevS} ->
+                                    {Msgs ++ lists:flatten(Msg), handle_dispatch(PrevS, Command)};
+                                finito -> {Msgs, finito}
                             end
-                    end, {continue, SilentState}, aere_parse:eval_from_file(Inp)),
+                    end, {"", {continue, "", S}}, aere_parse:eval_from_file(Inp)),
     case C of
-        {continue, NS} ->
+        {continue, _, NS} ->
             { success
-            , NS#repl_state{options = NS#repl_state.options#options{silent = Silent}}};
+            , M
+            , NS};
         finito -> finito
     end;
 process_input(_, _, _) ->
