@@ -1,6 +1,6 @@
 -module(aere_parse).
 
--export([get_input/0, dispatch/1, whitespaces/0]).
+-export([get_input/1, eval_from_file/1, dispatch/1, whitespaces/0]).
 
 -spec whitespaces() -> list(char()).
 whitespaces() ->
@@ -40,12 +40,65 @@ dispatch(Input) ->
         _ -> {ok, {default_command(), Input}}
     end.
 
--spec get_input() -> string().
-get_input() ->
-    Line = io:get_line("AESO> "),
+
+eval_from_file(File) ->
+    MC = file:read_file(File),
+    C = case MC of
+            {error, Reason} ->
+                throw({ error
+                      , case Reason of
+                            enoent -> "No such file " ++ File;
+                            eaccess -> "Permission denied";
+                            eisdir -> File ++ " is a directory";
+                            enotdir -> "Invalid path";
+                            enomem -> File ++ " is too big";
+                            _ -> "Unknown error"
+                        end
+                      });
+            {ok, F} -> binary_to_list(F)
+    end,
+    FileSpitterProcess =
+        fun R(S) ->
+                receive
+                    die -> ok;
+                    {is_eof, Back} -> Back ! (S == []),
+                                      R(S);
+                    {read, Back} ->
+                        case S of
+                            [] -> Back ! eof,
+                                  R([]);
+                            [H|T] -> Back ! H,
+                                     R(T)
+                        end
+                end
+        end,
+    Lines = [L ++ "\n" || L <- string:tokens(C, "\n")],
+    FileSpitter = spawn(fun () -> FileSpitterProcess(Lines) end),
+    FileEater =
+        fun(_) ->
+                FileSpitter ! {read, self()},
+                receive S -> S end
+        end,
+    Reads =
+        fun R() ->
+                FileSpitter ! {is_eof, self()},
+                receive
+                    true ->
+                        FileSpitter ! die,
+                        [];
+                    false ->
+                        X = get_input(FileEater),
+                        [dispatch(X) | R()]
+                end
+        end,
+    Reads().
+
+
+get_input(Provider) ->
+    Line = Provider("AESO> "),
     Inp = case Line of
               ":{\n" ->
-                  multiline_input();
+                  multiline_input(Provider);
               "" ->
                   "";
               eof -> % that's dirty
@@ -55,13 +108,13 @@ get_input() ->
           end,
     string:trim(Inp, both, whitespaces()).
 
--spec multiline_input() -> string().
-multiline_input() ->
-    multiline_input([]).
-multiline_input(Acc) ->
-    Line = io:get_line("| "),
+
+multiline_input(Provider) ->
+    multiline_input(Provider, []).
+multiline_input(Provider, Acc) ->
+    Line = Provider("| "),
     case Line of
         ":}\n" -> lists:flatten(lists:reverse(Acc));
-        _ -> multiline_input([Line|Acc])
+        _ -> multiline_input(Provider, [Line|Acc])
     end.
 
