@@ -120,15 +120,23 @@ simple_query_contract( State = #repl_state{ let_defs = LetDefs
 chained_query_contract(State = #repl_state
                        { let_defs = LetDefs
                        , local_funs = LocFuns
+                       , include_files = Includes
                        , tracked_contracts = TrackedCons
                        , user_contract_state_type = StType
                        }, Expr) ->
+    AutoImports = [binary_to_list(AI) || AI <- aeso_parser:auto_imports(Expr)],
+    WithAuto = case aerepl:register_includes(State, AutoImports -- Includes) of
+                   {success, _, S} -> S;
+                   {success, S} -> S;
+                   {error, Msg} -> throw({error, "While importing auto import: " ++ Msg})
+               end,
     Prev = contract(?PREV_CONTRACT, [decl(?GET_STATE, [], StType)]),
     Query = contract(state_init(State) ++
                          [ val_entrypoint(?USER_INPUT, with_value_refs(TrackedCons, LetDefs, Expr), full)
-              , val_entrypoint(?GET_STATE, {id, ann(), "state"})
-              ]),
-    prelude(State) ++ [Prev, with_letfuns(TrackedCons, LetDefs, LocFuns, Query)].
+                         , val_entrypoint(?GET_STATE, {id, ann(), "state"})
+                         ]),
+    prelude(WithAuto)
+        ++ [Prev, with_letfuns(TrackedCons, LetDefs, LocFuns, Query)].
 
 
 %% Contract that initializes state chaining

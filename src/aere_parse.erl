@@ -65,4 +65,3 @@ multiline_input(Acc) ->
         _ -> multiline_input([Line|Acc])
     end.
 
-

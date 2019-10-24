@@ -5,7 +5,7 @@
 
 -module(aerepl).
 
--export([start/0, main/1]).
+-export([start/0, main/1, register_includes/2]).
 
 -include("aere_repl.hrl").
 
@@ -35,12 +35,27 @@ init_state() ->
                , local_funs = []
                }.
 
+
+logo() ->
+"
+  _____             _     _
+ / ____|           | |   (_)
+| (___   ___  _ __ | |__  _  __ _
+ \\___ \\ / _ \\| '_ \\| '_ \\| |/ _` |
+ ____) | (_) | |_) | | | | | (_| |
+|_____/ \\___/| .__/|_| |_|_|\\__,_|
+             | |
+             |_|  interactive
+
+".
+
 main(_Args) ->
     start().
 
 -spec start() -> finito.
 start() ->
     erlang:system_flag(backtrace_depth, 100),
+    io:format(logo()),
     application:set_env(aecore, network_id, <<"local_lima_testnet">>),
     repl(init_state()).
 
@@ -126,10 +141,10 @@ process_input(State, include, Inp) ->
     Files = string:tokens(Inp, aere_parse:whitespaces()),
     register_includes(State, Files);
 process_input(State = #repl_state{include_files = IFiles}, reinclude, _) ->
-    register_includes(State#{ include_ast := []
-                            , include_hashes := sets:new()
-                            , include_files := []
-                            }, IFiles);
+    register_includes(State#repl_state{ include_ast = []
+                                      , include_hashes = sets:new()
+                                      , include_files = []
+                                      }, IFiles);
 process_input(State, uninclude, _) ->
     {success, "Unregistered all includes",
      State#repl_state{ include_ast = []
