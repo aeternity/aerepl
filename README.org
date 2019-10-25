@@ -4,6 +4,8 @@
 Try Sophia, test your contracts, check "what if", calculate a factorial. Completely offline,
 not depending on any remote (readonly sync may be included later).
 
+If you are not familiar with Sophia, check [[https://github.com/aeternity/protocol/blob/master/contracts/sophia.md][its documentation]] first.
+
 ** Setup
 
 Currently, to launch the REPL you need to:
