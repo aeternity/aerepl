@@ -96,8 +96,8 @@ eval_from_file(File) ->
 
 get_input(Provider) ->
     Line = Provider("AESO> "),
-    Inp = case string:trim(Line, whitespaces()) of
-              ":{\n" ->
+    Inp = case string:trim(Line, both, whitespaces()) of
+              ":{" ->
                   multiline_input(Provider);
               "" ->
                   "";
@@ -113,7 +113,7 @@ multiline_input(Provider) ->
     multiline_input(Provider, []).
 multiline_input(Provider, Acc) ->
     Line = Provider("| "),
-    case string:trim(Line, whitespaces()) of
+    case string:trim(Line, both, whitespaces()) of
         ":}" -> lists:flatten(lists:reverse(Acc));
         _ -> multiline_input(Provider, [Line|Acc])
     end.
