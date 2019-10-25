@@ -190,3 +190,5 @@ AESO> :{
 :}
 2138
 #+END_SRC
+
+The lines with ~:{~ and ~:}~ symbols cannot contain any other non-white characters.
