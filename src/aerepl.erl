@@ -72,6 +72,8 @@ repl(State) ->
     end.
 
 
+process_string(State, String) when is_binary(String) ->
+    process_string(State, binary_to_list(String));
 process_string(State, String) ->
     handle_dispatch(State, aere_parse:dispatch(String)).
 
@@ -83,7 +85,7 @@ handle_dispatch(State, {ok, {Command, Args}}) ->
         {success, Output, State1 = #repl_state{options = #options{silent = Silent}}} ->
             Msg  = case Silent of
                 false -> io_lib:format("~s\n", [aere_color:emph(Output)]);
-                true -> ok
+                true -> ""
             end,
             {continue, Msg, State1};
         {success, State1} ->
@@ -96,8 +98,8 @@ handle_dispatch(State, {ok, {Command, Args}}) ->
         finito ->
             finito
     catch error:E ->
-            CommandStr = lists:flatten(aere_color:blue(io_lib:format("~p", [Command]))),
-            ErStr = lists:flatten(aere_color:red(io_lib:format("~p", [E]))),
+            CommandStr = aere_color:blue(lists:flatten(io_lib:format("~p", [Command]))),
+            ErStr = aere_color:red(lists:flatten(io_lib:format("~p", [E]))),
             ErMsg = io_lib:format("Command ~s failed:\n~s\n", [CommandStr, ErStr])
                 ++ io_lib:format("Stacktrace:\n" ++ aere_color:emph("~p") ++"\n\n", [erlang:get_stacktrace()])
                 ++ aere_color:red("*** This is an internal error and most likely a bug.\n"),
@@ -351,20 +353,22 @@ process_input(S, list, Inp) ->
                                                         S#repl_state.let_defs ++ S#repl_state.local_funs]]);
               _ -> throw({error, "I don't understand. I can print you list of: contracts, let, def, letval, letfun, names"})
           end,
-    {success, Out, S}; %% TODO: zjebane
+    {success, Out, S};
 process_input(S, load, Inp) ->
-    {M, C} = lists:foldl(fun(Command, {Msgs, Prev}) ->
+    Agg = lists:foldl(fun(Command, Prev) ->
                             case Prev of
-                                {continue, Msg, PrevS} ->
-                                    {Msgs ++ lists:flatten(Msg), handle_dispatch(PrevS, Command)};
-                                finito -> {Msgs, finito}
+                                {continue, Msgs, PrevS} ->
+                                    case handle_dispatch(PrevS, Command) of
+                                        {continue, Msg, NewS} ->
+                                            {continue, Msgs ++ Msg, NewS};
+                                        finito -> finito
+                                    end;
+                                finito -> finito
                             end
-                    end, {"", {continue, "", S}}, aere_parse:eval_from_file(Inp)),
-    case C of
-        {continue, _, NS} ->
-            { success
-            , M
-            , NS};
+                    end, {continue, "", S}, aere_parse:eval_from_file(Inp)),
+    case Agg of
+        {continue, M, NS} ->
+            {success, string:trim(M), NS};
         finito -> finito
     end;
 process_input(_, _, _) ->
