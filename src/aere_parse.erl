@@ -8,17 +8,14 @@ whitespaces() ->
 
 -spec commands() -> list(aere_repl:command()).
 commands() ->
-    [ quit, type, eval, include, reinclude, cd, pwd
-    , uninclude, set, load, deploy, 'let', def, unlet, undef, undeploy, rm, list].
+    [ quit, type, eval, include, reinclude, cd, pwd, ls
+    , uninclude, set, load, deploy, unlet, undef, undeploy, rm, list].
 
--spec default_command() -> aere_repl:command().
-default_command() ->
-    eval.
 
 -spec dispatch(string()) -> {ok, {aere_repl:command(), string()}}
                           | skip
                           | {error, {no_such_command, string()}
-                                  | {ambiguous_prefix, list(aere_repl:command())}}.
+                          | {ambiguous_prefix, list(aere_repl:command())}}.
 dispatch(Input) ->
     case Input of
         [] ->
@@ -37,7 +34,7 @@ dispatch(Input) ->
                             false -> {error, {ambiguous_prefix, [list_to_existing_atom(C) || C <- More]}}
                         end
             end;
-        _ -> {ok, {default_command(), Input}}
+        _ -> {ok, {eval, Input}}
     end.
 
 

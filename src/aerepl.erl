@@ -39,15 +39,15 @@ init_state() ->
 
 logo() ->
 "
-   ____
-  / __ | ,             _     _
- / / |_|  )           | |   (_)
-( (_____,-` ___  _ __ | |__  _  __ _
- \\______ \\ / _ \\| '_ \\| '_ \\| |/ _` |
- ,-`    ) ) (_) | |_) | | | | | (_| |
-(  ____/ / \\___/| .__/|_| |_|_|\\__,_|
- `(_____/       | |
-                |_|  interactive
+    ____
+   / __ | ,             _     _
+  / / |_|  )           | |   (_)
+ ( (_____,-` ___  _ __ | |__  _  __ _
+  \\______ \\ / _ \\| '_ \\| '_ \\| |/ _` |
+  ,-`    ) ) (_) | |_) | | | | | (_| |
+ (  ____/ / \\___/| .__/|_| |_|_|\\__,_|
+  `(_____/       | |
+                 |_|  interactive
 
 ".
 
@@ -151,10 +151,22 @@ process_input(State, type, I) ->
     {_, Type} = aere_sophia:type_of(TAst, ?USER_INPUT),
     {success, aeso_ast_infer_types:pp_type("", Type), State};
 process_input(State, eval, I) ->
-    Expr = aere_sophia:parse_body(I),
-    Mock = aere_mock:chained_query_contract(State, Expr),
-    {NewState, Res} = eval_contract(I, Mock, State),
-    {success, io_lib:format("~s", [Res]), NewState};
+    case aere_sophia:parse_top(I) of
+        {body, Body} ->
+            Mock = aere_mock:chained_query_contract(State, Body),
+            {NewState, Res} = eval_contract(I, Mock, State),
+            {success, io_lib:format("~s", [Res]), NewState};
+        {include, _, Inc} ->
+            register_includes(State, [Inc]);
+        TDc when element(1, TDc) =:= type_decl ->
+            throw({error, "You cannot declare types here."});
+        TDf when element(1, TDf) =:= type_def ->
+            throw({error, "You cannot define types here."});
+        Con when element(1, Con) =:= contract ->
+            throw({error, "You cannot define contracts here. Maybe consider :dep?"});
+        Ns when element(1, Ns) =:= namespace ->
+            throw({error, "You cannot define namespaces here."})
+    end;
 process_input(State, include, Inp) ->
     Files = string:tokens(Inp, aere_parse:whitespaces()),
     register_includes(State, Files);
@@ -285,7 +297,7 @@ process_input(State = #repl_state{ options = Opts
                                  , chain_state = S0
                                  }, 'let', Inp) ->
     case aere_sophia:parse_letdef(Inp) of
-        {letval, _, {id, _, Name}, _, Body} ->
+        {letval, _, {id, _, Name}, Body} ->
             check_name_conflicts(State, Name, [letfun_local]),
             Provider = aere_mock:letdef_provider(State, Name, Body),
             TProvider = aere_sophia:typecheck(Provider),
@@ -465,8 +477,10 @@ register_includes(State = #repl_state{ include_ast = Includes
                                        , include_hashes = NewHashes
                                        , include_files  = Files ++ PrevFiles
                                        },
-            aere_sophia:typecheck(
-                  aere_mock:simple_query_contract(NewState, {id, [], "state"})),
+
+            MockForTc = aere_mock:simple_query_contract(NewState, {id, [], "state"}),
+            aere_sophia:typecheck(MockForTc),
+
             Colored = aere_color:yellow(lists:flatten([" " ++ F || F <- Files])),
             IncludeWord = case Files of
                               []  -> "nothing";
@@ -486,10 +500,10 @@ build_deploy_contract(Src, TypedAst, Args, Options = #options{backend = Backend}
 
 
 deploy_contract(ByteCode, Args, Options, S0) ->
-    aere_runtime:state(S0),
+    aere_chain:state(S0),
     Serialized = aect_sophia:serialize(ByteCode, aere_version:contract_version()),
-    {Owner, S1} = aere_runtime:new_account(100000021370000999, S0),
-    try aere_runtime:create_contract(Owner, Serialized, Args, Options, S1)
+    {Owner, S1} = aere_chain:new_account(100000021370000999, S0),
+    try aere_chain:create_contract(Owner, Serialized, Args, Options, S1)
     catch error:{failed_contract_create, Reason} ->
             ReasonS = if is_binary(Reason) -> binary_to_list(Reason);
                          is_list(Reason) -> Reason;
@@ -506,9 +520,9 @@ eval_contract(Src, Ast, State = #repl_state{options = Options}) ->
                                         , element(2, aere_sophia:type_of(TypedAst, ?USER_INPUT))),
     S0 = State#repl_state.chain_state,
     {{Con, GasDeploy}, S1} = build_deploy_contract(Src, TypedAst, {}, Options, S0),
-    {Owner, S2} = aere_runtime:new_account(100000021370000999, S1),
+    {Owner, S2} = aere_chain:new_account(100000021370000999, S1),
     {{Resp, GasCall}, S3} =
-        aere_runtime:call_contract( Owner, Con, list_to_binary(?USER_INPUT)
+        aere_chain:call_contract( Owner, Con, list_to_binary(?USER_INPUT)
                                   , RetType, {}, Options, S2),
 
     PPResp = prettypr:format(aere_response:pp_response(Resp)),

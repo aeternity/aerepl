@@ -1,4 +1,4 @@
--module(aere_runtime).
+-module(aere_chain).
 
 -include("../apps/aecontract/include/aecontract.hrl").
 -include("../apps/aecore/include/blocks.hrl").

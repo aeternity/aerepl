@@ -199,10 +199,11 @@ letdef_provider_decls(LetDefs, LocFun) ->
 letval_defs(LetDefs) ->
     letval_defs(LetDefs, #{}).
 letval_defs(LetDefs, ProviderNaming) ->
-    [ { letval, ann(), {id, ann(), Name}, Type
-      , call_to_remote( ProviderRef
-                      , maps:get(Name, ProviderNaming, ?LETDEF_PROVIDER_DECL(Name))
-                      , ?LETVAL_GETTER(Name))}
+    [ { letval, ann(), {id, ann(), Name}
+      , { typed, ann(), call_to_remote( ProviderRef
+                                      , maps:get(Name, ProviderNaming, ?LETDEF_PROVIDER_DECL(Name))
+                                      , ?LETVAL_GETTER(Name))
+        , Type}}
       || {Name, {letval, ProviderRef, Type}} <- LetDefs].
 
 
@@ -217,8 +218,8 @@ letfun_defs(LetDefs) ->
 
 %% References to contracts with their types
 contract_refs(Contracts) ->
-    [ { letval, ann(), {id, ann(), Name}, ConName
-      , {contract_pubkey, ann(), ConRef}}
+    [ { letval, ann(), {id, ann(), Name}
+      , {typed, ann(), {contract_pubkey, ann(), ConRef}, ConName}}
       || {Name, {tracked_contract, ConRef, ConName, _}} <- Contracts
     ].
 

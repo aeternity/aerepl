@@ -1,10 +1,11 @@
 -module(aere_sophia).
 
 -export([ typecheck/1, parse_file/2, parse_file/3, compile_contract/3
-        , parse_body/1, parse_letdef/1, parse_type/1, type_of/2
+        , parse_body/1, parse_decl/1, parse_top/1, parse_type/1, type_of/2
         , generate_interface_decl/1, process_err/1
         ]).
 
+-include("../_build/default/lib/aesophia/src/aeso_parse_lib.hrl").
 -include("aere_repl.hrl").
 
 process_err(Errs) when is_list(Errs) ->
@@ -89,12 +90,20 @@ to_bytecode([], _) -> [].
 
 
 -define(with_error_handle(X), try X catch {error, Errs} -> process_err(Errs) end).
+parse_top(I) ->
+    Top = aeso_parse_lib:choice([
+                                 aeso_parser:decl(),
+                                 ?RULE(aeso_parser:type(), {type, _1}),
+                                 ?RULE(aeso_parser:body(), {body, _1})
+                                ]),
+
+    ?with_error_handle(aeso_parser:run_parser(Top, I)).
+parse_decl(I) ->
+    ?with_error_handle(aeso_parser:run_parser(aeso_parser:decl(), I)).
 parse_body(I) ->
-    ?with_error_handle(aeso_parser:body(I)).
+    ?with_error_handle(aeso_parser:run_parser(aeso_parser:body(), I)).
 parse_type(I) ->
-    ?with_error_handle(aeso_parser:type(I)).
-parse_letdef(I) ->
-    ?with_error_handle(aeso_parser:letdef(I)).
+    ?with_error_handle(aeso_parser:run_parser(aeso_parser:type(), I)).
 parse_file(I, Opts) ->
     parse_file(I, sets:new(), Opts).
 parse_file(I, Includes, Opts) ->
@@ -114,8 +123,10 @@ get_funs_decls(Funs) ->
 get_funs_decls([], Acc) ->
     Acc;
 get_funs_decls([{letfun, Ann, Name, Args, RetType, _}|Rest], Acc) ->
-    TArgs = [T || {arg, _, _, T} <- Args],
+    TArgs = [T || {typed, _, _, T} <- Args],
     get_funs_decls(Rest, [{fun_decl, Ann, Name, {fun_t, Ann, [], TArgs, RetType}}|Acc]);
+get_funs_decls([{fun_clauses, Ann, Name, Type, _Bodies}|Rest], Acc) ->
+    get_funs_decls(Rest, [{fun_decl, Ann, Name, Type}|Acc]);
 get_funs_decls([Decl | Rest], Acc) when element(1, Decl) =:= fun_decl
                                         orelse element(1, Decl) =:= type_decl
                                         orelse element(1, Decl) =:= type_def
