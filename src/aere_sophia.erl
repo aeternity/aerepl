@@ -2,7 +2,7 @@
 
 -export([ typecheck/1, parse_file/2, parse_file/3, compile_contract/3
         , parse_body/1, parse_decl/1, parse_top/1, parse_type/1, type_of/2
-        , generate_interface_decl/1, process_err/1
+        , generate_interface_decl/1, process_err/1, get_pat_ids/1
         ]).
 
 -include("../_build/default/lib/aesophia/src/aeso_parse_lib.hrl").
@@ -91,11 +91,14 @@ to_bytecode([], _) -> [].
 
 -define(with_error_handle(X), try X catch {error, Errs} -> process_err(Errs) end).
 parse_top(I) ->
-    Top = aeso_parse_lib:choice([
-                                 aeso_parser:decl(),
-                                 ?RULE(aeso_parser:type(), {type, _1}),
-                                 ?RULE(aeso_parser:body(), {body, _1})
-                                ]),
+    Top = aeso_parse_lib:choice
+            ([ aeso_parser:maybe_block(aeso_parser:decl()),
+               ?LET_P(Stmts, aeso_parser:maybe_block(aeso_parser:stmt()),
+                      case lists:all(fun(X) -> element(1, X) =:= letval end, Stmts) of
+                          true -> aeso_parse_lib:fail();
+                          false -> {body, Stmts}
+                      end)
+             ]),
 
     ?with_error_handle(aeso_parser:run_parser(Top, I)).
 parse_decl(I) ->
@@ -134,4 +137,20 @@ get_funs_decls([Decl | Rest], Acc) when element(1, Decl) =:= fun_decl
     get_funs_decls(Rest, [Decl | Acc]).
 
 
+
+get_pat_ids({app, _, _, Pts}) ->
+    [I || P <- Pts, I <- get_pat_ids(P)];
+get_pat_ids({tuple, _, Pts}) ->
+    [I || P <- Pts, I <- get_pat_ids(P)];
+get_pat_ids({list, _, Pts}) ->
+    [I || P <- Pts, I <- get_pat_ids(P)];
+get_pat_ids({typed, _, P, _}) ->
+    get_pat_ids(P);
+get_pat_ids({record, _, Flds}) ->
+    [I || {field, _, _, P} <- Flds, I <- get_pat_ids(P)] ++
+        [I || {field, _, _, _, P} <- Flds, I <- get_pat_ids(P)];
+get_pat_ids({id, _, I}) ->
+    [I];
+get_pat_ids(_) ->
+    [].
 

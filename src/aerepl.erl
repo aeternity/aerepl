@@ -32,12 +32,13 @@ init_state() ->
                , user_contract_state_type = {tuple_t, [], []}
                , user_contracts = []
                , tracked_contracts = []
-               , let_defs = []
-               , local_funs = []
+               , letvals = []
+               , letfuns = []
+               , supply = 0
                }.
 
 
-logo() ->
+banner() ->
 "
     ____
    / __ | ,             _     _
@@ -57,7 +58,7 @@ main(_Args) ->
 -spec start() -> finito.
 start() ->
     erlang:system_flag(backtrace_depth, 100),
-    io:format(logo()),
+    io:format(banner()),
     application:set_env(aecore, network_id, <<"local_lima_testnet">>),
     repl(init_state()).
 
@@ -154,10 +155,15 @@ process_input(State, eval, I) ->
     case aere_sophia:parse_top(I) of
         {body, Body} ->
             Mock = aere_mock:chained_query_contract(State, Body),
+            io:format("****\n\n\n~p\n\n\n****\n", [Mock]),
             {NewState, Res} = eval_contract(I, Mock, State),
             {success, io_lib:format("~s", [Res]), NewState};
-        {include, _, Inc} ->
-            register_includes(State, [Inc]);
+        [{include, _, {string, _, Inc}}] ->
+            register_includes(State, [binary_to_list(Inc)]);
+        [{letval, _, Pat, Expr}] -> register_letval(State, Pat, Expr);
+        {fundecl, _, Name, Type} -> ok;
+        {letfun, _, Name, Args, RetType, Body} -> ok;
+        {block, _, Funs} -> ok;
         TDc when element(1, TDc) =:= type_decl ->
             throw({error, "You cannot declare types here."});
         TDf when element(1, TDf) =:= type_def ->
@@ -195,7 +201,7 @@ process_input(State = #repl_state{options = Opts}, set, Inp) ->
                       , Opts#options{backend = aevm}};
             "fate" -> {options, Opts#options{backend = fate}};
             "state" ->
-                State1 = State#repl_state{local_funs = []},
+                State1 = State#repl_state{letfuns = []},
                 Expr = aere_sophia:parse_body(Val),
                 TExprAst = aere_sophia:typecheck(aere_mock:simple_query_contract(State1, Expr)),
                 {_, Type} = aere_sophia:type_of(TExprAst, ?USER_INPUT),
@@ -293,55 +299,54 @@ process_input(State = #repl_state{ tracked_contracts = Contracts
             , NewState};
         {error, _} -> throw({error, "Could not load file " ++ aere_color:yellow(File)})
     end;
-process_input(State = #repl_state{ options = Opts
-                                 , chain_state = S0
-                                 }, 'let', Inp) ->
-    case aere_sophia:parse_letdef(Inp) of
-        {letval, _, {id, _, Name}, Body} ->
-            check_name_conflicts(State, Name, [letfun_local]),
-            Provider = aere_mock:letdef_provider(State, Name, Body),
-            TProvider = aere_sophia:typecheck(Provider),
-            {[], Type} = aere_sophia:type_of(TProvider, ?LETVAL_GETTER(Name)),
-            {{Ref, _}, S1} = build_deploy_contract(Inp, TProvider, {}, Opts, S0),
-            NewState = register_letdef( State#repl_state{ chain_state = S1}
-                                      , Name, {letval, Ref, Type});
-        {letfun, _, {id, _, Name}, Args, _, Body} ->
-            check_name_conflicts(State, Name, [letfun_local]),
-            State1 = State#repl_state{
-                       let_defs = [L || L = {N, Def} <- State#repl_state.let_defs,
-                                         element(1, Def) =:= letval orelse N =/= Name
-                                  ]},
-            Provider = aere_mock:letdef_provider(State1, Name, Args, Body),
-            TProvider = aere_sophia:typecheck(Provider),
-            {ArgsT, RetT} = aere_sophia:type_of(TProvider, Name),
-            {{Ref, _}, S1} = build_deploy_contract(Inp, TProvider, {}, Opts, S0),
-            NewState = register_letdef( State1#repl_state{ chain_state = S1}
-                                      , Name, {letfun, Ref, Args, {ArgsT, RetT}})
-    end,
-    {success, NewState};
-process_input(State = #repl_state{ local_funs = LocFuns
-                                 , let_defs = LetDefs
-                                 }, def, Inp) ->
-    case aere_sophia:parse_letdef(Inp) of
-        {letfun, _, {id, _, Name}, Args, _, Body} ->
-            check_name_conflicts(State, Name, [letfun_local, letfun]),
-            LetDefs1 = proplists:delete(Name, LetDefs),  % remove letval
-            State1 = State#repl_state
-                { local_funs = [{Name, {letfun_local, Args, Body, LetDefs1}} | LocFuns]
-                , let_defs = LetDefs1
-                },
-            TestMock = aere_mock:chained_query_contract
-                         ( State1#repl_state{let_defs = [L || L = {letval, _, _} <- LetDefs1]}
-                        , {id, aere_mock:ann(), "state"}),
-            aere_sophia:typecheck(TestMock),
-            {success, State1};
-        {letval, _, _, _, _} -> throw({error, "Use :let to define constants"})
-    end;
+%% process_input(State = #repl_state{ options = Opts
+%%                                  , chain_state = S0
+%%                                  }, 'let', Inp) ->
+%%     case aere_sophia:parse_letdef(Inp) of
+%%         {letval, _, {id, _, Name}, Body} ->
+%%             check_name_conflicts(State, Name, [letfun_local]),
+%%             Provider = aere_mock:letdef_provider(State, Name, Body),
+%%             TProvider = aere_sophia:typecheck(Provider),
+%%             {[], Type} = aere_sophia:type_of(TProvider, ?LETVAL_GETTER(Name)),
+%%             {{Ref, _}, S1} = build_deploy_contract(Inp, TProvider, {}, Opts, S0),
+%%             NewState = register_letdef( State#repl_state{ chain_state = S1}
+%%                                       , Name, {letval, Ref, Type});
+%%         {letfun, _, {id, _, Name}, Args, _, Body} ->
+%%             check_name_conflicts(State, Name, [letfun_local]),
+%%             State1 = State#repl_state{
+%%                        letvals = [L || L = {N, Def} <- State#repl_state.letvals,
+%%                                          element(1, Def) =:= letval orelse N =/= Name
+%%                                   ]},
+%%             Provider = aere_mock:letdef_provider(State1, Name, Args, Body),
+%%             TProvider = aere_sophia:typecheck(Provider),
+%%             {ArgsT, RetT} = aere_sophia:type_of(TProvider, Name),
+%%             {{Ref, _}, S1} = build_deploy_contract(Inp, TProvider, {}, Opts, S0),
+%%             NewState = register_letdef( State1#repl_state{ chain_state = S1}
+%%                                       , Name, {letfun, Ref, Args, {ArgsT, RetT}})
+%%     end,
+%%     {success, NewState};
+%% process_input(State = #repl_state{ letfuns = LocFuns
+%%                                  , letvals = LetDefs
+%%                                  }, def, Inp) ->
+%%     case aere_sophia:parse_letdef(Inp) of
+%%         {letfun, _, {id, _, Name}, Args, _, Body} ->
+%%             check_name_conflicts(State, Name, [letfun_local, letfun]),
+%%             LetDefs1 = proplists:delete(Name, LetDefs),  % remove letval
+%%             State1 = State#repl_state
+%%                 { letfuns = [{Name, {letfun_local, Args, Body, LetDefs1}} | LocFuns]
+%%                 , letvals = LetDefs1
+%%                 },
+%%             TestMock = aere_mock:chained_query_contract
+%%                          ( State1#repl_state{letvals = [L || L = {letval, _, _} <- LetDefs1]}
+%%                         , {id, aere_mock:ann(), "state"}),
+%%             aere_sophia:typecheck(TestMock),
+%%             {success, State1};
+%%         {letval, _, _, _, _} -> throw({error, "Use :let to define constants"})
+%%     end;
 process_input(State, unlet, Inp) ->
-    check_name_conflicts(State, Inp, [free]),
-    {success, unregister_letdef(State, Inp)};
+    check_name_conflicts(State, Inp, [free]); %% TODO
 process_input(State, undef, "") ->
-    {success, State#repl_state{local_funs = []}};
+    {success, State#repl_state{letfuns = []}};
 process_input(_, undef, _) ->
     throw({error, "Arguments are not expected here"});
 process_input(State, undeploy, Inp) ->
@@ -356,16 +361,17 @@ process_input(S, cd, Inp) ->
     shell_default:cd(Inp),
     {success, S};
 process_input(S, list, Inp) ->
-    Out = case Inp of
-              "contracts" -> io_lib:format("~p", [[N || {N, _} <- S#repl_state.tracked_contracts]]);
-              "let" -> io_lib:format("~p", [[N || {N, _} <- S#repl_state.let_defs]]);
-              "def" -> io_lib:format("~p", [[N || {N, _} <- S#repl_state.local_funs]]);
-              "letval" -> io_lib:format("~p", [[N || {N, L} <- S#repl_state.let_defs, element(1, L) =:= letval]]);
-              "letfun" -> io_lib:format("~p", [[N || {N, L} <- S#repl_state.let_defs, element(1, L) =:= letfun]]);
-              "names" -> io_lib:format("~p", [[N || {N, _} <- S#repl_state.tracked_contracts ++
-                                                        S#repl_state.let_defs ++ S#repl_state.local_funs]]);
-              _ -> throw({error, "I don't understand. I can print you list of: contracts, let, def, letval, letfun, names"})
-          end,
+    Out =
+        case Inp of
+            "contracts" -> io_lib:format("~p", [[N || {N, _} <- S#repl_state.tracked_contracts]]);
+            "let" -> io_lib:format("~p", [[N || {N, _} <- S#repl_state.letvals]]);
+            "def" -> io_lib:format("~p", [[N || {N, _} <- S#repl_state.letfuns]]);
+            "letval" -> io_lib:format("~p", [[N || {N, L} <- S#repl_state.letvals, element(1, L) =:= letval]]);
+            "letfun" -> io_lib:format("~p", [[N || {N, L} <- S#repl_state.letvals, element(1, L) =:= letfun]]);
+            "names" -> io_lib:format("~p", [[N || {N, _} <- S#repl_state.tracked_contracts ++
+                                                        S#repl_state.letvals ++ S#repl_state.letfuns]]);
+            _ -> throw({error, "I don't understand. I can print you list of: contracts, let, def, letval, letfun, names"})
+        end,
     {success, Out, S};
 process_input(S, load, Inp) ->
     Agg = lists:foldl(fun(Command, Prev) ->
@@ -387,27 +393,35 @@ process_input(S, load, Inp) ->
 process_input(_, _, _) ->
     throw({error, "This command is not defined yet (but should be)."}).
 
+register_letval(S0 = #repl_state{letvals = Letvals, options = Opts, chain_state = CS0}, Pat, Expr) ->
+    {S1, PName} = make_provider_name(S0, Pat),
+    Provider = aere_mock:letval_provider(S0, PName, Expr),
+    TProvider = aere_sophia:typecheck(Provider),
+    {[], Type} = aere_sophia:type_of(TProvider, ?LETVAL_GETTER(PName)),
+    {{Ref, _}, CS1} = build_deploy_contract("no_source", TProvider, {}, Opts, CS0),
+    S2 = S1#repl_state{letvals = [{{PName, Ref}, {letval, Pat, Type}}|Letvals],
+                       chain_state = CS1
+                      },
+    {success, S2}.
 
-unregister_letdef(State = #repl_state{let_defs = LetDefs}, Name) ->
-    State#repl_state{let_defs = proplists:delete(Name, LetDefs)}.
-
-
-register_letdef(State = #repl_state{let_defs = LetDefs}, Name, Def) ->
-    State#repl_state{let_defs = proplists:delete(Name, LetDefs) ++ [{Name, Def}]}.
+make_provider_name(S0, Pat) ->
+    Ids = aere_sophia:get_pat_ids(Pat),
+    {S1, Sup} = next_sup(S0),
+    {S1, string:join(Ids, "_") ++ io_lib:format("~p", [Sup])}.
 
 
 unregister_contract(State = #repl_state{tracked_contracts = Cons}, Name) ->
     State#repl_state{tracked_contracts = proplists:delete(Name, Cons)}.
 
 
-free_name(State, Name) ->
-    check_name_conflicts(State, Name, [free, letfun_local]),
-    unregister_contract(unregister_letdef(State, Name), Name).
+free_name(State, Name) -> ok.
+    %% check_name_conflicts(State, Name, [free, letfun_local]),
+    %% unregister_contract(unregister_letdef(State, Name), Name).
 
 
 name_status(#repl_state
-            { let_defs = LetDefs
-            , local_funs = LocFuns
+            { letvals = LetDefs
+            , letfuns = LocFuns
             , tracked_contracts = TCons
             }, Name) ->
     % Beware, the state-of-the-art solution is approaching!
@@ -431,11 +445,6 @@ check_name_conflicts(State, Name, Conflicts) ->
     case lists:member(Status, Conflicts) of
         true ->
             case Status of
-                letfun_local ->
-                    throw({error,
-                           "This name already belongs to a def-function\n"
-                           "Use different name or clear def-function index by typing :undef"
-                          });
                 letfun ->
                     throw({error,
                            "This name already belongs to a let-function\n"
@@ -554,3 +563,5 @@ build_type_map(Scope, [{type_def, _, {id, _, Name}, Args, {record_t, Fields}} | 
 build_type_map(Scope, [_|Rest], Acc) ->
     build_type_map(Scope, Rest, Acc).
 
+next_sup(State = #repl_state{supply=S}) ->
+    {State#repl_state{supply=S+1}, S}.

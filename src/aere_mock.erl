@@ -10,7 +10,7 @@
 -export([ chained_query_contract/2
         , chained_initial_contract/3
         , simple_query_contract/2
-        , letdef_provider/3, letdef_provider/4
+        , letval_provider/3
         , ann/0
         ]).
 
@@ -106,25 +106,24 @@ state_init(#repl_state
 
 
 %% Contract that evals Expr and does not chain state
-simple_query_contract( State = #repl_state{ let_defs = LetDefs
-                                          , local_funs = LocFuns
+simple_query_contract( State = #repl_state{ letvals = LetDefs
                                           , tracked_contracts = TrackedCons
                                           }, Expr) ->
     Con = contract(
             [val_entrypoint( ?USER_INPUT
                            , with_value_refs(TrackedCons, LetDefs, Expr), full)]),
-    prelude(State) ++ [with_letfuns(TrackedCons, LetDefs, LocFuns, Con)].
+    prelude(State) ++ [Con].
 
 
 %% Contract that evals expression and chains state if it makes sense
 chained_query_contract(State = #repl_state
-                       { let_defs = LetDefs
-                       , local_funs = LocFuns
+                       { letvals = LetDefs
                        , include_files = Includes
                        , tracked_contracts = TrackedCons
                        , user_contract_state_type = StType
-                       }, Expr) ->
-    AutoImports = [binary_to_list(AI) || AI <- aeso_parser:auto_imports(Expr)],
+                       }, Stmts) ->
+    Body = {block, ann(), Stmts},
+    AutoImports = [binary_to_list(AI) || AI <- aeso_parser:auto_imports(Body)],
     WithAuto = case aerepl:register_includes(State, AutoImports -- Includes) of
                    {success, _, S} -> S;
                    {success, S} -> S;
@@ -132,89 +131,53 @@ chained_query_contract(State = #repl_state
                end,
     Prev = contract(?PREV_CONTRACT, [decl(?GET_STATE, [], StType)]),
     Query = contract(state_init(State) ++
-                         [ val_entrypoint(?USER_INPUT, with_value_refs(TrackedCons, LetDefs, Expr), full)
+                         [ val_entrypoint(?USER_INPUT, with_value_refs(TrackedCons, LetDefs, Body), full)
                          , val_entrypoint(?GET_STATE, {id, ann(), "state"})
                          ]),
-    prelude(WithAuto)
-        ++ [Prev, with_letfuns(TrackedCons, LetDefs, LocFuns, Query)].
+    prelude(WithAuto) ++ [Prev, Query].
 
 
 %% Contract that initializes state chaining
-chained_initial_contract(State = #repl_state{ let_defs = LetDefs
-                                            , local_funs = LocFuns
+chained_initial_contract(State = #repl_state{ letvals = LetDefs
                                             , tracked_contracts = TrackedCons
                                             }, Expr, Type) ->
-    Con = with_letfuns(TrackedCons, LetDefs, LocFuns,
-                       contract([ typedef("state", Type)
-                                , val_entrypoint("init", with_value_refs(TrackedCons, LetDefs, Expr))
-                                , val_entrypoint(?GET_STATE, {id, ann(), "state"})
-                                ])),
+    Con = contract([ typedef("state", Type)
+                   , val_entrypoint("init", with_value_refs(TrackedCons, LetDefs, Expr))
+                   , val_entrypoint(?GET_STATE, {id, ann(), "state"})
+                   ]),
     prelude(State) ++ [Con].
 
 
-%% Contract that exposes value/function via entrypoint.
+%% Contract that exposes value via entrypoint.
 %% Not stateful nor payable, but remembers already defined values.
-letdef_provider(State = #repl_state{ let_defs = LetDefs
-                                   , local_funs = LocFuns
+letval_provider(State = #repl_state{ letvals = LetDefs
                                    , tracked_contracts = TrackedCons
                                    , user_contract_state_type = StType
                                    }, Name, Body) ->
     Prev = contract(?PREV_CONTRACT, [decl(?GET_STATE, [], StType)]),
-    Con = contract(?LETDEF_PROVIDER(Name)
+    Con = contract(?LETVAL_PROVIDER(Name)
                   , [val_entrypoint( ?LETVAL_GETTER(Name)
                                    , with_value_refs(TrackedCons, LetDefs, Body))|state_init(State)]
                   ),
-    prelude(State) ++ [Prev, with_letfuns(TrackedCons, LetDefs, LocFuns, Con)].
-letdef_provider(State = #repl_state{ let_defs = LetDefs
-                                   , local_funs = LocFuns
-                                   , tracked_contracts = TrackedCons
-                                   , user_contract_state_type = StType
-                                   }, Name, Args, Body) ->
-    Prev = contract(?PREV_CONTRACT, [decl(?GET_STATE, [], StType)]),
-    Con = contract(?LETDEF_PROVIDER(Name)
-                    , [entrypoint( Name
-                                 , Args, with_value_refs(TrackedCons, LetDefs, Body))|state_init(State)]
-                  ),
-    prelude(State) ++ [Prev, with_letfuns(TrackedCons, LetDefs, LocFuns, Con)].
+    prelude(State) ++ [Prev, Con].
 
 
-%% Declarations of providers of values/fuctions
-letdef_provider_decls(LetDefs, LocFun) ->
-    Vals = [contract( ?LETDEF_PROVIDER_DECL(Name)
-                    , [decl(?LETVAL_GETTER(Name), [], Type)])
-            || {Name, {letval, _, Type}} <- LetDefs
-           ],
-    VLoc = [contract( ?LETDEF_PROVIDER_DECL(?ADD_OWNER(FName, Name))
-                    , [decl(?LETVAL_GETTER(Name), [], Type)])
-            || {FName, {letfun_local, _, _, LetDefsFun}} <- LocFun,
-               {Name, {letval, _, Type}} <- LetDefsFun
-           ],
-    Funs = [contract(?LETDEF_PROVIDER_DECL(Name), [decl(Name, ArgTs, RetT)])
-            || {Name, {letfun, _, _, {ArgTs, RetT}}} <- LetDefs
-           ],
-    Funs ++ Vals ++ VLoc.
+%% Declarations of providers of values
+letdef_provider_decls(LetDefs) ->
+    [contract( ?LETVAL_PROVIDER_DECL(Name)
+             , [decl(?LETVAL_GETTER(Name), [], Type)])
+     || {{Name, _}, {letval, _, Type}} <- LetDefs
+    ].
 
 
 %% let-statements that refer to value providers
-letval_defs(LetDefs) ->
-    letval_defs(LetDefs, #{}).
-letval_defs(LetDefs, ProviderNaming) ->
-    [ { letval, ann(), {id, ann(), Name}
-      , { typed, ann(), call_to_remote( ProviderRef
-                                      , maps:get(Name, ProviderNaming, ?LETDEF_PROVIDER_DECL(Name))
-                                      , ?LETVAL_GETTER(Name))
+letval_defs(LetVals) ->
+    [ { letval, ann(), Pat
+      , { typed, ann(), call_to_remote( ProvRef
+                                      , ?LETVAL_PROVIDER_DECL(Provider)
+                                      , ?LETVAL_GETTER(Provider))
         , Type}}
-      || {Name, {letval, ProviderRef, Type}} <- LetDefs].
-
-
-%% Entrypoints that pass the calls to function providers
-letfun_defs(LetDefs) ->
-    [ entrypoint(Name, Args
-                , call_to_remote( ProviderRef, ?LETDEF_PROVIDER_DECL(Name)
-                                , Name
-                                , [Id || {arg, _, Id, _} <- Args]))
-      || {Name, {letfun, ProviderRef, Args, _}} <- LetDefs].
-
+      || {{Provider, ProvRef}, {letval, Pat, Type}} <- lists:reverse(LetVals)].
 
 %% References to contracts with their types
 contract_refs(Contracts) ->
@@ -223,36 +186,14 @@ contract_refs(Contracts) ->
       || {Name, {tracked_contract, ConRef, ConName, _}} <- Contracts
     ].
 
-
-%% Entrypoints defined as repl-local. Stateful and payable, but with
-%% some other limitations
-local_letfun_defs(TrackedCons, Funs) ->
-    [ begin
-          NameMap = maps:from_list([{VName, ?LETDEF_PROVIDER_DECL(?ADD_OWNER(FName, VName))}
-                                    || {VName, _} <- LetDefs]),
-          entrypoint( FName, Args
-                    , with_value_refs(TrackedCons, LetDefs, Body, NameMap), full)
-      end
-      || {FName, {letfun_local, Args, Body, LetDefs}} <- Funs
-    ].
-
-
 %% Declarations and includes to a contract
 prelude(#repl_state{ include_ast = Includes
                    , tracked_contracts = TrackedCons
-                   , let_defs = LetDefList
-                   , local_funs = LocFuns
+                   , letvals = LetDefList
                    }) ->
-    LetDefProviders = letdef_provider_decls(LetDefList, LocFuns),
+    LetDefProviders = letdef_provider_decls(LetDefList),
     TrackedContractsDecls = [I || {_, {tracked_contract, _, _, I}} <- TrackedCons],
     Includes ++ TrackedContractsDecls ++ LetDefProviders.
-
-
-%% Append functions' definitions to a body of a contract
-with_letfuns(TrackedCons, LetDefList, LocFunList, {contract, Ann, Id, ConBody}) ->
-    LetFuns = letfun_defs(LetDefList),
-    LocalFuns = local_letfun_defs(TrackedCons, LocFunList),
-    {contract, Ann, Id, LocalFuns ++ LetFuns ++ ConBody}.
 
 
 %% Prefixes expression with letval definitions and contract references.
@@ -261,8 +202,3 @@ with_value_refs([], [], Expr) ->
     Expr;
 with_value_refs(Contracts, LetDefs, Expr) ->
     {block, ann(), contract_refs(Contracts) ++ letval_defs(LetDefs) ++ [Expr]}.
-with_value_refs([], [], Expr, _ProviderNaming) ->
-    Expr;
-with_value_refs(Contracts, LetDefs, Expr, ProviderNaming) ->
-    {block, ann(), contract_refs(Contracts) ++
-         letval_defs(LetDefs, ProviderNaming) ++ [Expr]}.
