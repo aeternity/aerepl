@@ -45,7 +45,7 @@ banner() ->
   / / |_|  )           | |   (_)
  ( (_____,-` ___  _ __ | |__  _  __ _
   \\______ \\ / _ \\| '_ \\| '_ \\| |/ _` |
-  ,-`    ) ) (_) | |_) | | | | | (_| |
+  ,-`    ) ) (_) | )_) | ) | | | (_| |
  (  ____/ / \\___/| .__/|_| |_|_|\\__,_|
   `(_____/       | |
                  |_|  interactive
@@ -155,23 +155,24 @@ process_input(State, eval, I) ->
     case aere_sophia:parse_top(I) of
         {body, Body} ->
             Mock = aere_mock:chained_query_contract(State, Body),
-            io:format("****\n\n\n~p\n\n\n****\n", [Mock]),
+            %% io:format("****\n\n\n~p\n\n\n****\n", [Mock]),
             {NewState, Res} = eval_contract(I, Mock, State),
             {success, io_lib:format("~s", [Res]), NewState};
         [{include, _, {string, _, Inc}}] ->
             register_includes(State, [binary_to_list(Inc)]);
         [{letval, _, Pat, Expr}] -> register_letval(State, Pat, Expr);
-        {fundecl, _, Name, Type} -> ok;
-        {letfun, _, Name, Args, RetType, Body} -> ok;
-        {block, _, Funs} -> ok;
-        TDc when element(1, TDc) =:= type_decl ->
+        [FD = {fundecl, _, _Name, _Type}] -> register_letfun(State, [FD]);
+        [FD = {letfun, _, _Name, _Args, _RetType, _Body}] -> register_letfun(State, [FD]);
+        [{block, _, Funs}] -> register_letfun(State, Funs);
+        [TDc] when element(1, TDc) =:= type_decl ->
             throw({error, "You cannot declare types here."});
-        TDf when element(1, TDf) =:= type_def ->
+        [TDf] when element(1, TDf) =:= type_def ->
             throw({error, "You cannot define types here."});
-        Con when element(1, Con) =:= contract ->
+        [Con] when element(1, Con) =:= contract ->
             throw({error, "You cannot define contracts here. Maybe consider :dep?"});
-        Ns when element(1, Ns) =:= namespace ->
-            throw({error, "You cannot define namespaces here."})
+        [Ns] when element(1, Ns) =:= namespace ->
+            throw({error, "You cannot define namespaces here."});
+        [_|_] -> throw({error, "One by one please"})
     end;
 process_input(State, include, Inp) ->
     Files = string:tokens(Inp, aere_parse:whitespaces()),
@@ -299,50 +300,6 @@ process_input(State = #repl_state{ tracked_contracts = Contracts
             , NewState};
         {error, _} -> throw({error, "Could not load file " ++ aere_color:yellow(File)})
     end;
-%% process_input(State = #repl_state{ options = Opts
-%%                                  , chain_state = S0
-%%                                  }, 'let', Inp) ->
-%%     case aere_sophia:parse_letdef(Inp) of
-%%         {letval, _, {id, _, Name}, Body} ->
-%%             check_name_conflicts(State, Name, [letfun_local]),
-%%             Provider = aere_mock:letdef_provider(State, Name, Body),
-%%             TProvider = aere_sophia:typecheck(Provider),
-%%             {[], Type} = aere_sophia:type_of(TProvider, ?LETVAL_GETTER(Name)),
-%%             {{Ref, _}, S1} = build_deploy_contract(Inp, TProvider, {}, Opts, S0),
-%%             NewState = register_letdef( State#repl_state{ chain_state = S1}
-%%                                       , Name, {letval, Ref, Type});
-%%         {letfun, _, {id, _, Name}, Args, _, Body} ->
-%%             check_name_conflicts(State, Name, [letfun_local]),
-%%             State1 = State#repl_state{
-%%                        letvals = [L || L = {N, Def} <- State#repl_state.letvals,
-%%                                          element(1, Def) =:= letval orelse N =/= Name
-%%                                   ]},
-%%             Provider = aere_mock:letdef_provider(State1, Name, Args, Body),
-%%             TProvider = aere_sophia:typecheck(Provider),
-%%             {ArgsT, RetT} = aere_sophia:type_of(TProvider, Name),
-%%             {{Ref, _}, S1} = build_deploy_contract(Inp, TProvider, {}, Opts, S0),
-%%             NewState = register_letdef( State1#repl_state{ chain_state = S1}
-%%                                       , Name, {letfun, Ref, Args, {ArgsT, RetT}})
-%%     end,
-%%     {success, NewState};
-%% process_input(State = #repl_state{ letfuns = LocFuns
-%%                                  , letvals = LetDefs
-%%                                  }, def, Inp) ->
-%%     case aere_sophia:parse_letdef(Inp) of
-%%         {letfun, _, {id, _, Name}, Args, _, Body} ->
-%%             check_name_conflicts(State, Name, [letfun_local, letfun]),
-%%             LetDefs1 = proplists:delete(Name, LetDefs),  % remove letval
-%%             State1 = State#repl_state
-%%                 { letfuns = [{Name, {letfun_local, Args, Body, LetDefs1}} | LocFuns]
-%%                 , letvals = LetDefs1
-%%                 },
-%%             TestMock = aere_mock:chained_query_contract
-%%                          ( State1#repl_state{letvals = [L || L = {letval, _, _} <- LetDefs1]}
-%%                         , {id, aere_mock:ann(), "state"}),
-%%             aere_sophia:typecheck(TestMock),
-%%             {success, State1};
-%%         {letval, _, _, _, _} -> throw({error, "Use :let to define constants"})
-%%     end;
 process_input(State, unlet, Inp) ->
     check_name_conflicts(State, Inp, [free]); %% TODO
 process_input(State, undef, "") ->
@@ -399,16 +356,56 @@ register_letval(S0 = #repl_state{letvals = Letvals, options = Opts, chain_state 
     TProvider = aere_sophia:typecheck(Provider),
     {[], Type} = aere_sophia:type_of(TProvider, ?LETVAL_GETTER(PName)),
     {{Ref, _}, CS1} = build_deploy_contract("no_source", TProvider, {}, Opts, CS0),
-    S2 = S1#repl_state{letvals = [{{PName, Ref}, {letval, Pat, Type}}|Letvals],
+    S2 = S1#repl_state{letvals = [{{PName, Ref}, {Pat, Type}}|Letvals],
                        chain_state = CS1
                       },
+    {success, S2}.
+
+register_letfun(S0 = #repl_state{letfuns = Letfuns, letvals = Letvals, tracked_contracts = Cons}, Funs) ->
+    Name = case Funs of
+               [{fundecl, _, {id, _, N}, _}|_] -> N;
+               [{letfun, _, {id, _, N}, _, _, _}|_] -> N;
+               [] -> throw({error, "How did you manage to enter an empty function block?"})
+           end,
+    {S1, Shadowed} =
+        case proplists:get_value(Name, Letfuns, none) of
+            none -> {S0, Letfuns};
+            Dupl ->
+                begin
+                    {SS, NewName} = make_shadowed_fun_name(S0, Name),
+                    UpdateName =
+                        fun(N) ->
+                                case N == Name of
+                                    true -> NewName;
+                                    false -> N
+                                end end,
+                    {SS, [{FName, {[case F of
+                                        {fundecl, A, {id, AName, Fn}, RT} ->
+                                            {fundecl, A, {id, AName, UpdateName(Fn)}, RT};
+                                        {letfun, A, {id, AName, Fn}, Args, RT, B} ->
+                                            {letfun, A, {id, AName, UpdateName(Fn)}, Args, RT,
+                                             begin
+                                             aere_sophia:replace_var(B, Name, NewName)
+                                             end}
+                                    end
+                                    || F <- Fs], Cs, Ls}}
+                          || {FName, {Fs, Cs, Ls}} <- [{NewName, Dupl}|proplists:delete(Name, Letfuns)]
+                         ]}
+                end
+        end,
+    S2 = S1#repl_state{letfuns = [{Name, {Funs, Cons, Letvals}} | Shadowed]},
+    TestMock = aere_mock:chained_query_contract(S2, [{id, aere_mock:ann(), "state"}]),
+    aere_sophia:typecheck(TestMock),
     {success, S2}.
 
 make_provider_name(S0, Pat) ->
     Ids = aere_sophia:get_pat_ids(Pat),
     {S1, Sup} = next_sup(S0),
-    {S1, string:join(Ids, "_") ++ io_lib:format("~p", [Sup])}.
+    {S1, string:join(Ids, "_") ++ io_lib:format("#~p", [Sup])}.
 
+make_shadowed_fun_name(S0, Name) ->
+    {S1, Sup} = next_sup(S0),
+    {S1, Name ++ io_lib:format("#~p", [Sup])}.
 
 unregister_contract(State = #repl_state{tracked_contracts = Cons}, Name) ->
     State#repl_state{tracked_contracts = proplists:delete(Name, Cons)}.

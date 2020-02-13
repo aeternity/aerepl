@@ -117,7 +117,8 @@ simple_query_contract( State = #repl_state{ letvals = LetDefs
 
 %% Contract that evals expression and chains state if it makes sense
 chained_query_contract(State = #repl_state
-                       { letvals = LetDefs
+                       { letvals = LetVals
+                       , letfuns = LetFuns
                        , include_files = Includes
                        , tracked_contracts = TrackedCons
                        , user_contract_state_type = StType
@@ -130,8 +131,8 @@ chained_query_contract(State = #repl_state
                    {error, Msg} -> throw({error, "While importing auto import: " ++ Msg})
                end,
     Prev = contract(?PREV_CONTRACT, [decl(?GET_STATE, [], StType)]),
-    Query = contract(state_init(State) ++
-                         [ val_entrypoint(?USER_INPUT, with_value_refs(TrackedCons, LetDefs, Body), full)
+    Query = contract(state_init(State) ++ letfun_defs(LetFuns) ++
+                         [ val_entrypoint(?USER_INPUT, with_value_refs(TrackedCons, LetVals, Body), full)
                          , val_entrypoint(?GET_STATE, {id, ann(), "state"})
                          ]),
     prelude(WithAuto) ++ [Prev, Query].
@@ -166,7 +167,7 @@ letval_provider(State = #repl_state{ letvals = LetDefs
 letdef_provider_decls(LetDefs) ->
     [contract( ?LETVAL_PROVIDER_DECL(Name)
              , [decl(?LETVAL_GETTER(Name), [], Type)])
-     || {{Name, _}, {letval, _, Type}} <- LetDefs
+     || {{Name, _}, {_, Type}} <- LetDefs
     ].
 
 
@@ -177,7 +178,18 @@ letval_defs(LetVals) ->
                                       , ?LETVAL_PROVIDER_DECL(Provider)
                                       , ?LETVAL_GETTER(Provider))
         , Type}}
-      || {{Provider, ProvRef}, {letval, Pat, Type}} <- lists:reverse(LetVals)].
+      || {{Provider, ProvRef}, {Pat, Type}} <- lists:reverse(LetVals)].
+
+letfun_defs(LetFuns) ->
+    [ {block, ann(), [ case F of
+                           {fundecl, _, _, _} -> F;
+                           {letfun, A, N, Args, RT, Body} ->
+                               {letfun, A, N, Args, RT, with_value_refs(Cons, LetVals, Body)} %% TODO, remove arg vars from letvals
+                       end
+                      || F <- Funs
+                     ]}
+     || {_, {Funs, Cons, LetVals}} <- LetFuns
+    ].
 
 %% References to contracts with their types
 contract_refs(Contracts) ->
