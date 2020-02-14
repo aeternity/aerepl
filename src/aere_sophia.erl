@@ -104,7 +104,7 @@ parse_top(I) ->
 parse_decl(I) ->
     ?with_error_handle(aeso_parser:run_parser(aeso_parser:decl(), I)).
 parse_body(I) ->
-    ?with_error_handle(aeso_parser:run_parser(aeso_parser:body(), I)).
+    ?with_error_handle(aeso_parser:run_parser(aeso_parser:maybe_block(aeso_parser:stmt()), I)).
 parse_type(I) ->
     ?with_error_handle(aeso_parser:run_parser(aeso_parser:type(), I)).
 parse_file(I, Opts) ->
@@ -295,7 +295,9 @@ replace_var1({map_get, Ann, M, K, D}, Old, New) ->
      replace_var1(D, Old, New)};
 replace_var1({block, Ann, Stmts}, Old, New) ->
     {block, Ann, replace_var(Stmts, Old, New)};
-replace_var1({id, A, Old}, Old, New) ->
+replace_var1({id, A, Old}, Old, New) when is_list(New) ->
     {id, A, New};
+replace_var1({id, A, Old}, Old, New) ->
+    New;
 replace_var1(Other, _, _) ->
     Other.

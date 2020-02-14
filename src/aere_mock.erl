@@ -11,6 +11,7 @@
         , chained_initial_contract/3
         , simple_query_contract/2
         , letval_provider/3
+        , unshadow_names/3
         , ann/0
         ]).
 
@@ -49,20 +50,6 @@ val_entrypoint(Name, Body, Attrs) when is_list(Attrs) ->
     , ann() ++ [{A, true} || A <- [entrypoint|Attrs]]
     , {id, ann(), Name}
     , []
-    , {id, ann(), "_"}
-    , Body}.
-
-
-%% Attributes entrypoint Name(Args) = Body
-entrypoint(Name, Args, Body) ->
-    entrypoint(Name, Args, Body, []).
-entrypoint(Name, Args, Body, full) ->
-    entrypoint(Name, Args, Body, [payable, stateful]);
-entrypoint(Name, Args, Body, Attrs) when is_list(Attrs) ->
-    { letfun
-    , ann() ++ [{A, true} || A <- [entrypoint|Attrs]]
-    , {id, ann(), Name}
-    , Args
     , {id, ann(), "_"}
     , Body}.
 
@@ -180,11 +167,36 @@ letval_defs(LetVals) ->
         , Type}}
       || {{Provider, ProvRef}, {Pat, Type}} <- lists:reverse(LetVals)].
 
+unshadow_names(Names, Cons, LetVals) ->
+    { [ case lists:member(CName, Names) of
+            true -> {CName, {shadowed_contract, ConRef, ConName, I}};
+            false -> C
+        end
+        || C = {CName, {_, ConRef, ConName, I}} <- Cons
+      ]
+    , [ {{Provider, ProvRef}, {NewPat, Type}}   %% removing letvals shadowed by rec and args
+        || {{Provider, ProvRef}, {Pat, Type}} <- LetVals,
+           NewPat <- [lists:foldl(
+                        fun(V, P) -> aere_sophia:replace_var(P, V, "_")
+                        end, Pat, Names)],
+           lists:any(fun({id, _, "_"}) -> false; %% If everything is removed, why even consider it?
+                        (_) -> true
+                     end, aere_sophia:get_pat_ids(NewPat))
+      ]
+    }.
+
 letfun_defs(LetFuns) ->
     [ {block, ann(), [ case F of
                            {fundecl, _, _, _} -> F;
                            {letfun, A, N, Args, RT, Body} ->
-                               {letfun, A, N, Args, RT, with_value_refs(Cons, LetVals, Body)} %% TODO, remove arg vars from letvals
+                               {Cons1, LetVals1} =
+                                   begin
+                                       UsedNames = [AN || Arg <- Args,
+                                                          AN <- aere_sophia:get_pat_ids(Arg)
+                                                   ],
+                                      unshadow_names(UsedNames, Cons, LetVals)
+                                   end,
+                               {letfun, A, N, Args, RT, with_value_refs(Cons1, LetVals1, Body)}
                        end
                       || F <- Funs
                      ]}
@@ -204,7 +216,7 @@ prelude(#repl_state{ include_ast = Includes
                    , letvals = LetDefList
                    }) ->
     LetDefProviders = letdef_provider_decls(LetDefList),
-    TrackedContractsDecls = [I || {_, {tracked_contract, _, _, I}} <- TrackedCons],
+    TrackedContractsDecls = [I || {_, {_Status, _, _, I}} <- TrackedCons],
     Includes ++ TrackedContractsDecls ++ LetDefProviders.
 
 

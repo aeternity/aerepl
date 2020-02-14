@@ -99,11 +99,11 @@ handle_dispatch(State, {ok, {Command, Args}}) ->
             {continue, Msg, State};
         finito ->
             finito
-    catch error:E ->
+    catch error:E:Stacktrace ->
             CommandStr = aere_color:blue(lists:flatten(io_lib:format("~p", [Command]))),
             ErStr = aere_color:red(lists:flatten(io_lib:format("~p", [E]))),
             ErMsg = io_lib:format("Command ~s failed:\n~s\n", [CommandStr, ErStr])
-                ++ io_lib:format("Stacktrace:\n" ++ aere_color:emph("~p") ++"\n\n", [erlang:get_stacktrace()])
+                ++ io_lib:format("Stacktrace:\n" ++ aere_color:emph("~p") ++"\n\n", [Stacktrace])
                 ++ aere_color:red("*** This is an internal error and most likely a bug.\n"),
             {continue, ErMsg, State};
           {error, Err} ->
@@ -261,7 +261,11 @@ process_input(State = #repl_state{ tracked_contracts = Contracts
                         [FstChar|OrigNameRest] = StrDeclName,
                         NameWithIndex =
                             fun(X) -> string:lowercase([FstChar]) ++
-                                          OrigNameRest ++ integer_to_list(X) end,
+                                          OrigNameRest ++ case X of
+                                                              -1 -> "";
+                                                              _ -> integer_to_list(X)
+                                                          end
+                            end,
                         MakeIndex =
                             fun R(X) ->
                                     case name_status(State, NameWithIndex(X)) of
@@ -269,7 +273,7 @@ process_input(State = #repl_state{ tracked_contracts = Contracts
                                         _    -> R(X + 1)
                                     end
                             end,
-                        NameWithIndex(MakeIndex(0));
+                        NameWithIndex(MakeIndex(-1));
                     _ ->
                         check_name_conflicts(State, MaybeRefName, [letfun_local]),
                         MaybeRefName
@@ -367,6 +371,7 @@ register_letfun(S0 = #repl_state{letfuns = Letfuns, letvals = Letvals, tracked_c
                [{letfun, _, {id, _, N}, _, _, _}|_] -> N;
                [] -> throw({error, "How did you manage to enter an empty function block?"})
            end,
+    {Cons1, Letvals1} = aere_mock:unshadow_names([Name], Cons, Letvals),
     {S1, Shadowed} =
         case proplists:get_value(Name, Letfuns, none) of
             none -> {S0, Letfuns};
@@ -393,7 +398,10 @@ register_letfun(S0 = #repl_state{letfuns = Letfuns, letvals = Letvals, tracked_c
                          ]}
                 end
         end,
-    S2 = S1#repl_state{letfuns = [{Name, {Funs, Cons, Letvals}} | Shadowed]},
+    S2 = S1#repl_state{ letfuns = [{Name, {Funs, Cons1, Letvals1}} | Shadowed]
+                      , letvals = Letvals1
+                      , tracked_contracts = Cons1
+                      },
     TestMock = aere_mock:chained_query_contract(S2, [{id, aere_mock:ann(), "state"}]),
     aere_sophia:typecheck(TestMock),
     {success, S2}.
