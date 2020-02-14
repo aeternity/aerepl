@@ -11,7 +11,6 @@
         , chained_initial_contract/3
         , simple_query_contract/2
         , letval_provider/3
-        , unshadow_names/3
         , ann/0
         ]).
 
@@ -95,10 +94,11 @@ state_init(#repl_state
 %% Contract that evals Expr and does not chain state
 simple_query_contract( State = #repl_state{ letvals = LetDefs
                                           , tracked_contracts = TrackedCons
-                                          }, Expr) ->
+                                          }, Stmts) ->
+    Body = {block, ann(), Stmts},
     Con = contract(
             [val_entrypoint( ?USER_INPUT
-                           , with_value_refs(TrackedCons, LetDefs, Expr), full)]),
+                           , with_value_refs(TrackedCons, LetDefs, Body), full)]),
     prelude(State) ++ [Con].
 
 
@@ -128,9 +128,10 @@ chained_query_contract(State = #repl_state
 %% Contract that initializes state chaining
 chained_initial_contract(State = #repl_state{ letvals = LetDefs
                                             , tracked_contracts = TrackedCons
-                                            }, Expr, Type) ->
+                                            }, Stmts, Type) ->
+    Body = {block, ann(), Stmts},
     Con = contract([ typedef("state", Type)
-                   , val_entrypoint("init", with_value_refs(TrackedCons, LetDefs, Expr))
+                   , val_entrypoint("init", with_value_refs(TrackedCons, LetDefs, Body))
                    , val_entrypoint(?GET_STATE, {id, ann(), "state"})
                    ]),
     prelude(State) ++ [Con].
@@ -167,34 +168,17 @@ letval_defs(LetVals) ->
         , Type}}
       || {{Provider, ProvRef}, {Pat, Type}} <- lists:reverse(LetVals)].
 
-unshadow_names(Names, Cons, LetVals) ->
-    { [ case lists:member(CName, Names) of
-            true -> {CName, {shadowed_contract, ConRef, ConName, I}};
-            false -> C
-        end
-        || C = {CName, {_, ConRef, ConName, I}} <- Cons
-      ]
-    , [ {{Provider, ProvRef}, {NewPat, Type}}   %% removing letvals shadowed by rec and args
-        || {{Provider, ProvRef}, {Pat, Type}} <- LetVals,
-           NewPat <- [lists:foldl(
-                        fun(V, P) -> aere_sophia:replace_var(P, V, "_")
-                        end, Pat, Names)],
-           lists:any(fun({id, _, "_"}) -> false; %% If everything is removed, why even consider it?
-                        (_) -> true
-                     end, aere_sophia:get_pat_ids(NewPat))
-      ]
-    }.
 
 letfun_defs(LetFuns) ->
     [ {block, ann(), [ case F of
-                           {fundecl, _, _, _} -> F;
+                           {fun_decl, _, _, _} -> F;
                            {letfun, A, N, Args, RT, Body} ->
                                {Cons1, LetVals1} =
                                    begin
                                        UsedNames = [AN || Arg <- Args,
                                                           AN <- aere_sophia:get_pat_ids(Arg)
                                                    ],
-                                      unshadow_names(UsedNames, Cons, LetVals)
+                                      aerepl:remove_references(UsedNames, Cons, LetVals)
                                    end,
                                {letfun, A, N, Args, RT, with_value_refs(Cons1, LetVals1, Body)}
                        end

@@ -1,11 +1,13 @@
-%-------------------------------------------------------------------
+%%%-------------------------------------------------------------------
 %% @doc REPL for Sophia
 %% @end
 %%%-------------------------------------------------------------------
 
 -module(aerepl).
 
--export([start/0, main/1, register_includes/2, init_state/0, process_string/2]).
+-export([start/0, main/1, register_includes/2, init_state/0, process_string/2,
+         remove_references/3
+        ]).
 
 -include("aere_repl.hrl").
 
@@ -127,6 +129,31 @@ handle_dispatch(State, {error, {ambiguous_prefix, Propositions}}) ->
     {continue, Msg, State}.
 
 
+ask(Question, Options, Default) ->
+    ValidOptions = [K || {K, _} <- Options],
+    ValidOptionsStr = lists:concat([ if O =:= Default -> io_lib:format("[~p]", [O]);
+                                        true -> io_lib:format("~p", [O])
+                                     end
+                                    || O <- ValidOptions
+                                   ]),
+    io:format(aere_color:emph("~s ~s\n"), [Question, ValidOptionsStr]),
+    Try = fun Retry() ->
+                  Ans = string:trim(io:get_line("? ")),
+                  Parsed = case Ans of
+                               "" -> Default;
+                               _ -> list_to_existing_atom(Ans)
+                           end,
+                  case proplists:get_value(Parsed, Options, {no_match}) of
+                      {no_match} ->
+                          io:format(aere_color:emph("Valid options: ~s\n"), [ValidOptionsStr]),
+                          Retry();
+                      Act ->
+                          Act
+                  end
+          end,
+    Try().
+
+
 -define(ParseOptionBool(Field),
         if
             Val =:= "true" orelse Val =:= 1 ->
@@ -161,7 +188,7 @@ process_input(State, eval, I) ->
         [{include, _, {string, _, Inc}}] ->
             register_includes(State, [binary_to_list(Inc)]);
         [{letval, _, Pat, Expr}] -> register_letval(State, Pat, Expr);
-        [FD = {fundecl, _, _Name, _Type}] -> register_letfun(State, [FD]);
+        [FD = {fun_decl, _, _Name, _Type}] -> register_letfun(State, [FD]);
         [FD = {letfun, _, _Name, _Args, _RetType, _Body}] -> register_letfun(State, [FD]);
         [{block, _, Funs}] -> register_letfun(State, Funs);
         [TDc] when element(1, TDc) =:= type_decl ->
@@ -202,11 +229,11 @@ process_input(State = #repl_state{options = Opts}, set, Inp) ->
                       , Opts#options{backend = aevm}};
             "fate" -> {options, Opts#options{backend = fate}};
             "state" ->
-                State1 = State#repl_state{letfuns = []},
-                Expr = aere_sophia:parse_body(Val),
-                TExprAst = aere_sophia:typecheck(aere_mock:simple_query_contract(State1, Expr)),
+                State1 = free_names(State, ["state", "put"]),
+                Stmts = aere_sophia:parse_body(Val),
+                TExprAst = aere_sophia:typecheck(aere_mock:simple_query_contract(State1, Stmts)),
                 {_, Type} = aere_sophia:type_of(TExprAst, ?USER_INPUT),
-                Mock = aere_mock:chained_initial_contract(State1, Expr, Type),
+                Mock = aere_mock:chained_initial_contract(State1, Stmts, Type),
                 TMock = aere_sophia:typecheck(Mock),
                 S0 = State#repl_state.chain_state,
                 {{Key, _}, S1} = build_deploy_contract("no_src", TMock, {}, Opts, S0),
@@ -274,9 +301,7 @@ process_input(State = #repl_state{ tracked_contracts = Contracts
                                     end
                             end,
                         NameWithIndex(MakeIndex(-1));
-                    _ ->
-                        check_name_conflicts(State, MaybeRefName, [letfun_local]),
-                        MaybeRefName
+                    _ -> MaybeRefName
                 end,
             ConDeclName1 =
                     {con, DecAnn, ?TrackedContractName(RefName, StrDeclName)},
@@ -304,17 +329,8 @@ process_input(State = #repl_state{ tracked_contracts = Contracts
             , NewState};
         {error, _} -> throw({error, "Could not load file " ++ aere_color:yellow(File)})
     end;
-process_input(State, unlet, Inp) ->
-    check_name_conflicts(State, Inp, [free]); %% TODO
-process_input(State, undef, "") ->
-    {success, State#repl_state{letfuns = []}};
-process_input(_, undef, _) ->
-    throw({error, "Arguments are not expected here"});
-process_input(State, undeploy, Inp) ->
-    check_name_conflicts(State, Inp, [free]),
-    {success, unregister_contract(State, Inp)};
 process_input(State, rm, Inp) ->
-    {success, free_name(State, Inp)};
+    {success, free_names(State, string:split(Inp, aere_parse:whitespaces()))};
 process_input(S, pwd, _) ->
     shell_default:pwd(),
     {success, S};
@@ -367,11 +383,17 @@ register_letval(S0 = #repl_state{letvals = Letvals, options = Opts, chain_state 
 
 register_letfun(S0 = #repl_state{letfuns = Letfuns, letvals = Letvals, tracked_contracts = Cons}, Funs) ->
     Name = case Funs of
-               [{fundecl, _, {id, _, N}, _}|_] -> N;
+               [{fun_decl, _, {id, _, N}, _}|_] -> N;
                [{letfun, _, {id, _, N}, _, _, _}|_] -> N;
                [] -> throw({error, "How did you manage to enter an empty function block?"})
            end,
-    {Cons1, Letvals1} = aere_mock:unshadow_names([Name], Cons, Letvals),
+    case Name of
+        "init" -> throw({error,
+                         "This name may cause problems. Why don't you call it differently?"
+                        });
+                  _ -> ok
+    end,
+    {Cons1, Letvals1} = remove_references([Name], Cons, Letvals),
     {S1, Shadowed} =
         case proplists:get_value(Name, Letfuns, none) of
             none -> {S0, Letfuns};
@@ -415,13 +437,61 @@ make_shadowed_fun_name(S0, Name) ->
     {S1, Sup} = next_sup(S0),
     {S1, Name ++ io_lib:format("#~p", [Sup])}.
 
-unregister_contract(State = #repl_state{tracked_contracts = Cons}, Name) ->
-    State#repl_state{tracked_contracts = proplists:delete(Name, Cons)}.
+remove_references(Names, Cons, LetVals) ->
+    { [ case lists:member(CName, Names) of
+            true -> {CName, {shadowed_contract, ConRef, ConName, I}};
+            false -> C
+        end
+        || C = {CName, {_, ConRef, ConName, I}} <- Cons
+      ]
+    , [ {{Provider, ProvRef}, {NewPat, Type}}   %% removing letvals shadowed by rec and args
+        || {{Provider, ProvRef}, {Pat, Type}} <- LetVals,
+           NewPat <- [lists:foldl(
+                        fun(V, P) -> aere_sophia:replace_var(P, V, "_")
+                        end, Pat, Names)],
+           lists:any(fun({id, _, "_"}) -> false; %% If everything is removed, why even consider it?
+                        (_) -> true
+                     end, aere_sophia:get_pat_ids(NewPat))
+      ]
+    }.
 
-
-free_name(State, Name) -> ok.
-    %% check_name_conflicts(State, Name, [free, letfun_local]),
-    %% unregister_contract(unregister_letdef(State, Name), Name).
+free_names(State = #repl_state{letfuns = Letfuns, letvals = Letvals, tracked_contracts = Cons}, Names) ->
+    RunCleansing =
+        fun Cleansing([], [], L) ->
+                L;
+            Cleansing(_, _, []) ->
+                [];
+            Cleansing([], NextWave, L) ->
+                Cleansing(NextWave, [], L);
+            Cleansing([Bad|Rest], NextWave, Fs) ->
+                {ToRemove, ToKeep} =
+                    lists:partition
+                      (fun({_, {Defs, _, _}}) ->
+                               lists:any(
+                                 fun(Def) ->
+                                         UsedNames = aeso_syntax_utils:used_ids(Def),
+                                         lists:member(Bad, UsedNames)
+                                 end, Defs)
+                       end, Fs),
+                Cleansing(Rest, [NewBad || {NewBad, _} <- ToRemove] ++ NextWave, ToKeep)
+        end,
+    Letfuns1 = [ F
+                || F = {Fn, _} <- RunCleansing(Names, [], Letfuns),
+                   not(lists:member(Fn, Names))
+               ],
+    {Cons1, Letvals1} = remove_references(Names, Cons, Letvals),
+    State1 = State#repl_state
+        { letfuns = Letfuns1
+        , letvals = Letvals1
+        , tracked_contracts = Cons1
+        },
+    case ([FN || {FN, _} <- Letfuns -- Letfuns1, not(lists:member(FN, Names))]) of
+        [] -> State1;
+        AdditionalNames ->
+            ask(io_lib:format("This will require removing following entities: ~s. Proceed?",
+                              [string:join(AdditionalNames, ", ")]
+                             ), [{y, State1}, {n, State}], y)
+    end.
 
 
 name_status(#repl_state
@@ -445,37 +515,6 @@ name_status(#repl_state
     end.
 
 
-check_name_conflicts(State, Name, Conflicts) ->
-    Status = name_status(State, Name),
-    case lists:member(Status, Conflicts) of
-        true ->
-            case Status of
-                letfun ->
-                    throw({error,
-                           "This name already belongs to a let-function\n"
-                           "Use different name or free it by typing :unlet " ++ Name
-                          });
-                letval ->
-                    throw({error,
-                           "This name already belongs to a let-value\n"
-                           "Use different name or free it by typing :unlet " ++ Name
-                          });
-                tracked_contract ->
-                    throw({error,
-                           "This name already belongs to a tracked contract\n"
-                           "Use different name or free it by typing :undeploy " ++ Name
-                          });
-                free ->
-                    throw({error,
-                           "This name is not taken by any repl object\n"
-                          });
-                _ -> error("Unknown status?")
-            end;
-        false ->
-            ok
-    end.
-
-
 -spec register_includes(repl_state(), list(string())) -> repl_state().
 register_includes(State = #repl_state{ include_ast = Includes
                                      , include_hashes = Hashes
@@ -492,7 +531,7 @@ register_includes(State = #repl_state{ include_ast = Includes
                                        , include_files  = Files ++ PrevFiles
                                        },
 
-            MockForTc = aere_mock:simple_query_contract(NewState, {id, [], "state"}),
+            MockForTc = aere_mock:simple_query_contract(NewState, [{id, aere_mock:ann(), "state"}]),
             aere_sophia:typecheck(MockForTc),
 
             Colored = aere_color:yellow(lists:flatten([" " ++ F || F <- Files])),
