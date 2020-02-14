@@ -93,12 +93,13 @@ state_init(#repl_state
 
 %% Contract that evals Expr and does not chain state
 simple_query_contract( State = #repl_state{ letvals = LetDefs
+                                          , letfuns = LetFuns
                                           , tracked_contracts = TrackedCons
                                           }, Stmts) ->
     Body = {block, ann(), Stmts},
-    Con = contract(
-            [val_entrypoint( ?USER_INPUT
-                           , with_value_refs(TrackedCons, LetDefs, Body), full)]),
+    Con = contract(letfun_defs(LetFuns) ++
+                       [val_entrypoint( ?USER_INPUT
+                                      , with_value_refs(TrackedCons, LetDefs, Body), full)]),
     prelude(State) ++ [Con].
 
 

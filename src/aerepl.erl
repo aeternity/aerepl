@@ -47,7 +47,7 @@ banner() ->
   / / |_|  )           | |   (_)
  ( (_____,-` ___  _ __ | |__  _  __ _
   \\______ \\ / _ \\| '_ \\| '_ \\| |/ _` |
-  ,-`    ) ) (_) | )_) | ) | | | (_| |
+  ,-`    ) ) (_) ) |_) ) | | | | (_| |
  (  ____/ / \\___/| .__/|_| |_|_|\\__,_|
   `(_____/       | |
                  |_|  interactive
@@ -182,7 +182,6 @@ process_input(State, eval, I) ->
     case aere_sophia:parse_top(I) of
         {body, Body} ->
             Mock = aere_mock:chained_query_contract(State, Body),
-            %% io:format("****\n\n\n~p\n\n\n****\n", [Mock]),
             {NewState, Res} = eval_contract(I, Mock, State),
             {success, io_lib:format("~s", [Res]), NewState};
         [{include, _, {string, _, Inc}}] ->
@@ -210,11 +209,16 @@ process_input(State = #repl_state{include_files = IFiles}, reinclude, _) ->
                                       , include_files = []
                                       }, IFiles);
 process_input(State, uninclude, _) ->
-    {success, "Unregistered all includes",
-     State#repl_state{ include_ast = []
-                     , include_hashes = sets:new()
-                     , include_files = []
-                     }};
+    State1 = State#repl_state{ include_ast = []
+                             , include_hashes = sets:new()
+                             , include_files = []
+                             },
+    Mock = aere_mock:simple_query_contract(State1, [{id, aere_mock:ann(), "state"}]),
+    try aere_sophia:typecheck(Mock)
+    catch {error, Msg} ->
+            throw({error, "Removing includes will cause an error. Please remove conflicting entities first;\n\n" ++ Msg})
+    end,
+    {success, "Unregistered all includes", State1};
 process_input(State = #repl_state{options = Opts}, set, Inp) ->
     {Prop, Val0} = lists:splitwith(fun(X) -> X /= $  end, Inp),
     Val = string:trim(Val0),
@@ -254,7 +258,8 @@ process_input(State = #repl_state{options = Opts}, set, Inp) ->
         {state, Msg, NewState} ->
             {success, Msg, NewState}
     end;
-process_input(State = #repl_state{ tracked_contracts = Contracts
+process_input(State = #repl_state{ tracked_contracts = Cons
+                                 , letvals = Letvals
                                  , chain_state = S0
                                  , options = Opts
                                  }, deploy, Inp) ->
@@ -303,8 +308,9 @@ process_input(State = #repl_state{ tracked_contracts = Contracts
                         NameWithIndex(MakeIndex(-1));
                     _ -> MaybeRefName
                 end,
+            {State1, Sup} = next_sup(State), %% NOTE supply changes in parallel to chain_state
             ConDeclName1 =
-                    {con, DecAnn, ?TrackedContractName(RefName, StrDeclName)},
+                    {con, DecAnn, ?TrackedContractName(RefName, StrDeclName) ++ io_lib:format("~p", [Sup])},
             Interface1 =
                 begin
                     {contract, IAnn, _, Body} = Interface,
@@ -316,11 +322,11 @@ process_input(State = #repl_state{ tracked_contracts = Contracts
                             true -> lists:concat([aere_color:yellow("\ndeploy gas"), ": ", DeployGas]);
                             false -> ""
                         end,
-            NewState = State#repl_state
+            {Cons1, Letvals1} = remove_references([RefName], Cons, Letvals),
+            NewState = State1#repl_state
                 { chain_state = S1
-                , tracked_contracts =
-                      [{RefName, {tracked_contract, Con, ConDeclName1, Interface1}}
-                       | proplists:delete(RefName, Contracts)]
+                , tracked_contracts = [{RefName, {tracked_contract, Con, ConDeclName1, Interface1}} | Cons1]
+                , letvals = Letvals1
                 },
             { success, lists:concat([ aere_color:green(RefName ++ " : " ++ StrDeclName)
                                     , aere_color:emph(" was successfully deployed")
@@ -336,6 +342,9 @@ process_input(S, pwd, _) ->
     {success, S};
 process_input(S, cd, Inp) ->
     shell_default:cd(Inp),
+    {success, S};
+process_input(S, ls, _) ->
+    shell_default:ls(),
     {success, S};
 %% process_input(S, list, Inp) ->
 %%     Out =
@@ -366,14 +375,20 @@ process_input(S, load, Inp) ->
 process_input(_, _, _) ->
     throw({error, "This command is not defined yet (but should be)."}).
 
-register_letval(S0 = #repl_state{letvals = Letvals, options = Opts, chain_state = CS0}, Pat, Expr) ->
+register_letval(S0 = #repl_state{ letvals = Letvals
+                                , tracked_contracts = Cons
+                                , options = Opts
+                                , chain_state = CS0
+                                }, Pat, Expr) ->
     {S1, PName} = make_provider_name(S0, Pat),
     Provider = aere_mock:letval_provider(S0, PName, Expr),
     TProvider = aere_sophia:typecheck(Provider),
     {[], Type} = aere_sophia:type_of(TProvider, ?LETVAL_GETTER(PName)),
     {{Ref, _}, CS1} = build_deploy_contract("no_source", TProvider, {}, Opts, CS0),
-    S2 = S1#repl_state{letvals = [{{PName, Ref}, {Pat, Type}}|Letvals],
-                       chain_state = CS1
+    {Cons1, Letvals1} = remove_references(aere_sophia:get_pat_ids(Pat) ,Cons, Letvals),
+    S2 = S1#repl_state{ letvals = [{{PName, Ref}, {Pat, Type}}|Letvals1]
+                      , tracked_contracts = Cons1
+                      , chain_state = CS1
                       },
     {success, S2}.
 
