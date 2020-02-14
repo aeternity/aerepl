@@ -337,19 +337,15 @@ process_input(S, pwd, _) ->
 process_input(S, cd, Inp) ->
     shell_default:cd(Inp),
     {success, S};
-process_input(S, list, Inp) ->
-    Out =
-        case Inp of
-            "contracts" -> io_lib:format("~p", [[N || {N, _} <- S#repl_state.tracked_contracts]]);
-            "let" -> io_lib:format("~p", [[N || {N, _} <- S#repl_state.letvals]]);
-            "def" -> io_lib:format("~p", [[N || {N, _} <- S#repl_state.letfuns]]);
-            "letval" -> io_lib:format("~p", [[N || {N, L} <- S#repl_state.letvals, element(1, L) =:= letval]]);
-            "letfun" -> io_lib:format("~p", [[N || {N, L} <- S#repl_state.letvals, element(1, L) =:= letfun]]);
-            "names" -> io_lib:format("~p", [[N || {N, _} <- S#repl_state.tracked_contracts ++
-                                                        S#repl_state.letvals ++ S#repl_state.letfuns]]);
-            _ -> throw({error, "I don't understand. I can print you list of: contracts, let, def, letval, letfun, names"})
-        end,
-    {success, Out, S};
+%% process_input(S, list, Inp) ->
+%%     Out =
+%%         case Inp of
+%%             "contracts" -> io_lib:format("~p", [[N || {N, {tracked_contract, _, _, _}} <- S#repl_state.tracked_contracts]]);
+%%             "vals"      -> io_lib:format("~p", [[N || {{N, _}, _} <- S#repl_state.letvals]]);
+%%             "functions" -> io_lib:format("~p", [[N || {N, _} <- S#repl_state.letfuns]]);
+%%             _ -> throw({error, "I don't understand. I can print you list of: contracts, let, def, letval, letfun, names"})
+%%         end,
+%%     {success, Out, S};
 process_input(S, load, Inp) ->
     Agg = lists:foldl(fun(Command, Prev) ->
                             case Prev of
