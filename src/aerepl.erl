@@ -125,8 +125,8 @@ handle_dispatch(State = #repl_state{options = Opts}, {error, {ambiguous_prefix, 
 
 ask(Question, Options, Default, REPLOpts) ->
     ValidOptions = [K || {K, _} <- Options],
-    ValidOptionsStr = lists:concat([ if O =:= Default -> io_lib:format("[~p]", [O]);
-                                        true -> io_lib:format("~p", [O])
+    ValidOptionsStr = lists:concat([ if O =:= Default -> io_lib:format("[~s]", [O]);
+                                        true -> io_lib:format("~s", [O])
                                      end
                                     || O <- ValidOptions
                                    ]),
@@ -135,7 +135,7 @@ ask(Question, Options, Default, REPLOpts) ->
                   Ans = string:trim(io:get_line("? ")),
                   Parsed = case Ans of
                                "" -> Default;
-                               _ -> list_to_existing_atom(Ans)
+                               _ -> Ans
                            end,
                   case proplists:get_value(Parsed, Options, {no_match}) of
                       {no_match} ->
@@ -308,7 +308,7 @@ process_input(State = #repl_state{ tracked_contracts = Cons
                         NameWithIndex(MakeIndex(-1));
                     _ -> MaybeRefName
                 end,
-            {State1, Sup} = next_sup(State), %% NOTE supply changes in parallel to chain_state
+            {State1, Sup} = next_sup(State), %% NOTE the `supply` changes in parallel to `chain_state`
             ConDeclName1 =
                     {con, DecAnn, ?TrackedContractName(RefName, StrDeclName) ++ io_lib:format("~p", [Sup])},
             Interface1 =
@@ -500,7 +500,7 @@ free_names(State = #repl_state{letfuns = Letfuns, letvals = Letvals, tracked_con
         AdditionalNames ->
             ask(io_lib:format("This will require removing following entities: ~s. Proceed?",
                               [string:join(AdditionalNames, ", ")]
-                             ), [{y, State1}, {n, State}], y, Opts)
+                             ), [{"y", State1}, {"n", State}], "y", Opts)
     end.
 
 
