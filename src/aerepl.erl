@@ -19,7 +19,7 @@ default_options() ->
             , gas = 1000000
             , height = 1
             , call_value = 0
-            , backend = fate
+            , colors = default
             , silent = false
             }.
 
@@ -71,7 +71,7 @@ repl(State) ->
     case process_string(State, Inp) of
         finito -> finito;
         {continue, Msg, NewState} ->
-            io:format(Msg),
+            io:format("~s\n", [Msg]),
             repl(NewState)
     end.
 
@@ -84,11 +84,11 @@ process_string(State, String) ->
 
 handle_dispatch(State, skip) ->
     {continue, "", State};
-handle_dispatch(State, {ok, {Command, Args}}) ->
+handle_dispatch(State = #repl_state{options = Opts}, {ok, {Command, Args}}) ->
     try process_input(State, Command, Args) of
         {success, Output, State1 = #repl_state{options = #options{silent = Silent}}} ->
             Msg  = case Silent of
-                false -> io_lib:format("~s\n", [aere_color:emph(Output)]);
+                false -> aere_color:render_colored(Opts, aere_color:emph(aere_color:default(Output)));
                 true -> ""
             end,
             {continue, Msg, State1};
@@ -97,46 +97,40 @@ handle_dispatch(State, {ok, {Command, Args}}) ->
         skip ->
             {continue, "", State};
         {error, Err} ->
-            Msg = io_lib:format("~s:~n~s~n", [aere_color:red("Error"), aere_color:emph(Err)]),
+            Msg = aere_color:render_colored(Opts, Err),
             {continue, Msg, State};
         finito ->
             finito
     catch error:E:Stacktrace ->
-            CommandStr = aere_color:blue(lists:flatten(io_lib:format("~p", [Command]))),
-            ErStr = aere_color:red(lists:flatten(io_lib:format("~p", [E]))),
-            ErMsg = io_lib:format("Command ~s failed:\n~s\n", [CommandStr, ErStr])
-                ++ io_lib:format("Stacktrace:\n" ++ aere_color:emph("~p") ++"\n\n", [Stacktrace])
-                ++ aere_color:red("*** This is an internal error and most likely a bug.\n"),
+            ErMsg = aere_color:render_colored(Opts,
+                                              [ aere_color:red("INTERNAL ERROR:\n")
+                                              , aere_error:internal(Command, E, Stacktrace)]),
             {continue, ErMsg, State};
           {error, Err} ->
-            ErMsg = io_lib:format("~s:~n~s~n", [aere_color:red("Error"), aere_color:emph(Err)]),
+            ErMsg = aere_color:render_colored(Opts, [ aere_color:red("ERROR:\n")
+                                                    , Err]),
             {continue, ErMsg, State};
           X ->
-            CommandStr = lists:flatten(aere_color:blue(io_lib:format("~p", [Command]))),
-            ErMsg = io_lib:format("Command ~s failed with\n~p\n", [CommandStr, X])
-                ++ aere_color:red("*** This is an internal error and most likely a bug.\n"),
+            ErMsg = aere_color:render_colored(Opts, [ aere_color:red("INTERNAL ERROR:\n")
+                                                    , aere_error:internal(Command, X)]),
             {continue, ErMsg, State}
     end;
 handle_dispatch(State, {error, {no_such_command, "wololo"}}) ->
     put(wololo, wololo), {continue, "", State};
-handle_dispatch(State, {error, {no_such_command, Command}}) ->
-    Msg = io_lib:format("No such command " ++ aere_color:blue("~p") ++ "\n", [Command]),
-    {continue, Msg, State};
-handle_dispatch(State, {error, {ambiguous_prefix, Propositions}}) ->
-    PropsString =
-        aere_color:blue(lists:flatten([io_lib:format(" ~p", [P]) || P <- Propositions])),
-    Msg = io_lib:format("Ambiguous command prefix. Matched commands: ~s\n", [PropsString]),
-    {continue, Msg, State}.
+handle_dispatch(State = #repl_state{options = Opts}, {error, {no_such_command, Command}}) ->
+    {continue, aere_color:render_colored(Opts, aere_error:no_such_command(Command)), State};
+handle_dispatch(State = #repl_state{options = Opts}, {error, {ambiguous_prefix, Propositions}}) ->
+    {continue, aere_color:render_colored(Opts, aere_error:ambiguous_prefix(Propositions)), State}.
 
 
-ask(Question, Options, Default) ->
+ask(Question, Options, Default, REPLOpts) ->
     ValidOptions = [K || {K, _} <- Options],
     ValidOptionsStr = lists:concat([ if O =:= Default -> io_lib:format("[~p]", [O]);
                                         true -> io_lib:format("~p", [O])
                                      end
                                     || O <- ValidOptions
                                    ]),
-    io:format(aere_color:emph("~s ~s\n"), [Question, ValidOptionsStr]),
+    io:format(aere_color:render_colored(REPLOpts, aere_color:emph("~s ~s\n")), [Question, ValidOptionsStr]),
     Try = fun Retry() ->
                   Ans = string:trim(io:get_line("? ")),
                   Parsed = case Ans of
@@ -145,7 +139,9 @@ ask(Question, Options, Default) ->
                            end,
                   case proplists:get_value(Parsed, Options, {no_match}) of
                       {no_match} ->
-                          io:format(aere_color:emph("Valid options: ~s\n"), [ValidOptionsStr]),
+                          io:format(
+                            aere_color:render_colored(REPLOpts,
+                                                      aere_color:emph(["Valid options: ", ValidOptionsStr, "\n"]))),
                           Retry();
                       Act ->
                           Act
@@ -161,15 +157,15 @@ ask(Question, Options, Default) ->
             Val =:= "false" orelse Val =:= 0 ->
                 {options, Opts#options{Field = false}};
             true ->
-                throw({error, "true/false value expected"})
+                aere_error:bad_option(["true", "false"])
         end).
 -define(ParseOptionInt(Field),
         try {options, Opts#options{Field = list_to_integer(Val)}}
-        catch error:badarg -> throw({error, "integer value expected"})
+        catch error:badarg -> aere_error:bad_option(["integer"])
         end).
 -spec process_input(repl_state(), aere_parse:command(), string()) ->
-                           finito | {error, string()} | {success, string(), repl_state()}
-                               | {success, repl_state()}.
+          finito | {error, string()} | {success, string(), repl_state()}
+                 | {success, repl_state()}.
 process_input(_, quit, _) ->
     finito;
 process_input(State, type, I) ->
@@ -191,14 +187,15 @@ process_input(State, eval, I) ->
         [FD = {letfun, _, _Name, _Args, _RetType, _Body}] -> register_letfun(State, [FD]);
         [{block, _, Funs}] -> register_letfun(State, Funs);
         [TDc] when element(1, TDc) =:= type_decl ->
-            throw({error, "You cannot declare types here."});
+            repl_error:throw({unsupported_decl, type_decl});
         [TDf] when element(1, TDf) =:= type_def ->
-            throw({error, "You cannot define types here."});
+            repl_error:throw({unsupported_decl, type_def});
         [Con] when element(1, Con) =:= contract ->
-            throw({error, "You cannot define contracts here. Maybe consider :dep?"});
+            repl_error:throw({unsupported_decl, contract});
         [Ns] when element(1, Ns) =:= namespace ->
-            throw({error, "You cannot define namespaces here."});
-        [_|_] -> throw({error, "One by one please"})
+            repl_error:throw({unsupported_decl, namespace});
+        [_|_] ->
+            repl_error:throw({unsupported_decl, multidecl})
     end;
 process_input(State, include, Inp) ->
     Files = string:tokens(Inp, aere_parse:whitespaces()),
@@ -216,7 +213,7 @@ process_input(State, uninclude, _) ->
     Mock = aere_mock:simple_query_contract(State1, [{id, aere_mock:ann(), "state"}]),
     try aere_sophia:typecheck(Mock)
     catch {error, Msg} ->
-            throw({error, "Removing includes will cause an error. Please remove conflicting entities first;\n\n" ++ Msg})
+            aere_error:uninclude_error(Msg)
     end,
     {success, "Unregistered all includes", State1};
 process_input(State = #repl_state{options = Opts}, set, Inp) ->
@@ -227,11 +224,14 @@ process_input(State = #repl_state{options = Opts}, set, Inp) ->
             "call_gas" -> ?ParseOptionBool(display_call_gas);
             "deploy_gas" -> ?ParseOptionBool(display_deploy_gas);
             "silent" -> ?ParseOptionBool(silent);
+            "colors" -> case Val of
+                            "none" -> {options, Opts#options{colors = none}};
+                            "default" -> erase(wololo), {options, Opts#options{colors = default}};
+                            "no_emph" -> erase(wololo), {options, Opts#options{colors = no_emph}};
+                            _ -> aere_error:bad_option(["default", "none", "no_emph"])
+                        end;
             "gas" -> ?ParseOptionInt(gas);
             "value" -> ?ParseOptionInt(call_value);
-            "aevm" -> { options, "Not supported at all, use at your own responsibility"
-                      , Opts#options{backend = aevm}};
-            "fate" -> {options, Opts#options{backend = fate}};
             "state" ->
                 State1 = free_names(State, ["state", "put"]),
                 Stmts = aere_sophia:parse_body(Val),
@@ -246,7 +246,7 @@ process_input(State = #repl_state{options = Opts}, set, Inp) ->
                  , user_contracts = [Key]
                  , chain_state = S1
                  }};
-            _ -> throw({error, "Unknown property"})
+            _ -> aere_error:unknown_option(Prop)
         end,
     case Parse of
         {options, NewOpts} ->
@@ -265,7 +265,7 @@ process_input(State = #repl_state{ tracked_contracts = Cons
                                  }, deploy, Inp) ->
     {File, MaybeRefName} =
         case string:tokens(Inp, aere_parse:whitespaces()) of
-            [] -> throw({error, "What to deploy? Give me some file"});
+            [] -> aere_error:no_file_deploy();
             [F] -> {F, none};
             [F, "as", N] ->
                 Valid = fun(C) -> ((C >= $a) and (C =< $z))
@@ -273,18 +273,18 @@ process_input(State = #repl_state{ tracked_contracts = Cons
                                       or ((C >= $0) and (C =< $9))
                                       or (C == $_)
                         end,
-                [throw({error, "Name must begin with a lowercase letter"})
+                [aere_error:bad_deploy_name()
                  || (lists:nth(1, N) < $a) or (lists:nth(1, N) > $z)],
-                [throw({error, "Name must consist of letters, numbers or underscore"})
+                [aere_error:bad_deploy_name()
                  || not lists:all(Valid, N)],
                 {F, N};
-            _ -> throw({error, "Bad input format"})
+            _ -> aere_error:parse_deploy()
         end,
     case file:read_file(File) of
         {ok, Src} ->
             Ast = aere_sophia:parse_file(binary_to_list(Src), []),
             TAst = aere_sophia:typecheck(Ast),
-            BCode = aere_sophia:compile_contract(Opts#options.backend, binary_to_list(Src), TAst),
+            BCode = aere_sophia:compile_contract(fate, binary_to_list(Src), TAst),
             {{con, DecAnn, StrDeclName}, Interface}
                 = aere_sophia:generate_interface_decl(TAst),
             RefName =
@@ -319,7 +319,7 @@ process_input(State = #repl_state{ tracked_contracts = Cons
 
             {{Con, DeployGas}, S1} = deploy_contract(BCode, {}, Opts, S0),
             DepGasStr = case Opts#options.display_deploy_gas of
-                            true -> lists:concat([aere_color:yellow("\ndeploy gas"), ": ", DeployGas]);
+                            true -> [aere_color:yellow("\ndeploy gas"), ": ", DeployGas];
                             false -> ""
                         end,
             {Cons1, Letvals1} = remove_references([RefName], Cons, Letvals),
@@ -328,12 +328,12 @@ process_input(State = #repl_state{ tracked_contracts = Cons
                 , tracked_contracts = [{RefName, {tracked_contract, Con, ConDeclName1, Interface1}} | Cons1]
                 , letvals = Letvals1
                 },
-            { success, lists:concat([ aere_color:green(RefName ++ " : " ++ StrDeclName)
-                                    , aere_color:emph(" was successfully deployed")
-                                    , DepGasStr
-                                    ])
+            { success, [ aere_color:green(RefName ++ " : " ++ StrDeclName)
+                       , " was successfully deployed"
+                       , DepGasStr
+                       ]
             , NewState};
-        {error, _} -> throw({error, "Could not load file " ++ aere_color:yellow(File)})
+        {error, Reason} ->aere_error:file_error(File, Reason)
     end;
 process_input(State, rm, Inp) ->
     {success, free_names(State, string:split(Inp, aere_parse:whitespaces()))};
@@ -373,7 +373,7 @@ process_input(S, load, Inp) ->
         finito -> finito
     end;
 process_input(_, _, _) ->
-    throw({error, "This command is not defined yet (but should be)."}).
+    aere_error:undefined_command().
 
 register_letval(S0 = #repl_state{ letvals = Letvals
                                 , tracked_contracts = Cons
@@ -392,17 +392,16 @@ register_letval(S0 = #repl_state{ letvals = Letvals
                       },
     {success, S2}.
 
+register_letfun(S, []) ->
+    {success, S};
 register_letfun(S0 = #repl_state{letfuns = Letfuns, letvals = Letvals, tracked_contracts = Cons}, Funs) ->
     Name = case Funs of
                [{fun_decl, _, {id, _, N}, _}|_] -> N;
-               [{letfun, _, {id, _, N}, _, _, _}|_] -> N;
-               [] -> throw({error, "How did you manage to enter an empty function block?"})
+               [{letfun, _, {id, _, N}, _, _, _}|_] -> N
            end,
     case Name of
-        "init" -> throw({error,
-                         "This name may cause problems. Why don't you call it differently?"
-                        });
-                  _ -> ok
+        "init" -> aere_error:forbidden_id(Name);
+        _ -> ok
     end,
     {Cons1, Letvals1} = remove_references([Name], Cons, Letvals),
     {S1, Shadowed} =
@@ -412,10 +411,10 @@ register_letfun(S0 = #repl_state{letfuns = Letfuns, letvals = Letvals, tracked_c
                 begin
                     {SS, NewName} = make_shadowed_fun_name(S0, Name),
                     UpdateName =
-                        fun(N) ->
-                                case N == Name of
+                        fun(NN) ->
+                                case NN == Name of
                                     true -> NewName;
-                                    false -> N
+                                    false -> NN
                                 end end,
                     {SS, [{FName, {[case F of
                                         {fundecl, A, {id, AName, Fn}, RT} ->
@@ -466,7 +465,7 @@ remove_references(Names, Cons, LetVals) ->
       ]
     }.
 
-free_names(State = #repl_state{letfuns = Letfuns, letvals = Letvals, tracked_contracts = Cons}, Names) ->
+free_names(State = #repl_state{letfuns = Letfuns, letvals = Letvals, tracked_contracts = Cons, options = Opts}, Names) ->
     RunCleansing =
         fun Cleansing([], [], L) ->
                 L;
@@ -501,7 +500,7 @@ free_names(State = #repl_state{letfuns = Letfuns, letvals = Letvals, tracked_con
         AdditionalNames ->
             ask(io_lib:format("This will require removing following entities: ~s. Proceed?",
                               [string:join(AdditionalNames, ", ")]
-                             ), [{y, State1}, {n, State}], y)
+                             ), [{y, State1}, {n, State}], y, Opts)
     end.
 
 
@@ -551,15 +550,15 @@ register_includes(State = #repl_state{ include_ast = Includes
                               [_] -> "include";
                               _   -> "includes"
                           end,
-            {success, "Registered " ++ IncludeWord ++ Colored, NewState};
+            {success, ["Registered ", IncludeWord, Colored], NewState};
         Duplicates ->
             Colored = aere_color:yellow(lists:flatten([" " ++ D || D <- Duplicates])),
-            {error, io_lib:format("Following files are already included: ~s", [Colored])}
+            {error, ["Following files are already included: ", Colored]}
     end.
 
 
-build_deploy_contract(Src, TypedAst, Args, Options = #options{backend = Backend}, S0) ->
-    Code = aere_sophia:compile_contract(Backend, Src, TypedAst),
+build_deploy_contract(Src, TypedAst, Args, Options, S0) ->
+    Code = aere_sophia:compile_contract(fate, Src, TypedAst),
     deploy_contract(Code, Args, Options, S0).
 
 
@@ -573,12 +572,11 @@ deploy_contract(ByteCode, Args, Options, S0) ->
                          is_list(Reason) -> Reason;
                          true -> io_lib:format("~p", [Reason])
                       end,
-            throw({error, "Failed to create contract: " ++ ReasonS})
+            aere_error:contract_creation_error(ReasonS)
     end.
 
 
 eval_contract(Src, Ast, State = #repl_state{options = Options}) ->
-    %% io:format("~p\n\n", [Ast]), %% TODO: REMOVE IT
     TypedAst = aere_sophia:typecheck(Ast),
     RetType = aere_response:convert_type( build_type_map(TypedAst)
                                         , element(2, aere_sophia:type_of(TypedAst, ?USER_INPUT))),
@@ -592,12 +590,12 @@ eval_contract(Src, Ast, State = #repl_state{options = Options}) ->
     PPResp = prettypr:format(aere_response:pp_response(Resp)),
     DeployGasStr =
         case Options#options.display_deploy_gas of
-            true -> lists:concat([aere_color:yellow("\ndeploy gas"), ": ", GasDeploy]);
+            true -> [aere_color:yellow("\ndeploy gas"), ": ", GasDeploy];
             false -> ""
         end,
     CallGasStr =
         case Options#options.display_call_gas of
-            true -> lists:concat([aere_color:yellow("\ncall gas"), ": ", GasCall]);
+            true -> [aere_color:yellow("\ncall gas"), ": ", GasCall];
             false -> ""
         end,
     { State#repl_state{ user_contracts = [Con|State#repl_state.user_contracts]

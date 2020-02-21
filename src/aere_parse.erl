@@ -1,6 +1,6 @@
 -module(aere_parse).
 
--export([get_input/1, eval_from_file/1, dispatch/1, whitespaces/0]).
+-export([get_input/1, eval_from_file/1, dispatch/1, whitespaces/0, split_input/1]).
 
 -spec whitespaces() -> list(char()).
 whitespaces() ->
@@ -42,18 +42,12 @@ eval_from_file(File) ->
     MC = file:read_file(File),
     C = case MC of
             {error, Reason} ->
-                throw({ error
-                      , case Reason of
-                            enoent -> "No such file " ++ File;
-                            eaccess -> "Permission denied";
-                            eisdir -> File ++ " is a directory";
-                            enotdir -> "Invalid path";
-                            enomem -> File ++ " is too big";
-                            _ -> "Unknown error"
-                        end
-                      });
+                aere_error:throw({file_error, File, Reason});
             {ok, F} -> binary_to_list(F)
     end,
+    split_input(C).
+
+split_input(C) ->
     FileSpitterProcess =
         fun R(S) ->
                 receive
