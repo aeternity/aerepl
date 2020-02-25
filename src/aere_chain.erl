@@ -11,7 +11,7 @@
 -define(qid(__x__), {'@oq', __x__}).
 
 
--export([state/0, state/1, new_account/2, create_contract/5, call_contract/7]).
+-export([state/0, state/1, new_account/2, create_contract/5, update_balance/3, call_contract/7]).
 
 state()  -> get(the_state).
 state(S) -> put(the_state, S).
@@ -21,6 +21,15 @@ new_account(Balance, State) ->
     State1            = insert_key_pair(PubKey, PrivKey, State),
     State2            = set_account(aec_accounts:new(PubKey, Balance), State1),
     {PubKey, State2}.
+
+update_balance(NewBalance, PubKey, State) ->
+    Trees = trees(State),
+    Account = aec_accounts_trees:get(PubKey, aec_trees:accounts(Trees)),
+    OldBalance = aec_accounts:balance(Account),
+    Nonce = aec_accounts:nonce(Account),
+    {ok, Account1} = aec_accounts:spend(Account, OldBalance, Nonce + 1),
+    {ok, Account2} = aec_accounts:earn(Account1, NewBalance),
+    set_account(Account2, State).
 
 new_key_pair() ->
     #{ public := PubKey, secret := PrivKey } = enacl:sign_keypair(),

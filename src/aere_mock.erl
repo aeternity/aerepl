@@ -110,8 +110,13 @@ chained_query_contract(State = #repl_state
                        , include_files = Includes
                        , tracked_contracts = TrackedCons
                        , user_contract_state_type = StType
+                       , options = #options{call_value = CallValue}
                        }, Stmts) ->
-    Body = {block, ann(), Stmts},
+    Body = {block, ann(),
+            case CallValue of
+                0 -> Stmts;
+                _ -> with_token_refund(Stmts)
+            end},
     AutoImports = [binary_to_list(AI) || AI <- aeso_parser:auto_imports(Body)],
     WithAuto = case aerepl:register_includes(State, AutoImports -- Includes) of
                    {success, _, S} -> S;
@@ -124,6 +129,21 @@ chained_query_contract(State = #repl_state
                          , val_entrypoint(?GET_STATE, {id, ann(), "state"})
                          ]),
     prelude(WithAuto) ++ [Prev, Query].
+
+with_token_refund([]) ->
+    []; % didn't spend anything
+with_token_refund(L) when is_list(L) ->
+    [Last|Rest] = lists:reverse(L),
+    Let = {letval, ann(), {id, ann(), "#RESULT_BACKUP"}, Last},
+    lists:reverse
+      ([ {id, ann(), "#RESULT_BACKUP"}
+       , { app, ann(), {qid, ann(), ["Chain", "spend"]}
+         , [ {qid, ann(), ["Call", "origin"]}
+           , {qid, ann(), ["Contract", "balance"]}
+           ]}
+       , Let
+       | Rest
+       ]).
 
 
 %% Contract that initializes state chaining

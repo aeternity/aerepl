@@ -15,12 +15,28 @@
         , include_hashes :: sets:set(aeso_parser:include_hash())
         , include_files :: list(string())
         , options :: options()
-        , chain_state
-        , user_contract_state_type
-        , user_contracts
+        , chain_state %% blockchain
+        , user_contract_state_type %% type of the contract `state`
+        , user_contracts %% contracts that were used to perform user calls
         , tracked_contracts
-        , letvals
+          %% :: [{ entry name
+          %%       { tracked_contract | shadowed_contract
+          %%       , contract address
+          %%       , contract name
+          %%       , ACI
+          %%       }}]
         , letfuns
+          %% :: [{ function name
+          %%       { declarations
+          %%       , used tracked contracts
+          %%       , used letvals
+          %%       }
+          %%     }]
+        , letvals
+          %% :: [{ {letval provider name, letval provider address}
+          %%     , {pattern, type}
+          %%     }]
+        , user_account
         , supply :: integer()
         }).
 

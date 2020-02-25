@@ -26,16 +26,18 @@ default_options() ->
 
 -spec init_state() -> repl_state().
 init_state() ->
+    {PK, ChainState} = aere_chain:new_account(100000000000000000000000000000, #{}),
     #repl_state{ include_ast = []
                , include_hashes = sets:new()
                , include_files = []
                , options = default_options()
-               , chain_state = #{}
+               , chain_state = ChainState
                , user_contract_state_type = {tuple_t, [], []}
                , user_contracts = []
                , tracked_contracts = []
                , letvals = []
                , letfuns = []
+               , user_account = PK
                , supply = 0
                }.
 
@@ -125,28 +127,32 @@ handle_dispatch(State = #repl_state{options = Opts}, {error, {ambiguous_prefix, 
 
 ask(Question, Options, Default, REPLOpts) ->
     ValidOptions = [K || {K, _} <- Options],
-    ValidOptionsStr = lists:concat([ if O =:= Default -> io_lib:format("[~s]", [O]);
-                                        true -> io_lib:format("~s", [O])
-                                     end
-                                    || O <- ValidOptions
-                                   ]),
-    io:format(aere_color:render_colored(REPLOpts, aere_color:emph("~s ~s\n")), [Question, ValidOptionsStr]),
-    Try = fun Retry() ->
-                  Ans = string:trim(io:get_line("? ")),
-                  Parsed = case Ans of
-                               "" -> Default;
-                               _ -> Ans
-                           end,
-                  case proplists:get_value(Parsed, Options, {no_match}) of
-                      {no_match} ->
-                          io:format(
-                            aere_color:render_colored(REPLOpts,
-                                                      aere_color:emph(["Valid options: ", ValidOptionsStr, "\n"]))),
-                          Retry();
-                      Act ->
-                          Act
-                  end
-          end,
+    ValidOptionsStr =
+        lists:concat([ if O =:= Default -> io_lib:format("[~s]", [O]);
+                          true -> io_lib:format("~s", [O])
+                       end
+                       || O <- ValidOptions
+                     ]),
+    io:format( aere_color:render_colored(REPLOpts, aere_color:emph("~s ~s\n"))
+             , [Question, ValidOptionsStr]),
+    Try =
+        fun Retry() ->
+                Ans = string:trim(io:get_line("? ")),
+                Parsed =
+                    case Ans of
+                        "" -> Default;
+                        _ -> Ans
+                    end,
+                case proplists:get_value(Parsed, Options, {no_match}) of
+                    {no_match} ->
+                        io:format(
+                          aere_color:render_colored(REPLOpts,
+                                                    aere_color:emph(["Valid options: ", ValidOptionsStr, "\n"]))),
+                        Retry();
+                    Act ->
+                        Act
+                end
+        end,
     Try().
 
 
@@ -221,17 +227,29 @@ process_input(State = #repl_state{options = Opts}, set, Inp) ->
     Val = string:trim(Val0),
     Parse =
         case Prop of
-            "call_gas" -> ?ParseOptionBool(display_call_gas);
-            "deploy_gas" -> ?ParseOptionBool(display_deploy_gas);
+            "display-gas" -> ?ParseOptionBool(display_call_gas);
+            "display-deploy-gas" -> ?ParseOptionBool(display_deploy_gas);
             "silent" -> ?ParseOptionBool(silent);
-            "colors" -> case Val of
-                            "none" -> {options, Opts#options{colors = none}};
-                            "default" -> erase(wololo), {options, Opts#options{colors = default}};
-                            "no_emph" -> erase(wololo), {options, Opts#options{colors = no_emph}};
-                            _ -> aere_error:bad_option(["default", "none", "no_emph"])
-                        end;
-            "gas" -> ?ParseOptionInt(gas);
-            "value" -> ?ParseOptionInt(call_value);
+            "balance" ->
+                try list_to_integer(Val) of
+                    ValInt ->
+                        CS0 = State#repl_state.chain_state,
+                        PK = State#repl_state.user_account,
+                        CS1 = aere_chain:update_balance(ValInt, PK, CS0),
+                        { state
+                        , State#repl_state{chain_state = CS1}
+                        }
+                catch error:badarg -> aere_error:bad_option(["integer"])
+                end;
+            "colors" ->
+                case Val of
+                    "none" -> {options, Opts#options{colors = none}};
+                    "default" -> erase(wololo), {options, Opts#options{colors = default}};
+                    "no_emph" -> erase(wololo), {options, Opts#options{colors = no_emph}};
+                    _ -> aere_error:bad_option(["default", "none", "no_emph"])
+                end;
+            "call-gas" -> ?ParseOptionInt(gas);
+            "call-value" -> ?ParseOptionInt(call_value);
             "state" ->
                 State1 = free_names(State, ["state", "put"]),
                 Stmts = aere_sophia:parse_body(Val),
@@ -239,12 +257,10 @@ process_input(State = #repl_state{options = Opts}, set, Inp) ->
                 {_, Type} = aere_sophia:type_of(TExprAst, ?USER_INPUT),
                 Mock = aere_mock:chained_initial_contract(State1, Stmts, Type),
                 TMock = aere_sophia:typecheck(Mock),
-                S0 = State#repl_state.chain_state,
-                {{Key, _}, S1} = build_deploy_contract("no_src", TMock, {}, Opts, S0),
-                {state, State1#repl_state
+                {{Key, _}, State2} = build_deploy_contract("no_src", TMock, {}, Opts, State1),
+                {state, State2#repl_state
                  { user_contract_state_type = Type
                  , user_contracts = [Key]
-                 , chain_state = S1
                  }};
             _ -> aere_error:unknown_option(Prop)
         end,
@@ -260,7 +276,6 @@ process_input(State = #repl_state{options = Opts}, set, Inp) ->
     end;
 process_input(State = #repl_state{ tracked_contracts = Cons
                                  , letvals = Letvals
-                                 , chain_state = S0
                                  , options = Opts
                                  }, deploy, Inp) ->
     {File, MaybeRefName} =
@@ -293,10 +308,11 @@ process_input(State = #repl_state{ tracked_contracts = Cons
                         [FstChar|OrigNameRest] = StrDeclName,
                         NameWithIndex =
                             fun(X) -> string:lowercase([FstChar]) ++
-                                          OrigNameRest ++ case X of
-                                                              -1 -> "";
-                                                              _ -> integer_to_list(X)
-                                                          end
+                                          OrigNameRest ++
+                                          case X of
+                                              -1 -> "";
+                                              _ -> integer_to_list(X)
+                                          end
                             end,
                         MakeIndex =
                             fun R(X) ->
@@ -308,7 +324,7 @@ process_input(State = #repl_state{ tracked_contracts = Cons
                         NameWithIndex(MakeIndex(-1));
                     _ -> MaybeRefName
                 end,
-            {State1, Sup} = next_sup(State), %% NOTE the `supply` changes in parallel to `chain_state`
+            {State1, Sup} = next_sup(State),
             ConDeclName1 =
                     {con, DecAnn, ?TrackedContractName(RefName, StrDeclName) ++ io_lib:format("~p", [Sup])},
             Interface1 =
@@ -317,15 +333,14 @@ process_input(State = #repl_state{ tracked_contracts = Cons
                     {contract, IAnn, ConDeclName1, Body}
                 end,
 
-            {{Con, DeployGas}, S1} = deploy_contract(BCode, {}, Opts, S0),
+            {{Con, DeployGas}, State2} = deploy_contract(BCode, {}, Opts, State1),
             DepGasStr = case Opts#options.display_deploy_gas of
                             true -> [aere_color:yellow("\ndeploy gas"), ": ", DeployGas];
                             false -> ""
                         end,
             {Cons1, Letvals1} = remove_references([RefName], Cons, Letvals),
-            NewState = State1#repl_state
-                { chain_state = S1
-                , tracked_contracts = [{RefName, {tracked_contract, Con, ConDeclName1, Interface1}} | Cons1]
+            NewState = State2#repl_state
+                { tracked_contracts = [{RefName, {tracked_contract, Con, ConDeclName1, Interface1}} | Cons1]
                 , letvals = Letvals1
                 },
             { success, [ aere_color:green(RefName ++ " : " ++ StrDeclName)
@@ -378,19 +393,17 @@ process_input(_, _, _) ->
 register_letval(S0 = #repl_state{ letvals = Letvals
                                 , tracked_contracts = Cons
                                 , options = Opts
-                                , chain_state = CS0
                                 }, Pat, Expr) ->
     {S1, PName} = make_provider_name(S0, Pat),
-    Provider = aere_mock:letval_provider(S0, PName, Expr),
+    Provider = aere_mock:letval_provider(S1, PName, Expr),
     TProvider = aere_sophia:typecheck(Provider),
     {[], Type} = aere_sophia:type_of(TProvider, ?LETVAL_GETTER(PName)),
-    {{Ref, _}, CS1} = build_deploy_contract("no_source", TProvider, {}, Opts, CS0),
+    {{Ref, _}, S2} = build_deploy_contract("no_source", TProvider, {}, Opts, S1),
     {Cons1, Letvals1} = remove_references(aere_sophia:get_pat_ids(Pat) ,Cons, Letvals),
-    S2 = S1#repl_state{ letvals = [{{PName, Ref}, {Pat, Type}}|Letvals1]
+    S3 = S2#repl_state{ letvals = [{{PName, Ref}, {Pat, Type}}|Letvals1]
                       , tracked_contracts = Cons1
-                      , chain_state = CS1
                       },
-    {success, S2}.
+    {success, S3}.
 
 register_letfun(S, []) ->
     {success, S};
@@ -557,16 +570,18 @@ register_includes(State = #repl_state{ include_ast = Includes
     end.
 
 
-build_deploy_contract(Src, TypedAst, Args, Options, S0) ->
+build_deploy_contract(Src, TypedAst, Args, Options, State) ->
     Code = aere_sophia:compile_contract(fate, Src, TypedAst),
-    deploy_contract(Code, Args, Options, S0).
+    deploy_contract(Code, Args, Options, State).
 
 
-deploy_contract(ByteCode, Args, Options, S0) ->
+deploy_contract(ByteCode, Args, Options, State = #repl_state{ chain_state = S0
+                                                            , user_account = Owner
+                                                            }) ->
     aere_chain:state(S0),
     Serialized = aect_sophia:serialize(ByteCode, aere_version:contract_version()),
-    {Owner, S1} = aere_chain:new_account(100000021370000999, S0),
-    try aere_chain:create_contract(Owner, Serialized, Args, Options, S1)
+    try aere_chain:create_contract(Owner, Serialized, Args, Options, S0) of
+        {Result, S1} -> {Result, State#repl_state{chain_state = S1}}
     catch error:{failed_contract_create, Reason} ->
             ReasonS = if is_binary(Reason) -> binary_to_list(Reason);
                          is_list(Reason) -> Reason;
@@ -576,16 +591,17 @@ deploy_contract(ByteCode, Args, Options, S0) ->
     end.
 
 
-eval_contract(Src, Ast, State = #repl_state{options = Options}) ->
+eval_contract(Src, Ast, S1 = #repl_state{options = Options}) ->
     TypedAst = aere_sophia:typecheck(Ast),
     RetType = aere_response:convert_type( build_type_map(TypedAst)
                                         , element(2, aere_sophia:type_of(TypedAst, ?USER_INPUT))),
-    S0 = State#repl_state.chain_state,
-    {{Con, GasDeploy}, S1} = build_deploy_contract(Src, TypedAst, {}, Options, S0),
-    {Owner, S2} = aere_chain:new_account(100000021370000999, S1),
-    {{Resp, GasCall}, S3} =
+    Owner = S1#repl_state.user_account,
+    {{Con, GasDeploy}, S2} = build_deploy_contract(Src, TypedAst, {}, Options, S1),
+    CS1 = S2#repl_state.chain_state,
+    {{Resp, GasCall}, CS2} =
         aere_chain:call_contract( Owner, Con, list_to_binary(?USER_INPUT)
-                                  , RetType, {}, Options, S2),
+                                  , RetType, {}, Options, CS1),
+    S3 = S2#repl_state{chain_state = CS2},
 
     PPResp = prettypr:format(aere_response:pp_response(Resp)),
     DeployGasStr =
@@ -598,8 +614,7 @@ eval_contract(Src, Ast, State = #repl_state{options = Options}) ->
             true -> [aere_color:yellow("\ncall gas"), ": ", GasCall];
             false -> ""
         end,
-    { State#repl_state{ user_contracts = [Con|State#repl_state.user_contracts]
-                      , chain_state = S3}
+    { S3#repl_state{ user_contracts = [Con|S3#repl_state.user_contracts] }
     , lists:concat([PPResp, DeployGasStr, CallGasStr])}.
 
 
