@@ -11,7 +11,7 @@
 -define(qid(__x__), {'@oq', __x__}).
 
 
--export([state/0, state/1, new_account/2, create_contract/5, call_contract/7]).
+-export([state/0, state/1, new_account/2, create_contract/5, update_balance/3, call_contract/7]).
 
 state()  -> get(the_state).
 state(S) -> put(the_state, S).
@@ -21,6 +21,15 @@ new_account(Balance, State) ->
     State1            = insert_key_pair(PubKey, PrivKey, State),
     State2            = set_account(aec_accounts:new(PubKey, Balance), State1),
     {PubKey, State2}.
+
+update_balance(NewBalance, PubKey, State) ->
+    Trees = trees(State),
+    Account = aec_accounts_trees:get(PubKey, aec_trees:accounts(Trees)),
+    OldBalance = aec_accounts:balance(Account),
+    Nonce = aec_accounts:nonce(Account),
+    {ok, Account1} = aec_accounts:spend(Account, OldBalance, Nonce + 1),
+    {ok, Account2} = aec_accounts:earn(Account1, NewBalance),
+    set_account(Account2, State).
 
 new_key_pair() ->
     #{ public := PubKey, secret := PrivKey } = enacl:sign_keypair(),
@@ -47,8 +56,8 @@ create_contract(Owner, Code, Args, Options, S) ->
                     , call_data   => CallData
                     , gas         => Options#options.gas
                     , amount      => Options#options.call_value
-                    , vm_version  => aere_version:vm_version(Options#options.backend)
-                    , abi_version => aere_version:abi_version(Options#options.backend)
+                    , vm_version  => aere_version:vm_version(fate)
+                    , abi_version => aere_version:abi_version(fate)
                     },
     CreateTx    = create_tx(Owner, TxOptions, S),
     Height      = Options#options.height,
@@ -77,7 +86,7 @@ call_contract_with_calldata(Caller, ContractKey, Type, Calldata, Options, S) ->
                         , call_data   => Calldata
                         , gas         => Options#options.gas
                         , amount      => Options#options.call_value
-                        , abi_version => aere_version:abi_version(Options#options.backend)
+                        , abi_version => aere_version:abi_version(fate)
                         }, S),
     Height   = Options#options.height,
     PrivKey  = priv_key(Caller, S),
@@ -86,26 +95,13 @@ call_contract_with_calldata(Caller, ContractKey, Type, Calldata, Options, S) ->
             CallKey  = aect_call:id(Caller, Nonce, ContractKey),
             CallTree = calls(S1),
             Call     = aect_call_state_tree:get_call(ContractKey, CallKey, CallTree),
-            {_, Tx}  = aetx:specialize_type(CallTx),
-            ABI      = aect_call_tx:abi_version(Tx),
-            Result   = call_result(ABI, Type, Call),
+            Result   = call_result(Type, Call),
             {{Result, aect_call:gas_used(Call)}, S1};
         {error, R, S1} ->
             {{error, R}, S1}
     end.
 
-call_result(?ABI_AEVM_SOPHIA_1, Type, Call) ->
-    case aect_call:return_type(Call) of
-        error  ->
-            {error, aect_call:return_value(Call)};
-        ok ->
-            {ok, Res} = aeb_heap:from_binary(Type, aect_call:return_value(Call)),
-            Res;
-        revert ->
-            {ok, Res} = aeb_heap:from_binary(string, aect_call:return_value(Call)),
-            {revert, Res}
-    end;
-call_result(?ABI_FATE_SOPHIA_1, Type, Call) ->
+call_result(Type, Call) ->
     case aect_call:return_type(Call) of
         ok     ->
             Res = aeb_fate_encoding:deserialize(aect_call:return_value(Call)),
@@ -152,54 +148,12 @@ lookup_contract_by_id(ContractKey, S) ->
 
 make_calldata_from_code(Code, Fun, Args, Opts) when is_atom(Fun) ->
     make_calldata_from_code(Code, atom_to_binary(Fun, latin1), Args, Opts);
-make_calldata_from_code(Code, Fun, Args, #options{backend = Backend}) when is_binary(Fun) ->
-    case aere_version:abi_version(Backend) of
-        ?ABI_AEVM_SOPHIA_1 ->
-            #{type_info := TypeInfo} = aect_sophia:deserialize(Code),
-            case aeb_aevm_abi:type_hash_from_function_name(Fun, TypeInfo) of
-                {ok, <<FunHashInt:256>>} ->
-                    Args1 = format_aevm_args(if is_tuple(Args) -> Args;
-                                                true -> {Args}
-                                             end),
-                    aeb_heap:to_binary({FunHashInt, Args1});
-                {error, _} = Err -> error({bad_function, Fun, Err})
-            end;
-        ?ABI_FATE_SOPHIA_1 ->
-            Args1 = format_fate_args(if is_tuple(Args) -> Args;
-                                        true -> {Args}
-                                     end),
-            FunctionId = make_fate_function_id(Fun),
-            aeb_fate_encoding:serialize(aere_response:encode({FunctionId, Args1}))
-    end.
-
-
-format_aevm_args(?cid(<<N:256>>)) -> N;
-format_aevm_args(?hsh(<<N:256>>)) -> N;
-format_aevm_args(?sig(<<W1:256, W2:256>>)) -> {W1, W2};
-format_aevm_args(?oid(<<N:256>>)) -> N;
-format_aevm_args(?qid(<<N:256>>)) -> N;
-format_aevm_args(<<N:256>>) -> N;
-format_aevm_args({bytes, Bin}) ->
-    case to_words(Bin) of
-        [W] -> W;
-        Ws  -> list_to_tuple(Ws)
-    end;
-format_aevm_args({bits, B}) -> B;
-format_aevm_args(true) -> 1;
-format_aevm_args(false) -> 0;
-format_aevm_args([H|T]) ->
-    [format_aevm_args(H) | format_aevm_args(T)];
-format_aevm_args(T) when is_tuple(T) ->
-    list_to_tuple(format_aevm_args(tuple_to_list(T)));
-format_aevm_args(M) when is_map(M) ->
-    maps:from_list(format_aevm_args(maps:to_list(M)));
-format_aevm_args(X) -> X.
-
-to_words(Bin) ->
-    N      = byte_size(Bin),
-    PadN   = (N + 31) div 32 * 32,
-    Padded = <<Bin/binary, 0:(PadN - N)/unit:8>>,
-    [ W || <<W:32/unit:8>> <= Padded ].
+make_calldata_from_code(_Code, Fun, Args, _Opts) when is_binary(Fun) ->
+    Args1 = format_fate_args(if is_tuple(Args) -> Args;
+                                true -> {Args}
+                             end),
+    FunctionId = make_fate_function_id(Fun),
+    aeb_fate_encoding:serialize(aere_response:encode({FunctionId, Args1})).
 
 
 make_fate_function_id(FunctionName) when is_binary(FunctionName) ->

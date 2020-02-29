@@ -144,7 +144,7 @@ pp_response({some, X}) ->
 pp_response({variant, Cons}) ->
     text(Cons);
 pp_response({revert, Msg}) ->
-    text(aere_color:red("REVERT: ") ++ binary_to_list(Msg));
+    text(aere_color:render_colored(default, aere_color:red("REVERT: ") ++ binary_to_list(Msg)));
 pp_response({address, Addr}) ->
     text(binary_to_list(aeser_api_encoder:encode(peer_pubkey, <<Addr:256>>)));
 pp_response({bytes, Bs}) ->
