@@ -245,8 +245,8 @@ process_input(State = #repl_state{options = Opts}, set, Inp) ->
                 case Val of
                     "none" -> {options, Opts#options{colors = none}};
                     "default" -> erase(wololo), {options, Opts#options{colors = default}};
-                    "no_emph" -> erase(wololo), {options, Opts#options{colors = no_emph}};
-                    _ -> aere_error:bad_option(["default", "none", "no_emph"])
+                    "no-emph" -> erase(wololo), {options, Opts#options{colors = no_emph}};
+                    _ -> aere_error:bad_option(["default", "none", "no-emph"])
                 end;
             "call-gas" -> ?ParseOptionInt(gas);
             "call-value" -> ?ParseOptionInt(call_value);
