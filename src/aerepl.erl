@@ -448,7 +448,7 @@ register_letfun(S0 = #repl_state{letfuns = Letfuns, letvals = Letvals, tracked_c
                                         {letfun, A, {id, AName, Fn}, Args, RT, B} ->
                                             {letfun, A, {id, AName, UpdateName(Fn)}, Args, RT,
                                              begin
-                                             aere_sophia:replace_var(B, Name, NewName)
+                                             aere_sophia:replace_ast(B, id, Name, NewName)
                                              end}
                                     end
                                     || F <- Fs], Cs, Ls}}
@@ -474,24 +474,36 @@ make_shadowed_fun_name(S0, Name) ->
     {S1, Name ++ io_lib:format("#~p", [Sup])}.
 
 remove_references(Names, Cons, LetVals) ->
-    { [ case lists:member(CName, Names) of
-            true -> {CName, {shadowed_contract, ConRef, ConName, I}};
-            false -> C
-        end
-        || C = {CName, {_, ConRef, ConName, I}} <- Cons
-      ]
-    , [ {{Provider, ProvRef}, {NewPat, Type}}   %% removing letvals shadowed by rec and args
-        || {{Provider, ProvRef}, {Pat, Type}} <- LetVals,
-           NewPat <- [lists:foldl(
-                        fun(V, P) -> aere_sophia:replace_var(P, V, "_")
-                        end, Pat, Names)],
-           lists:any(fun({id, _, "_"}) -> false; %% If everything is removed, why even consider it?
-                        (_) -> true
-                     end, aere_sophia:get_pat_ids(NewPat))
-      ]
-    }.
+    LetVals1 =
+        [ {{Provider, ProvRef}, {NewPat, Type}}   %% removing letvals shadowed by rec and args
+          || {{Provider, ProvRef}, {Pat, Type}} <- LetVals,
+             NewPat <- [lists:foldl(
+                          fun(V, P) -> aere_sophia:replace_ast(P, id, V, "_")
+                          end, Pat, Names)],
+             lists:any(fun({id, _, "_"}) -> false;  %% If everything is removed, why even consider it?
+                          (_) -> true
+                       end, aere_sophia:get_pat_ids(NewPat))
+        ],
+    Cons1 =
+        [ case lists:member(CName, Names) of
+              true -> {CName, {shadowed_contract, ConRef, ConName, I}};
+              false -> C
+          end
+          || C = {CName, {_, ConRef, ConName, I}} <- Cons
+        ],
+    LetvalNames = [N || {_, {Pat, _}} <- LetVals, N <- aere_sophia:get_pat_ids(Pat)],
+    Cons2 = lists:filter(  %% If wasn't actually shadowed then we remove it
+              fun({CName, {shadowed_contract, _, _, _}}) ->
+                      lists:member(CName, LetvalNames) or not lists:member(CName, Names);
+                 (_) -> true
+              end, Cons1),
+    {Cons2, LetVals1}.
 
-free_names(State = #repl_state{letfuns = Letfuns, letvals = Letvals, tracked_contracts = Cons, options = Opts}, Names) ->
+free_names(State = #repl_state{ letfuns = Letfuns
+                              , letvals = Letvals
+                              , tracked_contracts = Cons
+                              , options = Opts
+                              }, Names) ->
     RunCleansing =
         fun Cleansing([], [], L) ->
                 L;
@@ -521,6 +533,7 @@ free_names(State = #repl_state{letfuns = Letfuns, letvals = Letvals, tracked_con
         , letvals = Letvals1
         , tracked_contracts = Cons1
         },
+    [aere_error:nothing_to_remove() || State == State1], %% FIXME can be done smarter
     case ([FN || {FN, _} <- Letfuns -- Letfuns1, not(lists:member(FN, Names))]) of
         [] -> State1;
         AdditionalNames ->
