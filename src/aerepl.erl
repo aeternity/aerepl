@@ -56,7 +56,16 @@ banner() ->
 
 ".
 
+
+load_nifs() ->
+    case os:getenv("NIF_DIR") of
+        false -> Path = "_build/default/lib/";
+        Path -> Path
+    end,
+    ok = enacl_nif:load(Path).
+
 main(_Args) ->
+    %% load_nifs(),
     start().
 
 -spec start() -> finito.
@@ -174,6 +183,8 @@ ask(Question, Options, Default, REPLOpts) ->
                  | {success, repl_state()}.
 process_input(_, quit, _) ->
     finito;
+process_input(_, reset, _) ->
+    {success, "", init_state()};
 process_input(State, type, I) ->
     Expr = aere_sophia:parse_body(I),
     Contract = aere_mock:chained_query_contract(State, Expr),
@@ -298,10 +309,12 @@ process_input(State = #repl_state{ tracked_contracts = Cons
     case file:read_file(File) of
         {ok, Src} ->
             Ast = aere_sophia:parse_file(binary_to_list(Src), []),
+            TAstUnfolded = aere_sophia:typecheck(Ast, [dont_unfold]),
             TAst = aere_sophia:typecheck(Ast),
             BCode = aere_sophia:compile_contract(fate, binary_to_list(Src), TAst),
             {{con, DecAnn, StrDeclName}, Interface}
-                = aere_sophia:generate_interface_decl(TAst),
+                = aere_sophia:generate_interface_decl(TAstUnfolded),
+
             RefName =
                 case MaybeRefName of
                     none ->
@@ -522,7 +535,7 @@ name_status(#repl_state
             , letfuns = LocFuns
             , tracked_contracts = TCons
             }, Name) ->
-    % Beware, the state-of-the-art solution is approaching!
+    % Behold, the state-of-the-art solution is approaching!
     case { proplists:is_defined(Name, LetDefs)
          , proplists:is_defined(Name, LocFuns)
          , proplists:is_defined(Name, TCons)
@@ -554,7 +567,8 @@ register_includes(State = #repl_state{ include_ast = Includes
                                        , include_files  = Files ++ PrevFiles
                                        },
 
-            MockForTc = aere_mock:simple_query_contract(NewState, [{id, aere_mock:ann(), "state"}]),
+            MockForTc = aere_mock:simple_query_contract(NewState, [{tuple, aere_mock:ann(), []}]),
+
             aere_sophia:typecheck(MockForTc),
 
             Colored = aere_color:yellow(lists:flatten([" " ++ F || F <- Files])),
