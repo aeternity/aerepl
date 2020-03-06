@@ -25,7 +25,7 @@ ann() ->
 contract(Body) ->
     contract(?MOCK_CONTRACT, Body).
 contract(Name, Body) ->
-    {contract, ann(), {con, ann(), Name},
+    {contract, [payable, ann()], {con, ann(), Name},
      Body
     }.
 
@@ -91,23 +91,48 @@ state_init(#repl_state
     , typedef("state", StType)].
 
 
+with_auto_imports(State = #repl_state{include_files = Includes}, Expr) ->
+    AutoImports =
+        [ binary_to_list(AI)
+          || AI <- aeso_parser:auto_imports(Expr)
+        ],
+    case aerepl:register_includes(State, AutoImports -- Includes) of
+        {_, S} -> S;
+        S = #repl_state{} -> S;
+        {error, Msg} -> throw({error, "While importing auto import: " ++ Msg})
+    end.
+
+with_letfun_auto_imports(State = #repl_state{letfuns = Letfuns}) ->
+    FBodies =
+          [ FBody
+            || {_, {Funs, _, _}} <- Letfuns,
+               {letfun, _, _, _, _, FBody} <- Funs
+          ],
+    lists:foldr(fun(FB, S) -> with_auto_imports(S, FB) end, State, FBodies).
+
+
+
 %% Contract that evals Expr and does not chain state
-simple_query_contract( State = #repl_state{ letvals = LetDefs
+simple_query_contract( State = #repl_state{ letvals = Letvals
                                           , letfuns = LetFuns
                                           , tracked_contracts = TrackedCons
+                                          , user_contract_state_type = StType
                                           }, Stmts) ->
     Body = {block, ann(), Stmts},
-    Con = contract(letfun_defs(LetFuns) ++
-                       [val_entrypoint( ?USER_INPUT
-                                      , with_value_refs(TrackedCons, LetDefs, Body), full)]),
-    prelude(State) ++ [Con].
+    S1 = with_auto_imports(State, Body),
+    S2 = with_letfun_auto_imports(S1),
+    Con = contract(
+            letfun_defs(LetFuns) ++
+                [ typedef("state", StType)
+                , val_entrypoint( ?USER_INPUT
+                                , with_value_refs(TrackedCons, Letvals, Body), full)]),
+    prelude(S2) ++ [Con].
 
 
 %% Contract that evals expression and chains state if it makes sense
 chained_query_contract(State = #repl_state
                        { letvals = LetVals
                        , letfuns = LetFuns
-                       , include_files = Includes
                        , tracked_contracts = TrackedCons
                        , user_contract_state_type = StType
                        , options = #options{call_value = CallValue}
@@ -117,18 +142,14 @@ chained_query_contract(State = #repl_state
                 0 -> Stmts;
                 _ -> with_token_refund(Stmts)
             end},
-    AutoImports = [binary_to_list(AI) || AI <- aeso_parser:auto_imports(Body)],
-    WithAuto = case aerepl:register_includes(State, AutoImports -- Includes) of
-                   {success, _, S} -> S;
-                   {success, S} -> S;
-                   {error, Msg} -> throw({error, "While importing auto import: " ++ Msg})
-               end,
+    State1 = with_auto_imports(State, Body),
+    State2 = with_letfun_auto_imports(State1),
     Prev = contract(?PREV_CONTRACT, [decl(?GET_STATE, [], StType)]),
     Query = contract(state_init(State) ++ letfun_defs(LetFuns) ++
                          [ val_entrypoint(?USER_INPUT, with_value_refs(TrackedCons, LetVals, Body), full)
                          , val_entrypoint(?GET_STATE, {id, ann(), "state"})
                          ]),
-    prelude(WithAuto) ++ [Prev, Query].
+    prelude(State2) ++ [Prev, Query].
 
 with_token_refund([]) ->
     []; % didn't spend anything
@@ -147,12 +168,12 @@ with_token_refund(L) when is_list(L) ->
 
 
 %% Contract that initializes state chaining
-chained_initial_contract(State = #repl_state{ letvals = LetDefs
+chained_initial_contract(State = #repl_state{ letvals = Letvals
                                             , tracked_contracts = TrackedCons
                                             }, Stmts, Type) ->
     Body = {block, ann(), Stmts},
     Con = contract([ typedef("state", Type)
-                   , val_entrypoint("init", with_value_refs(TrackedCons, LetDefs, Body))
+                   , val_entrypoint("init", with_value_refs(TrackedCons, Letvals, Body))
                    , val_entrypoint(?GET_STATE, {id, ann(), "state"})
                    ]),
     prelude(State) ++ [Con].
@@ -160,23 +181,27 @@ chained_initial_contract(State = #repl_state{ letvals = LetDefs
 
 %% Contract that exposes value via entrypoint.
 %% Not stateful nor payable, but remembers already defined values.
-letval_provider(State = #repl_state{ letvals = LetDefs
+letval_provider(State = #repl_state{ letvals = Letvals
+                                   , letfuns = LetFuns
                                    , tracked_contracts = TrackedCons
                                    , user_contract_state_type = StType
                                    }, Name, Body) ->
+    State1 = with_auto_imports(State, [Body]),
+    State2 = with_letfun_auto_imports(State1),
     Prev = contract(?PREV_CONTRACT, [decl(?GET_STATE, [], StType)]),
     Con = contract(?LETVAL_PROVIDER(Name)
                   , [val_entrypoint( ?LETVAL_GETTER(Name)
-                                   , with_value_refs(TrackedCons, LetDefs, Body))|state_init(State)]
+                                   , with_value_refs(TrackedCons, Letvals, Body))|state_init(State)]
+                   ++ letfun_defs(LetFuns)
                   ),
-    prelude(State) ++ [Prev, Con].
+    prelude(State2) ++ [Prev, Con].
 
 
 %% Declarations of providers of values
-letdef_provider_decls(LetDefs) ->
+letval_provider_decls(Letvals) ->
     [contract( ?LETVAL_PROVIDER_DECL(Name)
              , [decl(?LETVAL_GETTER(Name), [], Type)])
-     || {{Name, _}, {_, Type}} <- LetDefs
+     || {{Name, _}, {_, Type}} <- Letvals
     ].
 
 
@@ -216,18 +241,28 @@ contract_refs(Contracts) ->
     ].
 
 %% Declarations and includes to a contract
-prelude(#repl_state{ include_ast = Includes
-                   , tracked_contracts = TrackedCons
-                   , letvals = LetDefList
-                   }) ->
-    LetDefProviders = letdef_provider_decls(LetDefList),
-    TrackedContractsDecls = [I || {_, {_Status, _, _, I}} <- TrackedCons],
-    Includes ++ TrackedContractsDecls ++ LetDefProviders.
+prelude(State = #repl_state{ tracked_contracts = TrackedCons
+                           , letvals = LetvalList
+                           , include_ast = Includes
+                           }) ->
+    LetvalProviders = letval_provider_decls(LetvalList),
+    {TCUnique, _} = lists:foldr(
+                      fun(C = {_, {_, _, TC, _}}, {Acc, Set}) ->
+                              { case sets:is_element(TC, Set) of
+                                    true -> Acc;
+                                    false -> [C|Acc]
+                                end
+                              , sets:add_element(TC, Set)
+                              }
+                      end, {[], sets:new()}, TrackedCons
+                     ),
+    TrackedContractsDecls = [I || {_, {_Status, _, _, I}} <- TCUnique],
+    Includes ++ TrackedContractsDecls ++ LetvalProviders.
 
 
 %% Prefixes expression with letval definitions and contract references.
 %% Takes map that may specify name of respective provider for letvals.
 with_value_refs([], [], Expr) ->
     Expr;
-with_value_refs(Contracts, LetDefs, Expr) ->
-    {block, ann(), contract_refs(Contracts) ++ letval_defs(LetDefs) ++ [Expr]}.
+with_value_refs(Contracts, Letvals, Expr) ->
+    {block, ann(), contract_refs(Contracts) ++ letval_defs(Letvals) ++ [Expr]}.

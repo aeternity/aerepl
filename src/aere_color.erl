@@ -15,6 +15,8 @@
 -include("aere_repl.hrl").
 
 
+color_str(none, _) ->
+    "";
 color_str(_, reset) ->
     "\e[0m";
 color_str(Coloring, red) ->
@@ -24,8 +26,6 @@ color_str(Coloring, red) ->
         _ ->
             color_str(Coloring, blue)
     end;
-color_str(none, _) ->
-    "";
 color_str(default, C) ->
     case C of
         default ->
@@ -144,6 +144,8 @@ white(Text, Priority) ->
     with_color(white, Priority, Text).
 
 
+render_colored(#repl_state{options = Opts}, C) ->
+    render_colored(Opts, C);
 render_colored(#options{colors = Coloring}, C) ->
     render_colored(Coloring, C);
 render_colored(Coloring, C) ->

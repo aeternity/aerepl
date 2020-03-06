@@ -1,7 +1,8 @@
 -module(aere_sophia).
 
 -export([ typecheck/2, typecheck/1, parse_file/2, parse_file/3, compile_contract/3
-        , parse_body/1, parse_decl/1, parse_top/1, parse_type/1, type_of/2
+        , parse_body/1, parse_top/2
+        , parse_decl/1, parse_top/1, parse_type/1, type_of/2
         , generate_interface_decl/1, process_err/1, get_pat_ids/1
         , replace_ast/4
         ]).
@@ -94,19 +95,30 @@ to_bytecode([], _) -> [].
 
 -define(with_error_handle(X), try X catch {error, Errs} -> process_err(Errs) end).
 parse_top(I) ->
+    parse_top(I, []).
+parse_top(I, Opts) ->
     Top = aeso_parse_lib:choice
-            ([ aeso_parser:maybe_block(aeso_parser:decl()),
-               ?LET_P(Stmts, aeso_parser:maybe_block(aeso_parser:stmt()),
-                      case lists:all(fun(X) -> element(1, X) =:= letval end, Stmts) of
-                          true -> aeso_parse_lib:fail();
-                          false -> {body, Stmts}
+            ([ ?LET_P(Decl, aeso_parser:maybe_block(aeso_parser:decl()),
+                      case Decl of
+                          _ when is_list(Decl) -> Decl;
+                          _ -> [Decl]
+                      end),
+               ?LET_P(Body, aeso_parser:body(),
+                      case Body of
+                          {block, _, Stmts} when is_list(Stmts) ->
+                              case lists:all(fun(X) -> element(1, X) =:= letval end, Stmts) of
+                                  true -> aeso_parse_lib:fail();
+                                  false -> {body, Stmts}
+                              end;
+                          LV when element(1, LV) =:= letval -> aeso_parse_lib:fail();
+                          _ -> {body, [Body]}
                       end)
              ]),
-    ?with_error_handle(aeso_parser:run_parser(Top, I)).
+    ?with_error_handle(aeso_parser:run_parser(Top, I, Opts)).
 parse_decl(I) ->
     ?with_error_handle(aeso_parser:run_parser(aeso_parser:decl(), I)).
 parse_body(I) ->
-    ?with_error_handle(aeso_parser:run_parser(aeso_parser:maybe_block(aeso_parser:stmt()), I)).
+    ?with_error_handle(aeso_parser:run_parser(aeso_parser:body(), I)).
 parse_type(I) ->
     ?with_error_handle(aeso_parser:run_parser(aeso_parser:type(), I)).
 parse_file(I, Opts) ->
