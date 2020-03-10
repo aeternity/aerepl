@@ -164,6 +164,8 @@ REPL variables can be used to adjust the shell's behavior. They may be adjusted 
 | ~state~              | Sophia expresion             | Updates the in-REPL state. See [[#in-repl-state][this]]                                                                          |
 | ~colors~             | ~none~, ~default~, ~no-emph~ | Adjusts color display. ~none~ is colorless, ~default~ colorful and bold and ~no-emph~ is without emphasis    |
 | ~silent~             | ~true~ or ~false~            | Toggles whether REPL should print non-error messages                                                         |
+| ~display-unit~       | ~true~ or ~false~            | If false, will not print ~()~ if the evaluation result is unit                                               |
+
 
 *** in-REPL state
 :PROPERTIES:
