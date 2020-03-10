@@ -20,22 +20,21 @@
         , user_contract_state_type %% type of the contract `state`
         , user_contracts %% contracts that were used to perform user calls
         , tracked_contracts
-          %% :: [{ entry name
+          %% :: [{ <entry name>
           %%       { tracked_contract | shadowed_contract
-          %%       , contract address
-          %%       , contract name
-          %%       , ACI
+          %%       , <contract address>
+          %%       , <ACI>
           %%       }}]
         , letfuns
-          %% :: [{ function name
-          %%       { declarations
-          %%       , used tracked contracts
-          %%       , used letvals
+          %% :: [{ <function name>
+          %%       { <declarations>
+          %%       , <used tracked contracts>
+          %%       , <used letvals>
           %%       }
           %%     }]
         , letvals
-          %% :: [{ {letval provider name, letval provider address}
-          %%     , {pattern, type}
+          %% :: [{ {<letval provider name>, <letval provider address>}
+          %%     , {<pattern>, <type>}
           %%     }]
         , user_account
         , supply :: integer()
@@ -61,6 +60,8 @@
         , callback :: function()
         }).
 -type repl_question() :: repl_question().
+
+-define(IF(C, T, E), case C of true -> T; false -> E end).
 
 
 %% These names are not supposed to be accepted by the parser

@@ -274,7 +274,9 @@ decode(?FATE_VARIANT(Arities, Tag, Values), {variant_t, Cs}) ->
     decode_variant(Arities, Cs, Tag, Values, '$undefined$');
 decode(S, string) when ?IS_FATE_STRING(S)           -> S;
 decode(M, {map, KeyType, ValType}) when ?IS_FATE_MAP(M)              ->
-    maps:from_list([{decode(K, KeyType), decode(V, ValType)} || {K, V} <- maps:to_list(M)]).
+    maps:from_list([{decode(K, KeyType), decode(V, ValType)} || {K, V} <- maps:to_list(M)]);
+decode(T, {tuple, [Single]}) ->
+    decode(T, Single).
 
 decode_variant([Arity|Left1], [{C, Types}|Left2], N = 0, Values, Acc) ->
     %% These are the values that should be returned.

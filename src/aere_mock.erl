@@ -98,8 +98,7 @@ with_auto_imports(State = #repl_state{include_files = Includes}, Expr) ->
         ],
     case aerepl:register_includes(State, AutoImports -- Includes) of
         {_, S} -> S;
-        S = #repl_state{} -> S;
-        {error, Msg} -> throw({error, "While importing auto import: " ++ Msg})
+        S = #repl_state{} -> S
     end.
 
 with_letfun_auto_imports(State = #repl_state{letfuns = Letfuns}) ->
@@ -137,10 +136,13 @@ chained_query_contract(State = #repl_state
                        , user_contract_state_type = StType
                        , options = #options{call_value = CallValue}
                        }, Stmts) ->
+    Stmts1 = if is_list(Stmts) -> Stmts;
+                true -> [Stmts]
+             end,
     Body = {block, ann(),
             case CallValue of
-                0 -> Stmts;
-                _ -> with_token_refund(Stmts)
+                0 -> Stmts1;
+                _ -> with_token_refund(Stmts1)
             end},
     State1 = with_auto_imports(State, Body),
     State2 = with_letfun_auto_imports(State1),
@@ -216,38 +218,39 @@ letval_defs(LetVals) ->
 
 
 letfun_defs(LetFuns) ->
-    [ {block, ann(), [ case F of
-                           {fun_decl, _, _, _} -> F;
-                           {letfun, A, N, Args, RT, Body} ->
-                               {Cons1, LetVals1} =
-                                   begin
-                                       UsedNames = [AN || Arg <- Args,
-                                                          AN <- aere_sophia:get_pat_ids(Arg)
-                                                   ],
-                                      aerepl:remove_references(UsedNames, Cons, LetVals)
-                                   end,
-                               {letfun, A, N, Args, RT, with_value_refs(Cons1, LetVals1, Body)}
+    [ { block, ann()
+      , [ case F of
+              {fun_decl, _, _, _} -> F;
+              {letfun, A, N, Args, RT, Body} ->
+                  {Cons1, LetVals1} =
+                      begin
+                          UsedNames = [AN || Arg <- Args,
+                                             AN <- aere_sophia:get_pat_ids(Arg)
+                                      ],
+                          aerepl:remove_references(UsedNames, Cons, LetVals)
+                      end,
+                  {letfun, A, N, Args, RT, with_value_refs(Cons1, LetVals1, Body)}
                        end
-                      || F <- Funs
-                     ]}
-     || {_, {Funs, Cons, LetVals}} <- LetFuns
+          || F <- Funs
+        ]}
+      || {_, {Funs, Cons, LetVals}} <- LetFuns
     ].
 
 %% References to contracts with their types
 contract_refs(Contracts) ->
     [ { letval, ann(), {id, ann(), Name}
       , {typed, ann(), {contract_pubkey, ann(), ConRef}, ConName}}
-      || {Name, {tracked_contract, ConRef, ConName, _}} <- Contracts
+      || {Name, {tracked_contract, ConRef, {contract, _, ConName, _}}} <- Contracts
     ].
 
 %% Declarations and includes to a contract
-prelude(State = #repl_state{ tracked_contracts = TrackedCons
-                           , letvals = LetvalList
-                           , include_ast = Includes
-                           }) ->
+prelude(#repl_state{ tracked_contracts = TrackedCons
+                   , letvals = LetvalList
+                   , include_ast = Includes
+                   }) ->
     LetvalProviders = letval_provider_decls(LetvalList),
     {TCUnique, _} = lists:foldr(
-                      fun(C = {_, {_, _, TC, _}}, {Acc, Set}) ->
+                      fun(C = {_, {_, _, {contract, _, TC, _}}}, {Acc, Set}) ->
                               { case sets:is_element(TC, Set) of
                                     true -> Acc;
                                     false -> [C|Acc]
@@ -256,7 +259,7 @@ prelude(State = #repl_state{ tracked_contracts = TrackedCons
                               }
                       end, {[], sets:new()}, TrackedCons
                      ),
-    TrackedContractsDecls = [I || {_, {_Status, _, _, I}} <- TCUnique],
+    TrackedContractsDecls = [I || {_, {_Status, _, I}} <- TCUnique],
     Includes ++ TrackedContractsDecls ++ LetvalProviders.
 
 

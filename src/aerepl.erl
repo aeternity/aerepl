@@ -172,10 +172,7 @@ handle_dispatch(State = #repl_state{}, {ok, {Command, Args}}) ->
     try process_input(State, Command, Args) of
         {Output, State1 = #repl_state{options = #options{silent = Silent}}} ->
             {State2, Warnings} = destroy_warnings(State1),
-            Msg = case Silent of
-                      true -> "";
-                      false -> aere_color:emph(aere_color:default(Output))
-                  end,
+            Msg = ?IF(Silent, "", aere_color:emph(aere_color:default(Output))),
             #repl_response
                 { output = Msg
                 , warnings = Warnings
@@ -253,13 +250,13 @@ handle_dispatch(#repl_state{}, {error, {ambiguous_prefix, Propositions}}) ->
 process_input(_, quit, _) ->
     finito;
 process_input(_, reset, _) ->
-    {success, init_state()};
+    init_state();
 process_input(State, type, I) ->
-    Expr = aere_sophia:parse_body(I),
-    Contract = aere_mock:chained_query_contract(State, Expr),
+    Stmts = aere_sophia:parse_body(I),
+    Contract = aere_mock:chained_query_contract(State, Stmts),
     TAst = aere_sophia:typecheck(Contract),
     {_, Type} = aere_sophia:type_of(TAst, ?USER_INPUT),
-    {success, aeso_ast_infer_types:pp_type("", Type), State};
+    {aeso_ast_infer_types:pp_type("", Type), State};
 process_input(State, eval, I) ->
     Parse = aere_sophia:parse_top(I),
     case Parse of
@@ -267,10 +264,7 @@ process_input(State, eval, I) ->
             Mock = aere_mock:chained_query_contract(State, Body),
             {NewState, Res} = eval_contract(I, Mock, State),
             { case Res of
-                  "()" -> case State#repl_state.options#options.display_unit of
-                              true -> "()";
-                              false -> ""
-                          end;
+                  "()" -> ?IF(State#repl_state.options#options.display_unit, "()", "");
                   _ -> io_lib:format("~s", [Res])
               end
             , NewState};
@@ -337,7 +331,7 @@ process_input(State = #repl_state{ tracked_contracts = Cons
         end,
     Src = case file:read_file(File) of
               {ok, Src_} -> Src_;
-              {error, Reason} ->aere_error:file_error(File, Reason)
+              {error, Reason} -> aere_error:file_error(File, Reason)
           end,
     Ast = aere_sophia:parse_file(binary_to_list(Src), []),
     TAstUnfolded = aere_sophia:typecheck(Ast, [dont_unfold]),
@@ -368,54 +362,70 @@ process_input(State = #repl_state{ tracked_contracts = Cons
                 NameWithIndex(MakeIndex(-1));
             _ -> MaybeRefName
         end,
-    ConDeclName =
-        {con, DecAnn, StrDeclName},
     Interface1 =
         begin
             {contract, IAnn, _, Body} = Interface,
-            {contract, IAnn, ConDeclName, Body}
+            {contract, IAnn, {con, DecAnn, StrDeclName}, Body}
         end,
-    Deploy =
-        fun(State1) ->
-                {{Con, DeployGas}, State2} = deploy_contract(BCode, {}, Opts, State1),
-                DepGasStr = case Opts#options.display_deploy_gas of
-                                true -> [ aere_color:yellow("\ndeploy gas: ")
-                                        , io_lib:format("~p", [DeployGas])];
-                                false -> ""
-                            end,
-                {Cons1, Letvals1} = remove_references([RefName], Cons, Letvals),
-                NewState = State2#repl_state
-                    { tracked_contracts =
-                          [{ RefName
-                           , {tracked_contract, Con, ConDeclName, Interface1}} | Cons1]
-                    , letvals = Letvals1
-                    },
-                {[ aere_color:green(RefName ++ " : " ++ StrDeclName)
-                 , " was successfully deployed"
-                 , DepGasStr
-                 ]
-                , NewState
-                }
-        end,
-    case [CName
-          || {CName, {_, _, CType, CACI}} <- Cons,
-             (ConDeclName == CType) and (Interface1 /= CACI)
-         ] of
-        [] -> State;
-        Conflicts ->
-            #repl_question
-                { text =
-                      io_lib:format(
-                        "The contracts ~p share contract type name, but have different "
-                        "interfaces. They will need to be removed. Proceed?",
-                        [Conflicts])
-                , options = [{ "y", ?LAZY(Deploy(free_names(State, Conflicts)))}
-                            , {"n", ?LAZY(State)}
+
+    State1 =
+        case [ Conflict || Conflict = {_, {_, _, CACI = {contract, _, {con, _, CType}, _}}} <- Cons,
+                           (StrDeclName == CType) and (Interface1 /= CACI)
+             ] of
+            [] -> State;
+            _ ->
+                {State0_1, NewName} =
+                    (fun Retry(State0_1_0) ->
+                             {State0_1_1, Sup} = next_sup(State0_1_0),
+                             TryName =
+                                 "REPL_" ++ integer_to_list(Sup) ++
+                                 "_" ++ StrDeclName,
+                             case [bad || {_, {_, _, {con, _, NameConflict}, _}} <- Cons,
+                                          NameConflict == TryName] of
+                                 [] -> {State0_1_1, TryName};
+                                 _ -> Retry(State0_1_1)
+                             end
+                     end)(State),
+                FixConflicts =
+                    fun(ConList) ->
+                            [ ?IF(StrDeclName == CTypeName,
+                                  {CName, { Status, Addr
+                                          , {contract, CAnn, {con, AnnName, NewName}
+                                            , aere_sophia:replace_type_in_decls(
+                                                CDecls, type_id, CTypeName, NewName)
+                                            }}},
+                                  Con
+                                 )
+                              || Con = { CName,
+                                         {Status, Addr,
+                                          {contract, CAnn, {con, AnnName, CTypeName}, CDecls}}} <- ConList
                             ]
-                , default = "y"
-                , callback = fun(X) -> X end
-                }
-    end;
+                    end,
+                UpdatedFuns =
+                    [ {FName, {Decls, FixConflicts(FCons), FLetvals}}
+                      || {FName, {Decls, FCons, FLetvals}} <- State0_1#repl_state.letfuns
+                    ],
+                State0_1#repl_state
+                    { letfuns = UpdatedFuns
+                    , tracked_contracts = FixConflicts(Cons)
+                    }
+        end,
+
+    {{ConAddr, DeployGas}, State2} = deploy_contract(BCode, {}, Opts, State1),
+    DepGasStr = ?IF(Opts#options.display_deploy_gas,
+                    [ aere_color:yellow("\ndeploy gas: "), io_lib:format("~p", [DeployGas])],
+                    ""
+                   ),
+    {Cons1, Letvals1} = remove_references([RefName], State2#repl_state.tracked_contracts, Letvals),
+    NewState = State2#repl_state
+        { tracked_contracts =
+              [{ RefName
+               , {tracked_contract, ConAddr, Interface1}} | Cons1]
+        , letvals = Letvals1
+        },
+    {[aere_color:green(RefName ++ " : " ++ StrDeclName), " was successfully deployed", DepGasStr]
+    , NewState
+    };
 process_input(State, rm, Inp) ->
     State1 = free_names(State, string:split(Inp, aere_parse:whitespaces())),
     [ aere_error:nothing_to_remove()
@@ -468,7 +478,7 @@ register_letval(S0 = #repl_state{ letvals = Letvals
     TProvider = aere_sophia:typecheck(Provider),
     {[], Type} = aere_sophia:type_of(TProvider, ?LETVAL_GETTER(PName)),
     {{Ref, _}, S2} = build_deploy_contract("no_source", TProvider, {}, Opts, S1),
-    {Cons1, Letvals1} = remove_references(aere_sophia:get_pat_ids(Pat) ,Cons, Letvals),
+    {Cons1, Letvals1} = remove_references(aere_sophia:get_pat_ids(Pat), Cons, Letvals),
     S3 = S2#repl_state{ letvals = [{{PName, Ref}, {Pat, Type}}|Letvals1]
                       , tracked_contracts = Cons1
                       },
@@ -496,21 +506,16 @@ register_letfun(S0 = #repl_state{ letfuns = Letfuns
                 begin
                     {SS, NewName} = make_shadowed_fun_name(S0, Name),
                     UpdateName =
-                        fun(NN) ->
-                                case NN == Name of
-                                    true -> NewName;
-                                    false -> NN
-                                end end,
-                    {SS, [{FName, {[case F of
-                                        {fun_decl, A, {id, AName, Fn}, RT} ->
-                                            {fun_decl, A, {id, AName, UpdateName(Fn)}, RT};
-                                        {letfun, A, {id, AName, Fn}, Args, RT, B} ->
-                                            {letfun, A, {id, AName, UpdateName(Fn)}, Args, RT,
-                                             begin
-                                             aere_sophia:replace_ast(B, id, Name, NewName)
-                                             end}
-                                    end
-                                    || F <- Fs], Cs, Ls}}
+                        fun(NN) -> ?IF(NN == Name, NewName, NN) end,
+                    {SS, [{FName,
+                           {[case F of
+                                 {fun_decl, A, {id, AName, Fn}, RT} ->
+                                     {fun_decl, A, {id, AName, UpdateName(Fn)}, RT};
+                                 {letfun, A, {id, AName, Fn}, Args, RT, B} ->
+                                     {letfun, A, {id, AName, UpdateName(Fn)}, Args, RT,
+                                      aere_sophia:replace_ast(B, id, Name, NewName)}
+                             end
+                             || F <- Fs], Cs, Ls}}
                           || {FName, {Fs, Cs, Ls}} <- [{NewName, Dupl}|proplists:delete(Name, Letfuns)]
                          ]}
                 end
@@ -544,15 +549,12 @@ remove_references(Names, Cons, LetVals) ->
                        end, aere_sophia:get_pat_ids(NewPat))
         ],
     Cons1 =
-        [ case lists:member(CName, Names) of
-              true -> {CName, {shadowed_contract, ConRef, ConName, I}};
-              false -> C
-          end
-          || C = {CName, {_, ConRef, ConName, I}} <- Cons
+        [ ?IF(lists:member(CName, Names), {CName, {shadowed_contract, ConRef, I}}, C)
+          || C = {CName, {_, ConRef, I}} <- Cons
         ],
     LetvalNames = [N || {_, {Pat, _}} <- LetVals, N <- aere_sophia:get_pat_ids(Pat)],
     Cons2 = lists:filter(  %% If wasn't actually shadowed then we remove it
-              fun({CName, {shadowed_contract, _, _, _}}) ->
+              fun({CName, {shadowed_contract, _, _}}) ->
                       lists:member(CName, LetvalNames) or not lists:member(CName, Names);
                  (_) -> true
               end, Cons1),
@@ -704,17 +706,13 @@ eval_contract(Src, Ast, S1 = #repl_state{options = Options}) ->
 
     PPResp = prettypr:format(aere_response:pp_response(Resp)),
     DeployGasStr =
-        case Options#options.display_deploy_gas of
-            true -> [ aere_color:yellow("\ndeploy gas: ")
-                    , io_lib:format("~p", [GasDeploy])];
-            false -> ""
-        end,
+        ?IF(Options#options.display_deploy_gas,
+            [ aere_color:yellow("\ndeploy gas: "), io_lib:format("~p", [GasDeploy])],
+            ""),
     CallGasStr =
-        case Options#options.display_call_gas of
-            true -> [ aere_color:yellow("\ncall gas: ")
-                    , io_lib:format("~p", [GasCall])];
-            false -> ""
-        end,
+        ?IF(Options#options.display_call_gas,
+            [ aere_color:yellow("\ncall gas: "), io_lib:format("~p", [GasCall])],
+            ""),
     { S3#repl_state{ user_contracts = [Con|S3#repl_state.user_contracts] }
     , [PPResp, DeployGasStr, CallGasStr]}.
 
@@ -790,6 +788,8 @@ build_type_map(Ast) ->
 build_type_map(_Scope, [], Acc) ->
     Acc;
 build_type_map(Scope, [{namespace, _, {con, _, Name}, Defs} | Rest], Acc) ->
+    build_type_map(Scope, Rest, build_type_map(Scope ++ [Name], Defs, Acc));
+build_type_map(Scope, [{contract, _, {con, _, Name}, Defs} | Rest], Acc) ->
     build_type_map(Scope, Rest, build_type_map(Scope ++ [Name], Defs, Acc));
 build_type_map(Scope, [{type_def, _, {id, _, Name}, Args, {variant_t, Cons}} | Rest], Acc) ->
     build_type_map(Scope, Rest, Acc#{Scope ++ [Name] => {variant, Args, Cons}});

@@ -4,7 +4,7 @@
         , parse_body/1, parse_top/2
         , parse_decl/1, parse_top/1, parse_type/1, type_of/2
         , generate_interface_decl/1, process_err/1, get_pat_ids/1
-        , replace_ast/4
+        , replace_ast/4, replace_type_in_decls/4
         ]).
 
 -include("../_build/default/lib/aesophia/src/aeso_parse_lib.hrl").
@@ -68,7 +68,7 @@ type_of([{contract, _, _, Defs}], FunName) ->
                 "init" -> {[], {tuple_t, [], []}};
                 _ -> error("Function " ++ FunName ++ " is not defined")
             end;
-        _ -> error("what the fuck, two entrypoints with the same name")
+        _ -> error("co kurwa, two entrypoints with the same name")
     end;
 type_of([_ | Contracts], FunName) ->
     type_of(Contracts, FunName).
@@ -106,10 +106,10 @@ parse_top(I, Opts) ->
                ?LET_P(Body, aeso_parser:body(),
                       case Body of
                           {block, _, Stmts} when is_list(Stmts) ->
-                              case lists:all(fun(X) -> element(1, X) =:= letval end, Stmts) of
-                                  true -> aeso_parse_lib:fail();
-                                  false -> {body, Stmts}
-                              end;
+                              ?IF(lists:all(fun(X) -> element(1, X) =:= letval end, Stmts),
+                                  aeso_parse_lib:fail(),
+                                  {body, Stmts}
+                                 );
                           LV when element(1, LV) =:= letval -> aeso_parse_lib:fail();
                           _ -> {body, [Body]}
                       end)
@@ -118,7 +118,11 @@ parse_top(I, Opts) ->
 parse_decl(I) ->
     ?with_error_handle(aeso_parser:run_parser(aeso_parser:decl(), I)).
 parse_body(I) ->
-    ?with_error_handle(aeso_parser:run_parser(aeso_parser:body(), I)).
+    ?with_error_handle(
+       case aeso_parser:run_parser(aeso_parser:body(), I) of
+           {block, _, Stmts} when is_list(Stmts) -> Stmts;
+           Other -> [Other]
+       end).
 parse_type(I) ->
     ?with_error_handle(aeso_parser:run_parser(aeso_parser:type(), I)).
 parse_file(I, Opts) ->
@@ -169,160 +173,222 @@ get_pat_ids(_) ->
     [].
 
 
-replace_ast(B, Pat, Old, New) when is_list(B) ->
-    replace_ast(B, Pat, Old, New, []);
-replace_ast(E, Pat, Old, New) ->
-    replace_ast1(E, Pat, Old, New).
-replace_ast([], _, _, _, Acc) ->
-    lists:reverse(Acc);
-replace_ast([{letval, Ann, Pats, Expr}|Rest], Pat, Old, New, Acc) ->
-    PatIds = [I || P <- Pats, I <- get_pat_ids(P)],
-    Stmt = {letval, Ann, Pats, replace_ast1(Expr, Pat, Old, New)},
-    case lists:member(Old, PatIds) of
-        true -> lists:reverse([Stmt|Acc]) ++ Rest;
-        false -> replace_ast(Rest, Pat, Old, New, [Stmt|Acc])
-    end;
-replace_ast([{letfun, Ann, Name, Pats, RT, Expr}|Rest], Pat, Old, New, Acc) ->
-    PatIds = [I || P <- Pats, I <- get_pat_ids(P)],
-    Stmt = {letfun, Ann, Name, Pats, RT, replace_ast1(Expr, Pat, Old, New)},
-    case lists:member(Old, PatIds) of
-        true -> lists:reverse([Stmt|Acc]) ++ Rest;
-        false -> replace_ast(Rest, Pat, Old, New, [Stmt|Acc])
-    end;
-replace_ast([{fun_decl, Ann, Name, RT}|Rest], Pat, Old, New, Acc) ->
-    replace_ast(Rest, Pat, Old, New, [{fun_decl, Ann, Name, replace_ast1(RT, Pat, Old, New)}|Acc]);
-replace_ast([Expr|Rest], Pat, Old, New, Acc) ->
-    replace_ast(Rest, Pat, Old, New, [replace_ast1(Expr, Pat, Old, New)|Acc]).
-
-replace_ast1({id, A, Old}, id, Old, New) when is_list(New) ->
+%% This is real shit. Legend says that this function reduces
+%% to the halting problem.
+-define(ReplaceAST(X), replace_ast(X, Pat, Old, New)).
+-define(ReplaceType(T), replace_type(T, Pat, Old, New)).
+-define(ReplaceBlock(X), replace_ast_block(X, Pat, Old, New)).
+-define(ReplaceTypeInExpr(T), case Pat =:= type_id of
+                                  true -> ?ReplaceType(T);
+                                  false -> T
+                              end).
+replace_ast({id, A, Old}, id, Old, New) when is_list(New) ->
     {id, A, New};
-replace_ast1({id, _A, Old}, id, Old, New) ->
+replace_ast({qid, A, QOld}, id, Old, New) when is_list(New) ->
+    {qid, A, lists:map(fun(N) -> ?IF(N == Old, New, N) end, QOld)};
+replace_ast({id, _A, Old}, id, Old, New) ->
     New;
-replace_ast1({qid, _A, [Old]}, id, Old, New) ->
+replace_ast({qid, _A, [Old]}, id, Old, New) ->
     New;
-replace_ast1({qid, _A, Old}, id, Old, New) ->
+replace_ast({qid, _A, Old}, id, Old, New) ->
     New;
-replace_ast1({con, _A, Old}, id, Old, New) ->
-    New;
-replace_ast1({qcon, _A, [Old]}, id, Old, New) ->
-    New;
-replace_ast1({qcon, _A, Old}, id, Old, New) ->
-    New;
-replace_ast1({lam, Ann, Args, Expr}, Pat, Old, New) ->
+
+replace_ast(L, Pat, Old, New) when is_list(L) ->
+    ?ReplaceBlock(L);
+replace_ast({lam, Ann, Args, Expr}, Pat, Old, New) ->
     ArgIds = [I || {arg, _, I, _} <- Args],
-    Expr1 = case lists:member(Old, ArgIds) of
-                true -> Expr;
-                false -> replace_ast(Expr, Pat, Old, New)
-            end,
+    Expr1 = ?IF(lists:member(Old, ArgIds), Expr, ?ReplaceBlock(Expr)),
     {lam, Ann, Args, Expr1};
-replace_ast1({'if', Ann, C, T, E}, Pat, Old, New) ->
-    {'if', Ann, replace_ast1(C, Pat, Old, New),
-     replace_ast1(T, Pat, Old, New), replace_ast1(E, Pat, Old, New)};
-replace_ast1({switch, Ann, Expr, Alts}, Pat, Old, New) ->
-    {switch, Ann, replace_ast1(Expr, Pat, Old, New),
+replace_ast({'if', Ann, C, T, E}, Pat, Old, New) ->
+    {'if', Ann, ?ReplaceAST(C), ?ReplaceAST(T), ?ReplaceAST(E)};
+replace_ast({switch, Ann, Expr, Alts}, Pat, Old, New) ->
+    {switch, Ann, ?ReplaceAST(Expr),
      [ begin
-           Expr1 = case lists:member(Old, get_pat_ids(P)) of
-                       true -> ExprA;
-                       false -> replace_ast(ExprA, Pat, Old, New)
-                   end,
+           Expr1 = ?IF(lists:member(Old, get_pat_ids(P)), ExprA, ?ReplaceBlock(ExprA)),
            {'case', A, P, Expr1}
        end
       || {'case', A, P, ExprA} <- Alts
      ]};
-replace_ast1({app, Ann, Expr, Args}, Pat, Old, New) ->
-    {app, Ann, replace_ast1(Expr, Pat, Old, New), [replace_ast1(A, Pat, Old, New) || A <- Args]};
-replace_ast1({proj, Ann, Expr, Id}, Pat, Old, New) ->
-    {proj, Ann, replace_ast1(Expr, Pat, Old, New), Id};
-replace_ast1({tuple, Ann, Exprs}, Pat, Old, New) ->
-    {tuple, Ann, [replace_ast1(Expr, Pat, Old, New) || Expr <- Exprs]};
-replace_ast1({list, Ann, Exprs}, Pat, Old, New) ->
-    {list, Ann, [replace_ast1(Expr, Pat, Old, New) || Expr <- Exprs]};
-replace_ast1({list_comp, Ann, Expr, [{comprehension_bind, Pat, BindBy}|Rest]}, Pat, Old, New) ->
-    BindBy1 = replace_ast1(BindBy, Pat, Old, New),
+replace_ast({app, Ann, Expr, Args}, Pat, Old, New) ->
+    {app, Ann, ?ReplaceAST(Expr),  [?ReplaceAST(A) || A <- Args]};
+replace_ast({proj, Ann, Expr, Id}, Pat, Old, New) ->
+    {proj, Ann, ?ReplaceAST(Expr), Id};
+replace_ast({tuple, Ann, Exprs}, Pat, Old, New) ->
+    {tuple, Ann,  [?ReplaceAST(Expr) || Expr <- Exprs]};
+replace_ast({list, Ann, Exprs}, Pat, Old, New) ->
+    {list, Ann,  [?ReplaceAST(Expr) || Expr <- Exprs]};
+replace_ast({list_comp, Ann, Expr, [{comprehension_bind, Pat, BindBy}|Rest]}, Pat, Old, New) ->
+    BindBy1 = ?ReplaceAST(BindBy),
     {list_comp, _, Expr1, Rest1} =
-        case lists:member(Old, get_pat_ids(Pat)) of
-            true -> {list_comp, Ann, Expr, Rest};
-            false -> replace_ast({list_comp, Ann, Expr, Rest}, Pat, Old, New)
-        end,
+        ?IF(lists:member(Old, get_pat_ids(Pat)),
+            {list_comp, Ann, Expr, Rest},
+            ?ReplaceAST({list_comp, Ann, Expr, Rest})
+           ),
     {list_comp, Ann, Expr1, [{comprehension_bind, Pat, BindBy1}|Rest1]};
-replace_ast1({list_comp, Ann, Expr, [{comprehension_if, A, Cond}|Rest]}, Pat, Old, New) ->
-    Cond1 = replace_ast1(Cond, Pat, Old, New),
+replace_ast({list_comp, Ann, Expr, [{comprehension_if, A, Cond}|Rest]}, Pat, Old, New) ->
+    Cond1 = ?ReplaceAST(Cond),
     {list_comp, _, Expr1, Rest1} =
-            replace_ast({list_comp, Ann, Expr, Rest}, Pat, Old, New),
+            ?ReplaceAST({list_comp, Ann, Expr, Rest}),
     {list_comp, Ann, Expr1, [{comprehension_if, A, Cond1}|Rest1]};
-replace_ast1({list_comp, Ann, Expr, [{letfun, Ann, Name, Pats, RT, LExpr}|Rest]}, Pat, Old, New) ->
+replace_ast({list_comp, Ann, Expr, [{letfun, Ann, Name, Pats, RT, LExpr}|Rest]}, Pat, Old, New) ->
     PatIds = [I || P <- Pats, I <- get_pat_ids(P)],
-    LExpr1 = replace_ast(LExpr, Pat, Old, New),
+    LExpr1 = ?ReplaceBlock(LExpr),
     {list_comp, _, Expr1, Rest1} =
-        case lists:member(Old, PatIds) of
-            true -> {list_comp, Ann, Expr, Rest};
-            false -> replace_ast({list_comp, Ann, Expr, Rest}, Pat, Old, New)
-        end,
-    Let1 = {letfun, Ann, Name, Pats, RT, LExpr1},
+        ?IF(lists:member(Old, PatIds),
+            {list_comp, Ann, Expr, Rest},
+            ?ReplaceAST({list_comp, Ann, Expr, Rest})
+           ),
+    Let1 = {letfun, Ann, Name, Pats, ?ReplaceTypeInExpr(RT), LExpr1},
     {list_comp, Ann, Expr1, [Let1|Rest1]};
-replace_ast1({list_comp, Ann, Expr, [{letval, Ann, Pats, LExpr}|Rest]}, Pat, Old, New) ->
+replace_ast({list_comp, Ann, Expr, [{letval, Ann, Pats, LExpr}|Rest]}, Pat, Old, New) ->
     PatIds = [I || P <- Pats, I <- get_pat_ids(P)],
-    LExpr1 = replace_ast(LExpr, Pat, Old, New),
+    LExpr1 = ?ReplaceBlock(LExpr),
     {list_comp, _, Expr1, Rest1} =
-        case lists:member(Old, PatIds) of
-            true -> {list_comp, Ann, Expr, Rest};
-            false -> replace_ast({list_comp, Ann, Expr, Rest}, Pat, Old, New)
-        end,
+        ?IF(lists:member(Old, PatIds),
+            {list_comp, Ann, Expr, Rest},
+            ?ReplaceAST({list_comp, Ann, Expr, Rest})
+           ),
     Let1 = {letval, Ann, Pats, LExpr1},
     {list_comp, Ann, Expr1, [Let1|Rest1]};
-replace_ast1({list_comp, Ann, Expr, []}, Pat, Old, New) ->
-    {list_comp, Ann, replace_ast1(Expr, Pat, Old, New), []};
-replace_ast1({typed, Ann, Expr, T}, Pat, Old, New) ->
-    {typed, Ann, replace_ast1(Expr, Pat, Old, New), replace_ast1(T, Pat, Old, New)};
-replace_ast1({record, Ann, Fields}, Pat, Old, New) ->
+replace_ast({list_comp, Ann, Expr, []}, Pat, Old, New) ->
+    {list_comp, Ann, ?ReplaceAST(Expr), []};
+replace_ast({typed, Ann, Expr, T}, Pat, Old, New) ->
+    {typed, Ann, ?ReplaceAST(Expr), ?ReplaceTypeInExpr(T)};
+replace_ast({record, Ann, Fields}, Pat, Old, New) ->
     {record, Ann,
     [ case F of
-          {field, A, LV, E} ->
-              {field, A, LV, replace_ast1(E, Pat, Old, New)};
-          {field, A, LV, I, E} ->
-              {field, A, LV, I, replace_ast1(E, Pat, Old, New)}
+          {field, A, LV, E}    -> {field, A, LV, ?ReplaceAST(E)};
+          {field, A, LV, I, E} -> {field, A, LV, I, ?ReplaceAST(E)}
       end
       || F <- Fields
     ]};
-replace_ast1({record, Ann, Expr, Fields}, Pat, Old, New) ->
-    {record, Ann, replace_ast1(Expr, Pat, Old, New),
+replace_ast({record, Ann, Expr, Fields}, Pat, Old, New) ->
+    {record, Ann, ?ReplaceAST(Expr),
      [ case F of
            {field, A, LV, E} ->
-               {field, A, LV, replace_ast1(E, Pat, Old, New)};
+               {field, A, LV, ?ReplaceAST(E)};
            {field, A, LV, I, E} ->
-               {field, A, LV, I, replace_ast1(E, Pat, Old, New)}
+               {field, A, LV, I, ?ReplaceAST(E)}
        end
        || F <- Fields
      ]};
-replace_ast1({map, Ann, Fields}, Pat, Old, New) ->
+replace_ast({map, Ann, Fields}, Pat, Old, New) ->
     {map, Ann,
      [ case F of
            {field, A, LV, E} ->
-               {field, A, LV, replace_ast1(E, Pat, Old, New)};
+               {field, A, LV, ?ReplaceAST(E)};
            {field, A, LV, I, E} ->
-               {field, A, LV, I, replace_ast1(E, Pat, Old, New)}
+               {field, A, LV, I, ?ReplaceAST(E)}
        end
        || F <- Fields
      ]};
-replace_ast1({map, Ann, Expr, Fields}, Pat, Old, New) ->
-    {map, Ann, replace_ast1(Expr, Pat, Old, New),
+replace_ast({map, Ann, Expr, Fields}, Pat, Old, New) ->
+    {map, Ann, ?ReplaceAST(Expr),
      [ case F of
            {field, A, LV, E} ->
-               {field, A, LV, replace_ast1(E, Pat, Old, New)};
+               {field, A, LV, ?ReplaceAST(E)};
            {field, A, LV, I, E} ->
-               {field, A, LV, I, replace_ast1(E, Pat, Old, New)}
+               {field, A, LV, I, ?ReplaceAST(E)}
        end
        || F <- Fields
      ]};
-replace_ast1({map, Ann, Pairs}, Pat, Old, New) ->
-    {map, Ann, [{replace_ast1(K, Pat, Old, New), replace_ast1(V, Pat, Old, New)}
+replace_ast({map, Ann, Pairs}, Pat, Old, New) ->
+    {map, Ann, [{replace_ast(K, Pat, Old, New), ?ReplaceAST(V)}
                 || {K, V} <- Pairs]};
-replace_ast1({map_get, Ann, M, K}, Pat, Old, New) ->
-    {map_get, Ann, replace_ast1(M, Pat, Old, New), replace_ast1(K, Pat, Old, New)};
-replace_ast1({map_get, Ann, M, K, D}, Pat, Old, New) ->
-    {map_get, Ann, replace_ast1(M, Pat, Old, New), replace_ast1(K, Pat, Old, New),
-     replace_ast1(D, Pat, Old, New)};
-replace_ast1({block, Ann, Stmts}, Pat, Old, New) ->
-    {block, Ann, replace_ast(Stmts, Pat, Old, New)};
-replace_ast1(Other, _, _, _) ->
+replace_ast({map_get, Ann, M, K}, Pat, Old, New) ->
+    {map_get, Ann, ?ReplaceAST(M), ?ReplaceAST(K)};
+replace_ast({map_get, Ann, M, K, D}, Pat, Old, New) ->
+    {map_get, Ann, ?ReplaceAST(M), ?ReplaceAST(K),
+     ?ReplaceAST(D)};
+replace_ast({block, Ann, Stmts}, Pat, Old, New) ->
+    {block, Ann, ?ReplaceBlock(Stmts)};
+replace_ast(Other, _, _, _) ->
+    Other.
+
+
+%% Types – once we enter type replacement there is no need
+%% to use checks from ?ReplaceType
+replace_type({id, A, Old}, _, Old, New) when is_list(New) ->
+    {id, A, New};
+replace_type({qid, A, QOld}, _, Old, New) when is_list(New) ->
+    {qid, A, lists:map(fun(N) -> ?IF(N == Old, New, N) end, QOld)};
+replace_type({id, _A, Old}, _, Old, New) ->
+    New;
+replace_type({qid, _A, [Old]}, _, Old, New) ->
+    New;
+replace_type({qid, _A, Old}, _, Old, New) ->
+    New;
+replace_type({con, _A, Old}, _, Old, New) ->
+    New;
+replace_type({qcon, _A, [Old]}, _, Old, New) ->
+    New;
+replace_type({qcon, _A, Old}, _, Old, New) ->
+    New;
+replace_type({fun_t, Ann, NArgs, Args, Ret}, Pat, Old, New) ->
+    { fun_t, Ann
+    , [?ReplaceType(NA) || NA <- NArgs]
+    , [?ReplaceType(A) || A <- Args]
+    , ?ReplaceType(Ret)};
+replace_type({app_t, Ann, T, Args}, Pat, Old, New) ->
+    { app_t, Ann, ?ReplaceType(T)
+    , [?ReplaceType(A) || A <- Args]};
+replace_type({tuple_t, Ann, Args}, Pat, Old, New) ->
+    { tuple_t, Ann
+    , [?ReplaceType(A) || A <- Args]};
+replace_type({args_t, Ann, Args}, Pat, Old, New) ->
+    { args_t, Ann
+    , [?ReplaceType(A) || A <- Args]};
+replace_type({named_arg_t, Ann, Id, T, Expr}, Pat, Old, New) ->
+    { named_arg_t, Ann, Id, ?ReplaceType(T)
+    , ?ReplaceType(Expr)};
+replace_type({alias_t, T}, Pat, Old, New) ->
+    {alias_t, ?ReplaceType(T)};
+replace_type({record_t, Flds}, Pat, Old, New) ->
+    {record_t,  [?ReplaceType(F) || F <- Flds]};
+replace_type({variant_t, Constrs}, Pat, Old, New) ->
+    {variant_t,  [?ReplaceType(C) || C <- Constrs]};
+replace_type({constr_t, Ann, Con, Types}, Pat, Old, New) ->
+    { constr_t, Ann, ?ReplaceType(Con)
+    , [?ReplaceType(T) || T <- Types]};
+replace_type({field_t, Ann, Id, T}, Pat, Old, New) ->
+    {field_t, Ann, Id, ?ReplaceType(T)};
+replace_type(Other, _, _Old, _New) ->
+    Other.
+
+
+replace_ast_block(B, Pat, Old, New) when is_list(B) ->
+    replace_ast_block(B, Pat, Old, New, []);
+replace_ast_block(E, Pat, Old, New) ->
+    ?ReplaceAST(E).
+replace_ast_block([], _, _, _, Acc) ->
+    lists:reverse(Acc);
+replace_ast_block([{letval, Ann, Pats, Expr}|Rest], Pat, Old, New, Acc) ->
+    PatIds = [I || P <- Pats, I <- get_pat_ids(P)],
+    Stmt = {letval, Ann, Pats, ?ReplaceAST(Expr)},
+    ?IF(lists:member(Old, PatIds),
+        lists:reverse([Stmt|Acc]) ++ Rest,
+        replace_ast_block(Rest, Pat, Old, New, [Stmt|Acc])
+       );
+replace_ast_block([{letfun, Ann, Name, Pats, RT, Expr}|Rest], Pat, Old, New, Acc) ->
+    PatIds = [I || P <- Pats, I <- get_pat_ids(P)],
+    Stmt = {letfun, Ann, Name, Pats, RT, ?ReplaceAST(Expr)},
+    ?IF(lists:member(Old, PatIds),
+        lists:reverse([Stmt|Acc]) ++ Rest,
+        replace_ast_block(Rest, Pat, Old, New, [Stmt|Acc])
+       );
+replace_ast_block([{fun_decl, Ann, Name, RT}|Rest], Pat, Old, New, Acc) ->
+    replace_ast_block(Rest, Pat, Old, New
+                     , [{fun_decl, Ann, Name, ?ReplaceTypeInExpr(RT)}|Acc]);
+replace_ast_block([Expr|Rest], Pat, Old, New, Acc) ->
+    replace_ast_block(Rest, Pat, Old, New,  [?ReplaceAST(Expr)|Acc]).
+
+
+replace_type_in_decls(Decls, Pat, Old, New) ->
+    [replace_type_in_decl(D, Pat, Old, New) || D <- Decls].
+
+replace_type_in_decl({fun_decl, Ann, Name, RT}, Pat, Old, New) ->
+    {fun_decl, Ann, Name, ?ReplaceType(RT)};
+replace_type_in_decl({type_def, Ann, Name, TArgs, TDef}, Pat, Old, New) ->
+    {type_def, Ann, Name, TArgs, ?ReplaceType(TDef)};
+replace_type_in_decl(Other, _, _, _) ->
     Other.
