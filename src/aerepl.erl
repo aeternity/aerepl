@@ -39,6 +39,7 @@ init_state() ->
                , letvals = []
                , letfuns = []
                , user_account = PK
+               , warnings = []
                , supply = 0
                }.
 
@@ -94,6 +95,11 @@ loop(State) ->
         Resp = #repl_response{} ->
             case Resp#repl_response.status of
                 {success, State1} ->
+                    case Resp#repl_response.warnings of
+                        [] -> ok;
+                        Warnings ->
+                            [print_msg(State1, [aere_color:yellow("Warning: "), W, "\n"]) || W <- Warnings]
+                    end,
                     print_msg(State1, Resp#repl_response.output),
                     loop(State1);
                 ask -> todo;
@@ -133,7 +139,6 @@ answer(Q = #repl_question
     , default = Default
     , callback = Callback
     }, Ans) ->
-    ValidOptionsStr = valid_question_options_str(Q),
     Parsed =
         case Ans of
             "" -> Default;
@@ -146,7 +151,6 @@ answer(Q = #repl_question
         Act ->
             {accept, Callback(Act())}
     end.
-
 
 
 -spec process_string(repl_state(), binary() | string())
@@ -341,7 +345,7 @@ process_input(State = #repl_state{ tracked_contracts = Cons
     BCode = aere_sophia:compile_contract(fate, binary_to_list(Src), TAst),
     {{con, DecAnn, StrDeclName}, Interface}
         = aere_sophia:generate_interface_decl(TAstUnfolded),
-    
+
     RefName =
         case MaybeRefName of
             none ->
@@ -375,7 +379,8 @@ process_input(State = #repl_state{ tracked_contracts = Cons
         fun(State1) ->
                 {{Con, DeployGas}, State2} = deploy_contract(BCode, {}, Opts, State1),
                 DepGasStr = case Opts#options.display_deploy_gas of
-                                true -> [aere_color:yellow("\ndeploy gas"), ": ", DeployGas];
+                                true -> [ aere_color:yellow("\ndeploy gas: ")
+                                        , io_lib:format("~p", [DeployGas])];
                                 false -> ""
                             end,
                 {Cons1, Letvals1} = remove_references([RefName], Cons, Letvals),
@@ -624,38 +629,44 @@ name_status(#repl_state
 
 -spec register_includes(repl_state(), list(string())) -> repl_state().
 register_includes(State, []) ->
-    State;
+    State; %% This case may be necessary to break check-loops
 register_includes(State = #repl_state{ include_ast = Includes
                                      , include_hashes = Hashes
                                      , include_files = PrevFiles
                                      }
                  , Files) ->
-    case Files -- (Files -- PrevFiles) of
-        [] ->
-            IncludingContract = lists:flatmap(fun(I) -> "include \"" ++ I ++ "\"\n" end, Files),
-            {Addition, NewHashes} = aere_sophia:parse_file(IncludingContract, Hashes, [keep_included]),
-            NewIncludes = Includes ++ Addition,
-            NewState = State#repl_state{ include_ast    = NewIncludes
-                                       , include_hashes = NewHashes
-                                       , include_files  = Files ++ PrevFiles
-                                       },
+    Trimmed = lists:map(fun string:trim/1, Files),
+    NoDups = Trimmed -- PrevFiles,  % without duplicates
+    State1 = case Trimmed -- NoDups of
+                 [] -> State;
+                 Duplicates ->
+                     ColoredD = lists:flatten([" " ++ D || D <- Duplicates]),
+                     warning(State, ["Following files are already included: ", ColoredD])
+    end,
+    IncludingContract = lists:flatmap(fun(I) -> "include \"" ++ I ++ "\"\n" end, NoDups),
+    {Addition, NewHashes} = aere_sophia:parse_file(IncludingContract, Hashes, [keep_included]),
+    NewIncludes = Includes ++ Addition,
+    State2 = State1#repl_state{ include_ast    = NewIncludes
+                              , include_hashes = NewHashes
+                              , include_files  = NoDups ++ PrevFiles
+                              },
 
-            MockForTc = aere_mock:simple_query_contract(NewState, [{tuple, aere_mock:ann(), []}]),
+    MockForTc = aere_mock:simple_query_contract(State2, [{tuple, aere_mock:ann(), []}]),
 
-            aere_sophia:typecheck(MockForTc),
+    aere_sophia:typecheck(MockForTc),
 
-            Colored = aere_color:yellow(lists:flatten([" " ++ F || F <- Files])),
-            IncludeWord = case Files of
-                              []  -> "nothing";
-                              [_] -> "include";
-                              _   -> "includes"
-                          end,
-            Msg = ["Registered ", IncludeWord, Colored],
-            NewState;
-        Duplicates ->
-            Colored = aere_color:yellow(lists:flatten([" " ++ D || D <- Duplicates])),
-            {error, ["Following files are already included: ", Colored]}
-    end.
+    Colored = aere_color:yellow(lists:flatten([" " ++ F || F <- NoDups])),
+    IncludeWord = case NoDups of
+                      []  -> "nothing";
+                      [_] -> "include";
+                      _   -> "includes"
+                  end,
+    Msg = ["Registered ", IncludeWord, Colored],
+    {Msg, State2}.
+
+
+warning(State = #repl_state{warnings = Ws}, W) ->
+    State#repl_state{warnings = [W|Ws]}.
 
 
 build_deploy_contract(Src, TypedAst, Args, Options, State) ->
@@ -694,16 +705,18 @@ eval_contract(Src, Ast, S1 = #repl_state{options = Options}) ->
     PPResp = prettypr:format(aere_response:pp_response(Resp)),
     DeployGasStr =
         case Options#options.display_deploy_gas of
-            true -> [aere_color:yellow("\ndeploy gas"), ": ", GasDeploy];
+            true -> [ aere_color:yellow("\ndeploy gas: ")
+                    , io_lib:format("~p", [GasDeploy])];
             false -> ""
         end,
     CallGasStr =
         case Options#options.display_call_gas of
-            true -> [aere_color:yellow("\ncall gas"), ": ", GasCall];
+            true -> [ aere_color:yellow("\ncall gas: ")
+                    , io_lib:format("~p", [GasCall])];
             false -> ""
         end,
     { S3#repl_state{ user_contracts = [Con|S3#repl_state.user_contracts] }
-    , lists:concat([PPResp, DeployGasStr, CallGasStr])}.
+    , [PPResp, DeployGasStr, CallGasStr]}.
 
 
 -define(ParseOptionBool(Field),
