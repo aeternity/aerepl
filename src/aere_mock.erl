@@ -112,28 +112,22 @@ with_letfun_auto_imports(State = #repl_state{letfuns = Letfuns}) ->
 
 
 %% Contract that evals Expr and does not chain state
-simple_query_contract( State = #repl_state{ letvals = Letvals
-                                          , letfuns = LetFuns
-                                          , tracked_contracts = TrackedCons
-                                          , user_contract_state_type = StType
+simple_query_contract( State = #repl_state{ user_contract_state_type = StType
                                           }, Stmts) ->
     Body = {block, ann(), Stmts},
-    S1 = with_auto_imports(State, Body),
-    S2 = with_letfun_auto_imports(S1),
+    State1 = with_auto_imports(State, Body),
+    State2 = with_letfun_auto_imports(State1),
     Con = contract(
-            letfun_defs(LetFuns) ++
+            letfun_defs(State2) ++
                 [ typedef("state", StType)
                 , val_entrypoint( ?USER_INPUT
-                                , with_value_refs(TrackedCons, Letvals, Body), full)]),
-    prelude(S2) ++ [Con].
+                                , with_value_refs(State2, Body), full)]),
+    prelude(State2) ++ [Con].
 
 
 %% Contract that evals expression and chains state if it makes sense
 chained_query_contract(State = #repl_state
-                       { letvals = LetVals
-                       , letfuns = LetFuns
-                       , tracked_contracts = TrackedCons
-                       , user_contract_state_type = StType
+                       { user_contract_state_type = StType
                        , options = #options{call_value = CallValue}
                        }, Stmts) ->
     Stmts1 = if is_list(Stmts) -> Stmts;
@@ -147,8 +141,8 @@ chained_query_contract(State = #repl_state
     State1 = with_auto_imports(State, Body),
     State2 = with_letfun_auto_imports(State1),
     Prev = contract(?PREV_CONTRACT, [decl(?GET_STATE, [], StType)]),
-    Query = contract(state_init(State) ++ letfun_defs(LetFuns) ++
-                         [ val_entrypoint(?USER_INPUT, with_value_refs(TrackedCons, LetVals, Body), full)
+    Query = contract(state_init(State2) ++ letfun_defs(State2) ++ typedefs(State2) ++
+                         [ val_entrypoint(?USER_INPUT, with_value_refs(State2, Body), full)
                          , val_entrypoint(?GET_STATE, {id, ann(), "state"})
                          ]),
     prelude(State2) ++ [Prev, Query].
@@ -170,12 +164,10 @@ with_token_refund(L) when is_list(L) ->
 
 
 %% Contract that initializes state chaining
-chained_initial_contract(State = #repl_state{ letvals = Letvals
-                                            , tracked_contracts = TrackedCons
-                                            }, Stmts, Type) ->
+chained_initial_contract(State, Stmts, Type) ->
     Body = {block, ann(), Stmts},
     Con = contract([ typedef("state", Type)
-                   , val_entrypoint("init", with_value_refs(TrackedCons, Letvals, Body))
+                   , val_entrypoint("init", with_value_refs(State, Body))
                    , val_entrypoint(?GET_STATE, {id, ann(), "state"})
                    ]),
     prelude(State) ++ [Con].
@@ -183,24 +175,21 @@ chained_initial_contract(State = #repl_state{ letvals = Letvals
 
 %% Contract that exposes value via entrypoint.
 %% Not stateful nor payable, but remembers already defined values.
-letval_provider(State = #repl_state{ letvals = Letvals
-                                   , letfuns = LetFuns
-                                   , tracked_contracts = TrackedCons
-                                   , user_contract_state_type = StType
+letval_provider(State = #repl_state{ user_contract_state_type = StType
                                    }, Name, Body) ->
     State1 = with_auto_imports(State, [Body]),
     State2 = with_letfun_auto_imports(State1),
     Prev = contract(?PREV_CONTRACT, [decl(?GET_STATE, [], StType)]),
     Con = contract(?LETVAL_PROVIDER(Name)
                   , [val_entrypoint( ?LETVAL_GETTER(Name)
-                                   , with_value_refs(TrackedCons, Letvals, Body))|state_init(State)]
-                   ++ letfun_defs(LetFuns)
+                                   , with_value_refs(State2, Body))|state_init(State)]
+                   ++ typedefs(State2) ++ letfun_defs(State2)
                   ),
     prelude(State2) ++ [Prev, Con].
 
 
 %% Declarations of providers of values
-letval_provider_decls(Letvals) ->
+letval_provider_decls(#repl_state{letvals = Letvals}) ->
     [contract( ?LETVAL_PROVIDER_DECL(Name)
              , [decl(?LETVAL_GETTER(Name), [], Type)])
      || {{Name, _}, {_, Type}} <- Letvals
@@ -208,7 +197,7 @@ letval_provider_decls(Letvals) ->
 
 
 %% let-statements that refer to value providers
-letval_defs(LetVals) ->
+letval_defs(#repl_state{letvals = LetVals}) ->
     [ { letval, ann(), Pat
       , { typed, ann(), call_to_remote( ProvRef
                                       , ?LETVAL_PROVIDER_DECL(Provider)
@@ -217,7 +206,8 @@ letval_defs(LetVals) ->
       || {{Provider, ProvRef}, {Pat, Type}} <- lists:reverse(LetVals)].
 
 
-letfun_defs(LetFuns) ->
+letfun_defs(State = #repl_state{ letfuns = LetFuns
+                               }) ->
     [ { block, ann()
       , [ case F of
               {fun_decl, _, _, _} -> F;
@@ -229,26 +219,39 @@ letfun_defs(LetFuns) ->
                                       ],
                           aerepl:remove_references(UsedNames, Cons, LetVals)
                       end,
-                  {letfun, A, N, Args, RT, with_value_refs(Cons1, LetVals1, Body)}
-                       end
+                  State1 = State#repl_state{tracked_contracts = Cons1, letvals = LetVals1},
+                  {letfun, A, N, Args, RT, with_value_refs(State1, Body)}
+          end
           || F <- Funs
         ]}
       || {_, {Funs, Cons, LetVals}} <- LetFuns
     ].
 
 %% References to contracts with their types
-contract_refs(Contracts) ->
+contract_refs(#repl_state{tracked_contracts = Contracts}) ->
     [ { letval, ann(), {id, ann(), Name}
       , {typed, ann(), {contract_pubkey, ann(), ConRef}, ConName}}
       || {Name, {tracked_contract, ConRef, {contract, _, ConName, _}}} <- Contracts
     ].
 
+
+typedef_namespaces(#repl_state{typedefs = Typedefs}) ->
+    [ { namespace, ann(), {con, ann(), Namespace}
+      , [{type_def, ann(), {id, NAnn, TName}, TArgs, TD}]}
+      || {{qid, NAnn, [Namespace, TName]}, {TArgs, TD}} <- Typedefs
+    ].
+typedefs(#repl_state{typedefs = Typedefs}) ->
+    [ {type_def, ann(), Name, TArgs, TD}
+      || {Name = {id, _, _}, {TArgs, TD}} <- Typedefs
+    ].
+
+
 %% Declarations and includes to a contract
-prelude(#repl_state{ tracked_contracts = TrackedCons
-                   , letvals = LetvalList
-                   , include_ast = Includes
-                   }) ->
-    LetvalProviders = letval_provider_decls(LetvalList),
+prelude(State = #repl_state{ tracked_contracts = TrackedCons
+                           , include_ast = Includes
+                           }) ->
+    TDNamespaces = typedef_namespaces(State),
+    LetvalProviders = letval_provider_decls(State),
     {TCUnique, _} = lists:foldr(
                       fun(C = {_, {_, _, {contract, _, TC, _}}}, {Acc, Set}) ->
                               { case sets:is_element(TC, Set) of
@@ -260,12 +263,12 @@ prelude(#repl_state{ tracked_contracts = TrackedCons
                       end, {[], sets:new()}, TrackedCons
                      ),
     TrackedContractsDecls = [I || {_, {_Status, _, I}} <- TCUnique],
-    Includes ++ TrackedContractsDecls ++ LetvalProviders.
+    Includes ++ TDNamespaces ++ TrackedContractsDecls ++ LetvalProviders.
 
 
 %% Prefixes expression with letval definitions and contract references.
 %% Takes map that may specify name of respective provider for letvals.
-with_value_refs([], [], Expr) ->
+with_value_refs(#repl_state{tracked_contracts = [], letvals = []}, Expr) ->
     Expr;
-with_value_refs(Contracts, Letvals, Expr) ->
+with_value_refs(#repl_state{tracked_contracts = Contracts, letvals = Letvals}, Expr) ->
     {block, ann(), contract_refs(Contracts) ++ letval_defs(Letvals) ++ [Expr]}.

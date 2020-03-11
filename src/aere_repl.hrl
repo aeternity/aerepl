@@ -20,7 +20,7 @@
         , user_contract_state_type %% type of the contract `state`
         , user_contracts %% contracts that were used to perform user calls
         , tracked_contracts
-          %% :: [{ <entry name>
+          %% :: [{ <variable name>
           %%       { tracked_contract | shadowed_contract
           %%       , <contract address>
           %%       , <ACI>
@@ -36,6 +36,12 @@
           %% :: [{ {<letval provider name>, <letval provider address>}
           %%     , {<pattern>, <type>}
           %%     }]
+        , typedefs
+          %% :: [{ <type name>
+          %%     , {<args>, <typedef>}
+          %%     }]
+        , type_aliases
+          %% :: [{<alias name>, {<args>, <type>}}]
         , user_account
         , supply :: integer()
         , warnings
@@ -75,4 +81,5 @@
 -define(ADD_OWNER(Owner, X), X ++ "#for#" ++ Owner).
 -define(TrackedContractName(Ref, TypeName),
         "#contract#" ++ Ref ++ "#" ++ TypeName ++ "#INTERNAL_REPL").
+
 -define(LAZY(C), fun() -> C end).

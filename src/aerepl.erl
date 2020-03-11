@@ -38,6 +38,8 @@ init_state() ->
                , tracked_contracts = []
                , letvals = []
                , letfuns = []
+               , typedefs = []
+               , type_aliases = []
                , user_account = PK
                , warnings = []
                , supply = 0
@@ -274,10 +276,11 @@ process_input(State, eval, I) ->
         [FD = {fun_decl, _, _Name, _Type}] -> register_letfun(State, [FD]);
         [FD = {letfun, _, _Name, _Args, _RetType, _Body}] -> register_letfun(State, [FD]);
         [{block, _, Funs}] -> register_letfun(State, Funs);
+        [TDf] when element(1, TDf) =:= type_def ->
+            register_typedef(State, TDf);
+
         [TDc] when element(1, TDc) =:= type_decl ->
             repl_error:unsupported_decl(type_decl);
-        [TDf] when element(1, TDf) =:= type_def ->
-            repl_error:unsupported_decl(type_def);
         [Con] when element(1, Con) =:= contract ->
             repl_error:unsupported_decl(contract);
         [Ns] when element(1, Ns) =:= namespace ->
@@ -308,10 +311,7 @@ process_input(State, set, Inp) ->
     {Prop, Val0} = lists:splitwith(fun(X) -> X /= $  end, Inp),
     Val = string:trim(Val0),
     set_option(State, Prop, Val);
-process_input(State = #repl_state{ tracked_contracts = Cons
-                                 , letvals = Letvals
-                                 , options = Opts
-                                 }, deploy, Inp) ->
+process_input(State, deploy, Inp) ->
     {File, MaybeRefName} =
         case string:tokens(Inp, aere_parse:whitespaces()) of
             [] -> aere_error:no_file_deploy();
@@ -333,99 +333,7 @@ process_input(State = #repl_state{ tracked_contracts = Cons
               {ok, Src_} -> Src_;
               {error, Reason} -> aere_error:file_error(File, Reason)
           end,
-    Ast = aere_sophia:parse_file(binary_to_list(Src), []),
-    TAstUnfolded = aere_sophia:typecheck(Ast, [dont_unfold]),
-    TAst = aere_sophia:typecheck(Ast),
-    BCode = aere_sophia:compile_contract(fate, binary_to_list(Src), TAst),
-    {{con, DecAnn, StrDeclName}, Interface}
-        = aere_sophia:generate_interface_decl(TAstUnfolded),
-
-    RefName =
-        case MaybeRefName of
-            none ->
-                [FstChar|OrigNameRest] = StrDeclName,
-                NameWithIndex =
-                    fun(X) -> string:lowercase([FstChar]) ++
-                                  OrigNameRest ++
-                                  case X of
-                                      -1 -> "";
-                                      _ -> integer_to_list(X)
-                                  end
-                    end,
-                MakeIndex =
-                    fun R(X) ->
-                            case name_status(State, NameWithIndex(X)) of
-                                free -> X;
-                                _    -> R(X + 1)
-                            end
-                    end,
-                NameWithIndex(MakeIndex(-1));
-            _ -> MaybeRefName
-        end,
-    Interface1 =
-        begin
-            {contract, IAnn, _, Body} = Interface,
-            {contract, IAnn, {con, DecAnn, StrDeclName}, Body}
-        end,
-
-    State1 =
-        case [ Conflict || Conflict = {_, {_, _, CACI = {contract, _, {con, _, CType}, _}}} <- Cons,
-                           (StrDeclName == CType) and (Interface1 /= CACI)
-             ] of
-            [] -> State;
-            _ ->
-                {State0_1, NewName} =
-                    (fun Retry(State0_1_0) ->
-                             {State0_1_1, Sup} = next_sup(State0_1_0),
-                             TryName =
-                                 "REPL_" ++ integer_to_list(Sup) ++
-                                 "_" ++ StrDeclName,
-                             case [bad || {_, {_, _, {con, _, NameConflict}, _}} <- Cons,
-                                          NameConflict == TryName] of
-                                 [] -> {State0_1_1, TryName};
-                                 _ -> Retry(State0_1_1)
-                             end
-                     end)(State),
-                FixConflicts =
-                    fun(ConList) ->
-                            [ ?IF(StrDeclName == CTypeName,
-                                  {CName, { Status, Addr
-                                          , {contract, CAnn, {con, AnnName, NewName}
-                                            , aere_sophia:replace_type_in_decls(
-                                                CDecls, type_id, CTypeName, NewName)
-                                            }}},
-                                  Con
-                                 )
-                              || Con = { CName,
-                                         {Status, Addr,
-                                          {contract, CAnn, {con, AnnName, CTypeName}, CDecls}}} <- ConList
-                            ]
-                    end,
-                UpdatedFuns =
-                    [ {FName, {Decls, FixConflicts(FCons), FLetvals}}
-                      || {FName, {Decls, FCons, FLetvals}} <- State0_1#repl_state.letfuns
-                    ],
-                State0_1#repl_state
-                    { letfuns = UpdatedFuns
-                    , tracked_contracts = FixConflicts(Cons)
-                    }
-        end,
-
-    {{ConAddr, DeployGas}, State2} = deploy_contract(BCode, {}, Opts, State1),
-    DepGasStr = ?IF(Opts#options.display_deploy_gas,
-                    [ aere_color:yellow("\ndeploy gas: "), io_lib:format("~p", [DeployGas])],
-                    ""
-                   ),
-    {Cons1, Letvals1} = remove_references([RefName], State2#repl_state.tracked_contracts, Letvals),
-    NewState = State2#repl_state
-        { tracked_contracts =
-              [{ RefName
-               , {tracked_contract, ConAddr, Interface1}} | Cons1]
-        , letvals = Letvals1
-        },
-    {[aere_color:green(RefName ++ " : " ++ StrDeclName), " was successfully deployed", DepGasStr]
-    , NewState
-    };
+    register_tracked_contract(State, MaybeRefName, Src);
 process_input(State, rm, Inp) ->
     State1 = free_names(State, string:split(Inp, aere_parse:whitespaces())),
     [ aere_error:nothing_to_remove()
@@ -553,7 +461,7 @@ remove_references(Names, Cons, LetVals) ->
           || C = {CName, {_, ConRef, I}} <- Cons
         ],
     LetvalNames = [N || {_, {Pat, _}} <- LetVals, N <- aere_sophia:get_pat_ids(Pat)],
-    Cons2 = lists:filter(  %% If wasn't actually shadowed then we remove it
+    Cons2 = lists:filter(  %% If shadowed by nothing then we remove it
               fun({CName, {shadowed_contract, _, _}}) ->
                       lists:member(CName, LetvalNames) or not lists:member(CName, Names);
                  (_) -> true
@@ -666,6 +574,201 @@ register_includes(State = #repl_state{ include_ast = Includes
     Msg = ["Registered ", IncludeWord, Colored],
     {Msg, State2}.
 
+register_tracked_contract(State = #repl_state
+                          { tracked_contracts = Cons
+                          , letvals = Letvals
+                          , typedefs = Typedefs
+                          , options = Opts
+                          }, MaybeRefName, Src) ->
+    Ast = aere_sophia:parse_file(binary_to_list(Src), []),
+    TAstUnfolded = aere_sophia:typecheck(Ast, [dont_unfold]),
+    TAst = aere_sophia:typecheck(Ast),
+    BCode = aere_sophia:compile_contract(fate, binary_to_list(Src), TAst),
+    {{con, DecAnn, StrDeclName}, Interface}
+        = aere_sophia:generate_interface_decl(TAstUnfolded),
+
+    RefName =
+        case MaybeRefName of
+            none ->
+                [FstChar|OrigNameRest] = StrDeclName,
+                NameWithIndex =
+                    fun(X) -> string:lowercase([FstChar]) ++
+                                  OrigNameRest ++
+                                  case X of
+                                      -1 -> "";
+                                      _ -> integer_to_list(X)
+                                  end
+                    end,
+                MakeIndex =
+                    fun R(X) ->
+                            case name_status(State, NameWithIndex(X)) of
+                                free -> X;
+                                _    -> R(X + 1)
+                            end
+                    end,
+                NameWithIndex(MakeIndex(-1));
+            _ -> MaybeRefName
+        end,
+
+    Interface1 =
+        begin
+            {contract, IAnn, _, Body} = Interface,
+            {contract, IAnn, {con, DecAnn, StrDeclName}, Body}
+        end,
+
+    State1 =
+        ?IF([] ==
+                [ Conflict
+                  || Conflict = {_, {_, _, CACI = {contract, _, {con, _, CType}, _}}} <- Cons,
+                     (StrDeclName == CType) and (Interface1 /= CACI)
+                ] ++ [N || {N, _} <- Typedefs, N == StrDeclName],
+            State, rename_type(State, StrDeclName)
+           ),
+
+    {{ConAddr, DeployGas}, State2} = deploy_contract(BCode, {}, Opts, State1),
+    DepGasStr = ?IF(Opts#options.display_deploy_gas,
+                    [ aere_color:yellow("\ndeploy gas: "), io_lib:format("~p", [DeployGas])],
+                    ""
+                   ),
+    {Cons1, Letvals1} = remove_references([RefName], State2#repl_state.tracked_contracts, Letvals),
+    NewState = State2#repl_state
+        { tracked_contracts =
+              [{ RefName
+               , {tracked_contract, ConAddr, Interface1}} | Cons1]
+        , letvals = Letvals1
+        },
+    {[ aere_color:green(RefName ++ " : " ++ StrDeclName)
+     , " was successfully deployed", DepGasStr]
+    , NewState
+    }.
+
+%% FIXME letvals will suffer ambiguity on redefined types
+register_typedef(State = #repl_state
+                { typedefs = Typedefs
+                , tracked_contracts = Cons
+                }, {type_def, _, Name = {id, _, StrName}, Args, Def}) ->
+    State1 =
+        ?IF([] ==
+                [ Conflict
+                  || Conflict = {_, {_, _, {contract, _, {con, _, CType}, _}}} <- Cons,
+                     StrName == CType
+                ] ++ [N || {{id, _, N}, _} <- Typedefs, N == StrName],
+            State, rename_type(State, StrName)
+           ),
+    State1#repl_state{typedefs = [{Name, {Args, Def}}|State1#repl_state.typedefs]}.
+
+rename_type(State0 = #repl_state
+            { tracked_contracts = Cons
+            , typedefs = Typedefs
+            }, OldName) ->
+    case [ conflict
+           || {_, {_, _, {contract, _, {con, _, CType}, _}}} <- Cons,
+              OldName == CType
+         ] of
+        [] -> case [TD || {{id, _, N}, TD} <- Typedefs, N == OldName] of
+                  [] -> State0;
+                  [TD] -> rename_typedef(State0, OldName, TD);
+                  _ -> error("typedef shadowing error")
+              end;
+        _ -> rename_contract(State0, OldName)
+    end.
+
+rename_typedef(State0 = #repl_state
+                { typedefs = Typedefs
+                }, OldName, TD) ->
+    {State1, NSName} =
+        (fun Retry(State0_0) ->
+                 {State0_1, Sup} = next_sup(State0_0),
+                 TryName = "REPL_" ++ integer_to_list(Sup),
+                 Mock = aere_mock:simple_query_contract(State0_1, [{id, aere_mock:ann(), "state"}]),
+                 Namespaces = [N || {namespace, _, {con, _, N}, _} <- Mock],
+                 Contracts = [N || {contract, _, {con, _, N}, _} <- Mock],
+                 ?IF(lists:member(TryName, Namespaces ++ Contracts),
+                     Retry(State0_1),
+                     {State0_1, TryName}
+                    )
+         end)(State0),
+
+    ValuesToRename = case TD of
+                         {_Args, {variant_t, Constrs}} ->
+                             [CN || {constr_t, _, {con, _, CN}, _} <- Constrs];
+                         _ -> [] %% TODO records?
+                     end,
+    UpdateValues =
+        lists:foldl(fun(V, Cont) ->
+                            fun(D) ->
+                                    Cont(aere_sophia:replace_ast(D, id, V, {qid, aere_mock:ann(), [NSName, V]}))
+                            end end
+                   , fun(X) -> X end, ValuesToRename),
+
+    UpdatedFuns =
+        [ {FName, {lists:map(fun(F) -> case F of
+                                          {letfun, A, Fn, Args, RT, B} ->
+                                              {letfun, A, Fn, Args, RT, UpdateValues(B)};
+                                          _ -> F
+                                      end end, aere_sophia:replace_type_in_decls(Decls, type_id, OldName, {qid, aere_mock:ann(), [NSName, OldName]})), FCons, FLetvals}}
+          || {FName, {Decls, FCons, FLetvals}} <- State1#repl_state.letfuns
+        ],
+    UpdatedTypedefs =
+        [ { aere_sophia:replace_type(TName, type_id, OldName,
+                                     {qid, aere_mock:ann(), [NSName, OldName]})
+          , {TArgs, aere_sophia:replace_type(TDef, type_id, OldName,
+                                             {qid, aere_mock:ann(), [NSName, OldName]})}}
+          || {TName, {TArgs, TDef}} <- Typedefs
+        ],
+    State1#repl_state
+        { letfuns = UpdatedFuns
+        , typedefs = UpdatedTypedefs
+        }.
+
+rename_contract(State0 = #repl_state
+                { tracked_contracts = Cons
+                , typedefs = Typedefs
+                }, OldName) ->
+    {State1, NewName} =
+        (fun Retry(State0_0) ->
+                 {State0_1, Sup} = next_sup(State0_0),
+                 TryName =
+                     "REPL_" ++ integer_to_list(Sup) ++ "_" ++ OldName,
+                 case [bad || {_, {_, _, {con, _, NameConflict}, _}} <- Cons,
+                              NameConflict == TryName] of
+                     [] -> case [bad || {qid, _, [NameConflict,_]} <- Typedefs,
+                                        NameConflict == TryName] of
+                               [] -> {State0_1, TryName};
+                               _ -> Retry(State0_1)
+                           end;
+                     _ -> Retry(State0_1)
+                 end
+         end)(State0),
+    FixConDeclConflicts =
+        fun(ConList) ->
+                [ ?IF(OldName == CTypeName,
+                      {CName, { Status, Addr
+                              , {contract, CAnn, {con, AnnName, NewName}
+                                , aere_sophia:replace_type_in_decls(
+                                    CDecls, type_id, OldName, NewName)
+                                }}},
+                      Con
+                     )
+                  || Con = { CName,
+                             {Status, Addr,
+                              {contract, CAnn, {con, AnnName, CTypeName}, CDecls}}} <- ConList
+                ]
+        end,
+    UpdatedFuns =
+        [ {FName, { aere_sophia:replace_type_in_decls(Decls, type_id, OldName, NewName)
+                  , FixConDeclConflicts(FCons), FLetvals}}
+          || {FName, {Decls, FCons, FLetvals}} <- State1#repl_state.letfuns
+        ],
+    UpdatedTypedefs =
+        [ {T, aere_sophia:replace_type(TDef, type_id, OldName, NewName)}
+          || {T, TDef} <- Typedefs
+        ],
+    State1#repl_state
+        { letfuns = UpdatedFuns
+        , tracked_contracts = FixConDeclConflicts(Cons)
+        , typedefs = UpdatedTypedefs
+        }.
 
 warning(State = #repl_state{warnings = Ws}, W) ->
     State#repl_state{warnings = [W|Ws]}.

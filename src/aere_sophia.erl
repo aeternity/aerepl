@@ -4,8 +4,7 @@
         , parse_body/1, parse_top/2
         , parse_decl/1, parse_top/1, parse_type/1, type_of/2
         , generate_interface_decl/1, process_err/1, get_pat_ids/1
-        , replace_ast/4, replace_type_in_decls/4
-        ]).
+        , replace_ast/4, replace_type_in_decls/4, replace_type/4        ]).
 
 -include("../_build/default/lib/aesophia/src/aeso_parse_lib.hrl").
 -include("aere_repl.hrl").
@@ -191,6 +190,8 @@ replace_ast({id, _A, Old}, id, Old, New) ->
 replace_ast({qid, _A, [Old]}, id, Old, New) ->
     New;
 replace_ast({qid, _A, Old}, id, Old, New) ->
+    New;
+replace_ast({con, _A, Old}, id, Old, New) ->
     New;
 
 replace_ast(L, Pat, Old, New) when is_list(L) ->
@@ -388,6 +389,12 @@ replace_type_in_decls(Decls, Pat, Old, New) ->
 
 replace_type_in_decl({fun_decl, Ann, Name, RT}, Pat, Old, New) ->
     {fun_decl, Ann, Name, ?ReplaceType(RT)};
+replace_type_in_decl({letfun, Ann, Name, Args, RT, Body}, Pat, Old, New) ->
+    { letfun, Ann, Name
+    , [ {arg, AAnn, AName, ?ReplaceType(AType)} || {arg, AAnn, AName, AType} <- Args]
+    , ?ReplaceType(RT)
+    , ?ReplaceAST(Body)
+    };
 replace_type_in_decl({type_def, Ann, Name, TArgs, TDef}, Pat, Old, New) ->
     {type_def, Ann, Name, TArgs, ?ReplaceType(TDef)};
 replace_type_in_decl(Other, _, _, _) ->
