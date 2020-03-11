@@ -468,10 +468,12 @@ remove_references(Names, Cons, LetVals) ->
               end, Cons1),
     {Cons2, LetVals1}.
 
+free_names(State, Names) ->
+    free_names(State, Names, fun(X) -> X end).
 free_names(State = #repl_state{ letfuns = Letfuns
                               , letvals = Letvals
                               , tracked_contracts = Cons
-                              }, Names) ->
+                              }, Names, Callback) ->
     RunCleansing =
         fun Cleansing([], [], L) ->
                 L;
@@ -502,7 +504,7 @@ free_names(State = #repl_state{ letfuns = Letfuns
         , tracked_contracts = Cons1
         },
     case ([FN || {FN, _} <- Letfuns -- Letfuns1, not(lists:member(FN, Names))]) of
-        [] -> State1;
+        [] -> Callback(State1);
         AdditionalNames ->
             #repl_question
                 { text = [ aere_color:emph("This will require removing following entities: ")
@@ -511,7 +513,7 @@ free_names(State = #repl_state{ letfuns = Letfuns
                          ]
                 , options = [{"y", ?LAZY(State1)}, {"n", ?LAZY(State)}]
                 , default = "y"
-                , callback = fun(X) -> X end
+                , callback = Callback
                 }
     end.
 
@@ -642,19 +644,12 @@ register_tracked_contract(State = #repl_state
     , NewState
     }.
 
-%% FIXME letvals will suffer ambiguity on redefined types
+
 register_typedef(State = #repl_state
                 { typedefs = Typedefs
                 , tracked_contracts = Cons
                 }, {type_def, _, Name = {id, _, StrName}, Args, Def}) ->
-    State1 =
-        ?IF([] ==
-                [ Conflict
-                  || Conflict = {_, {_, _, {contract, _, {con, _, CType}, _}}} <- Cons,
-                     StrName == CType
-                ] ++ [N || {{id, _, N}, _} <- Typedefs, N == StrName],
-            State, rename_type(State, StrName)
-           ),
+    State1 = rename_type(State, StrName),
     State1#repl_state{typedefs = [{Name, {Args, Def}}|State1#repl_state.typedefs]}.
 
 rename_type(State0 = #repl_state
@@ -862,17 +857,20 @@ set_option(State = #repl_state{options = Opts}, Prop, Val) ->
             "call-gas" -> ?ParseOptionInt(gas);
             "call-value" -> ?ParseOptionInt(call_value);
             "state" ->
-                State1 = free_names(State, ["state", "put"]),
                 Stmts = aere_sophia:parse_body(Val),
-                TExprAst = aere_sophia:typecheck(aere_mock:simple_query_contract(State1, Stmts)),
-                {_, Type} = aere_sophia:type_of(TExprAst, ?USER_INPUT),
-                Mock = aere_mock:chained_initial_contract(State1, Stmts, Type),
-                TMock = aere_sophia:typecheck(Mock),
-                {{Key, _}, State2} = build_deploy_contract("no_src", TMock, {}, Opts, State1),
-                {state, State2#repl_state
-                 { user_contract_state_type = Type
-                 , user_contracts = [Key]
-                 }};
+                Cont = fun(State1) ->
+                               TExprAst = aere_sophia:typecheck(aere_mock:simple_query_contract(State1, Stmts)),
+                               {_, Type} = aere_sophia:type_of(TExprAst, ?USER_INPUT),
+                               Mock = aere_mock:chained_initial_contract(State1, Stmts, Type),
+                               TMock = aere_sophia:typecheck(Mock),
+                               {{Key, _}, State2} = build_deploy_contract("no_src", TMock, {}, Opts, State1),
+                               State2#repl_state
+                                   { user_contract_state_type = Type
+                                   , user_contracts = [Key]
+                                   }
+                       end,
+                %% Will work even if it's a question actually
+                {state, free_names(State, ["state", "put"], Cont)};
             _ -> aere_error:unknown_option(Prop)
         end,
     case Parse of

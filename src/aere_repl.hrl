@@ -34,7 +34,7 @@
           %%     }]
         , letvals
           %% :: [{ {<letval provider name>, <letval provider address>}
-          %%     , {<pattern>, <type>}
+          %%     , {<pattern>, <typedef aliases>}
           %%     }]
         , typedefs
           %% :: [{ <type name>

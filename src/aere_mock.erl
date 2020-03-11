@@ -183,7 +183,8 @@ letval_provider(State = #repl_state{ user_contract_state_type = StType
     Con = contract(?LETVAL_PROVIDER(Name)
                   , [val_entrypoint( ?LETVAL_GETTER(Name)
                                    , with_value_refs(State2, Body))|state_init(State)]
-                   ++ typedefs(State2) ++ letfun_defs(State2)
+                   %% ++ typedefs(State2) TODO
+                   ++ letfun_defs(State2)
                   ),
     prelude(State2) ++ [Prev, Con].
 
@@ -199,11 +200,11 @@ letval_provider_decls(#repl_state{letvals = Letvals}) ->
 %% let-statements that refer to value providers
 letval_defs(#repl_state{letvals = LetVals}) ->
     [ { letval, ann(), Pat
-      , { typed, ann(), call_to_remote( ProvRef
-                                      , ?LETVAL_PROVIDER_DECL(Provider)
-                                      , ?LETVAL_GETTER(Provider))
-        , Type}}
-      || {{Provider, ProvRef}, {Pat, Type}} <- lists:reverse(LetVals)].
+      , call_to_remote( ProvRef
+                      , ?LETVAL_PROVIDER_DECL(Provider)
+                      , ?LETVAL_GETTER(Provider))
+      }
+      || {{Provider, ProvRef}, {Pat, _}} <- lists:reverse(LetVals)].
 
 
 letfun_defs(State = #repl_state{ letfuns = LetFuns
@@ -235,15 +236,18 @@ contract_refs(#repl_state{tracked_contracts = Contracts}) ->
     ].
 
 
+%% Namespaces that encapsulate actual typedef definitions
 typedef_namespaces(#repl_state{typedefs = Typedefs}) ->
     [ { namespace, ann(), {con, ann(), Namespace}
       , [{type_def, ann(), {id, NAnn, TName}, TArgs, TD}]}
       || {{qid, NAnn, [Namespace, TName]}, {TArgs, TD}} <- Typedefs
     ].
-typedefs(#repl_state{typedefs = Typedefs}) ->
+typedefs(#repl_state{typedefs = Typedefs, type_aliases = Aliases}) ->
     [ {type_def, ann(), Name, TArgs, TD}
       || {Name = {id, _, _}, {TArgs, TD}} <- Typedefs
-    ].
+    ] ++ [ {type_def, ann(), {id, ann(), TN}, Args, TD}
+          || {TN, {Args, TD}} <- Aliases
+         ].
 
 
 %% Declarations and includes to a contract
@@ -270,5 +274,5 @@ prelude(State = #repl_state{ tracked_contracts = TrackedCons
 %% Takes map that may specify name of respective provider for letvals.
 with_value_refs(#repl_state{tracked_contracts = [], letvals = []}, Expr) ->
     Expr;
-with_value_refs(#repl_state{tracked_contracts = Contracts, letvals = Letvals}, Expr) ->
-    {block, ann(), contract_refs(Contracts) ++ letval_defs(Letvals) ++ [Expr]}.
+with_value_refs(State, Expr) ->
+    {block, ann(), contract_refs(State) ++ letval_defs(State) ++ [Expr]}.
