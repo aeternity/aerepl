@@ -24,8 +24,7 @@ eval_test_() ->
 
               {Answers, Results} = eval(binary_to_list(Input)),
 
-              %% FIXME better error msg
-              ?assertEqual(length(Answers), length(Results)),
+              ?IF(length(Answers) /= length(Results), ?assertEqual(Answers, Results), ok),
               Results1 =
                   [ case A of
                         any -> any;
@@ -45,6 +44,7 @@ scenarios() ->
     , fundef
     , datatypes
     , polytypes
+    , state
     ].
 
 format(T) ->
@@ -88,7 +88,10 @@ eval(I) ->
                                              output = Out
                                             } ->
                                   io:format(format(Out)),
-                                  error(internal_error)
+                                  error(internal_error);
+                              #repl_question{} ->
+                                  {accept, S1} = aerepl:answer(Resp, ""),
+                                  Cont({S1, {Answers, Inputs}})
                           end
                   end
           end, fun({_, {As, Is}}) -> {lists:reverse(As), lists:reverse(Is)} end, Splitted),

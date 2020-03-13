@@ -1,0 +1,35 @@
+:t state
+// unit
+:set state 0
+:t state
+// int
+state
+// 0
+put(state + 1)
+state
+// 1
+function f() = state
+f()
+// 1
+let x = state
+x
+// 1
+function inc() = put(state + 1)
+// !error
+stateful function inc() = put(state + 1)
+inc()
+state
+// 2
+f()
+// 2
+x
+// 1
+:set state true
+state
+// true
+f()
+// !error
+inc()
+// !error
+x
+// 1
