@@ -136,7 +136,7 @@ chained_query_contract(State = #repl_state
     Body = {block, ann(),
             case CallValue of
                 0 -> Stmts1;
-                _ -> with_token_refund(Stmts1)
+                _ -> with_token_refund(State, Stmts1)
             end},
     State1 = with_auto_imports(State, Body),
     State2 = with_letfun_auto_imports(State1),
@@ -147,9 +147,9 @@ chained_query_contract(State = #repl_state
                          ]),
     prelude(State2) ++ [Prev, Query].
 
-with_token_refund([]) ->
-    []; % didn't spend anything
-with_token_refund(L) when is_list(L) ->
+with_token_refund(#repl_state{options = #options{call_value = 0}}, B) ->
+    B; % didn't spend anything
+with_token_refund(_, L) when is_list(L) ->
     [Last|Rest] = lists:reverse(L),
     Let = {letval, ann(), {id, ann(), "#RESULT_BACKUP"}, Last},
     lists:reverse

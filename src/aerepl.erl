@@ -301,8 +301,7 @@ process_input(State, uninclude, _) ->
                              , include_hashes = sets:new()
                              , include_files = []
                              },
-    Mock = aere_mock:simple_query_contract(State1, [{id, aere_mock:ann(), "state"}]),
-    try aere_sophia:typecheck(Mock)
+    try assert_integrity(State1)
     catch {error, Msg} ->
             aere_error:uninclude_error(Msg)
     end,
@@ -385,13 +384,14 @@ register_letval(S0 = #repl_state{ letvals = Letvals
     {S1, PName} = make_provider_name(S0, Pat),
     Provider = aere_mock:letval_provider(S1, PName, Expr),
     TProvider = aere_sophia:typecheck(Provider),
-    {[], Type} = aere_sophia:type_of(TProvider, ?LETVAL_GETTER(PName)),
+    TProviderD = aere_sophia:typecheck(Provider, [dont_unfold]),
+    {[], Type} = aere_sophia:type_of(TProviderD, ?LETVAL_GETTER(PName)),
     {{Ref, _}, S2} = build_deploy_contract("no_source", TProvider, {}, Opts, S1),
     {Cons1, Letvals1} = remove_references(aere_sophia:get_pat_ids(Pat), Cons, Letvals),
     S3 = S2#repl_state{ letvals = [{{PName, Ref}, {Pat, Type}}|Letvals1]
                       , tracked_contracts = Cons1
                       },
-    S3.
+    assert_integrity(S3).
 
 register_letfun(S, []) ->
     S; % efficency
@@ -434,9 +434,7 @@ register_letfun(S0 = #repl_state{ letfuns = Letfuns
                       , letvals = Letvals1
                       , tracked_contracts = Cons1
                       },
-    TestMock = aere_mock:chained_query_contract(S2, [{id, aere_mock:ann(), "state"}]),
-    aere_sophia:typecheck(TestMock),
-    S2.
+    assert_integrity(S2).
 
 make_provider_name(S0, Pat) ->
     Ids = aere_sophia:get_pat_ids(Pat),
@@ -565,10 +563,6 @@ register_includes(State = #repl_state{ include_ast = Includes
                               , include_files  = NoDups ++ PrevFiles
                               },
 
-    MockForTc = aere_mock:simple_query_contract(State2, [{tuple, aere_mock:ann(), []}]),
-
-    aere_sophia:typecheck(MockForTc),
-
     Colored = aere_color:yellow(lists:flatten([" " ++ F || F <- NoDups])),
     IncludeWord = case NoDups of
                       []  -> "nothing";
@@ -576,7 +570,7 @@ register_includes(State = #repl_state{ include_ast = Includes
                       _   -> "includes"
                   end,
     Msg = ["Registered ", IncludeWord, Colored],
-    {Msg, State2}.
+    {Msg, assert_integrity(State2)}.
 
 register_tracked_contract(State0 = #repl_state
                           { letvals = Letvals
@@ -641,7 +635,7 @@ register_tracked_contract(State0 = #repl_state
                     ""
                    ),
     {Cons1, Letvals1} = remove_references([RefName], State2#repl_state.tracked_contracts, Letvals),
-    NewState = State2#repl_state
+    State3 = State2#repl_state
         { tracked_contracts =
               [{ RefName
                , {tracked_contract, ConAddr, Interface1}} | Cons1]
@@ -651,7 +645,7 @@ register_tracked_contract(State0 = #repl_state
         },
     {[ aere_color:green(RefName ++ " : " ++ StrDeclName)
      , " was successfully deployed", DepGasStr]
-    , NewState
+    , assert_integrity(State3)
     }.
 
 
@@ -671,14 +665,15 @@ register_typedef(State, {type_def, _, {id, NAnn, StrName}, Args, Def}) ->
                      {State0_1, TryName}
                     )
          end)(State0),
-    State1#repl_state
+    State2 = State1#repl_state
         { typedefs = [{ {qid, NAnn, [NSName, StrName]}
                       , {Args, Def}}|State1#repl_state.typedefs]
         , type_alias_map =
               [ {StrName, {typedef, Args, NSName, unfold_aliases(State1, Def)}}
                 | State1#repl_state.type_alias_map
               ]
-        }.
+        },
+    assert_integrity(State2).
 
 
 unfold_aliases(#repl_state{type_alias_map = TypeMap}, Obj) ->
@@ -839,3 +834,8 @@ build_type_map(Scope, [_|Rest], Acc) ->
 
 next_sup(State = #repl_state{supply=S}) ->
     {State#repl_state{supply=S+1}, S}.
+
+assert_integrity(S) ->
+    TestMock = aere_mock:chained_query_contract(S, [{tuple, aere_mock:ann(), []}]),
+    aere_sophia:typecheck(TestMock),
+    S.
