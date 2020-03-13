@@ -1,0 +1,11 @@
+let x = 2
+x
+let y = x
+y
+x
+let x = "XDDD"
+x
+y
+let z = y + 2
+let y = y + 1
+y + z

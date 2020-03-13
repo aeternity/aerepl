@@ -1,0 +1,27 @@
+function f(a) = a + 1
+function g(a) = a + f(a)
+f(2)
+g(2)
+function f(a) = 100
+f(2)
+g(2)
+:{
+function
+  f1(1) = 1
+  f1(n) = n * f1(n-1)
+:}
+:{
+function
+  f2 : (int, int) => int
+  f2(1, acc) = acc
+  f2(n, acc) = f2(n-1, n*acc)
+:}
+f1(5) == f2(5,1)
+
+function f(x) = if(x > 1) f(x-1) else 1
+function g(x) = [k | q <- [1..x + f(f(2))], let k = q + f(10), if(f(10) == 1)]
+g(5)
+function f(x) = 100000
+g(5)
+f(5)
+

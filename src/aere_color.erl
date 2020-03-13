@@ -149,7 +149,10 @@ render_colored(#repl_state{options = Opts}, C) ->
 render_colored(#options{colors = Coloring}, C) ->
     render_colored(Coloring, C);
 render_colored(Coloring, C) ->
-    color_str(Coloring, default) ++ render_colored(Coloring, C, default, 0) ++ color_str(Coloring, reset).
+    lists:flatten(color_str(Coloring, default)
+                  ++ render_colored(Coloring, C, default, 0)
+                  ++ color_str(Coloring, reset)
+                 ).
 render_colored(_Coloring, [], _Prev, _Level) ->
     [];
 render_colored(Coloring, [S|Rest], Prev, Level) when not is_integer(S) ->
