@@ -667,7 +667,7 @@ register_typedef(State, {type_def, _, {id, NAnn, StrName}, Args, Def}) ->
          end)(State0),
     State2 = State1#repl_state
         { typedefs = [{ {qid, NAnn, [NSName, StrName]}
-                      , {Args, Def}}|State1#repl_state.typedefs]
+                      , {Args, unfold_aliases(State1, Def)}}|State1#repl_state.typedefs]
         , type_alias_map =
               [ {StrName, {typedef, Args, NSName, unfold_aliases(State1, Def)}}
                 | State1#repl_state.type_alias_map

@@ -183,7 +183,6 @@ letval_provider(State = #repl_state{ user_contract_state_type = StType
     Con = contract(?LETVAL_PROVIDER(Name)
                   , [val_entrypoint( ?LETVAL_GETTER(Name)
                                    , with_value_refs(State2, Body))|state_init(State)]
-                   %% ++ typedefs(State2) TODO
                    ++ letfun_defs(State2)
                   ),
     prelude(State2) ++ [Prev, Con].
@@ -240,11 +239,11 @@ contract_refs(#repl_state{tracked_contracts = Contracts}) ->
 typedef_namespaces(#repl_state{typedefs = Typedefs}) ->
     [ { namespace, ann(), {con, ann(), Namespace}
       , [{type_def, ann(), {id, NAnn, TName}, TArgs, TD}]}
-      || {{qid, NAnn, [Namespace, TName]}, {TArgs, TD}} <- Typedefs
+      || {{qid, NAnn, [Namespace, TName]}, {TArgs, TD}} <- lists:reverse(Typedefs)
     ].
 typedefs(#repl_state{typedefs = Typedefs}) ->
     [ {type_def, ann(), Name, TArgs, TD}
-      || {Name = {id, _, _}, {TArgs, TD}} <- Typedefs
+      || {Name = {id, _, _}, {TArgs, TD}} <- lists:reverse(Typedefs)
     ].
 
 
