@@ -44,6 +44,7 @@ scenarios() ->
     , letdef
     , fundef
     , datatypes
+    , polytypes
     ].
 
 format(T) ->
