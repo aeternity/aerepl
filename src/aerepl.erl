@@ -6,7 +6,7 @@
 -module(aerepl).
 
 -export([start/0, main/1, register_includes/2, init_state/0, process_string/2,
-         remove_references/3
+         remove_references/3, answer/2
         ]).
 
 -include("aere_repl.hrl").
@@ -83,11 +83,12 @@ start() ->
 destroy_warnings(State = #repl_state{warnings = Ws}) ->
     {State#repl_state{warnings = []}, Ws}.
 
+print_msg(_, "") -> ok;
 print_msg(#repl_state{options = Opts}, Msg) ->
     print_msg(Opts, Msg);
 print_msg(O = #options{}, Msg) ->
     Render = lists:flatten(aere_color:render_colored(O, Msg)),
-    io:format("~s", [string:trim(Render, both, aere_parse:whitespaces()) ++ "\n"]).
+    io:format("~s\n", [string:trim(Render, both, aere_parse:whitespaces())]).
 
 
 -spec loop(repl_state()) -> finito.
@@ -264,12 +265,7 @@ process_input(State, eval, I) ->
     case Parse of
         {body, Body} ->
             Mock = aere_mock:chained_query_contract(State, unfold_aliases(State, Body)),
-            {NewState, Res} = eval_contract(I, Mock, State),
-            { case Res of
-                  "()" -> ?IF(State#repl_state.options#options.display_unit, "()", "");
-                  _ -> io_lib:format("~s", [Res])
-              end
-            , NewState};
+            eval_contract(I, Mock, State);
         [{include, _, {string, _, Inc}}] ->
             register_includes(State, [binary_to_list(Inc)]);
         [{letval, _, Pat, Expr}] -> register_letval(State, Pat, Expr);
@@ -744,8 +740,13 @@ eval_contract(Src, Ast, S1 = #repl_state{options = Options}) ->
         ?IF(Options#options.display_call_gas,
             [ aere_color:yellow("\ncall gas: "), io_lib:format("~p", [GasCall])],
             ""),
-    { S3#repl_state{ user_contracts = [Con|S3#repl_state.user_contracts] }
-    , [PPResp, DeployGasStr, CallGasStr]}.
+    Out = [PPResp, DeployGasStr, CallGasStr],
+    S4 = S3#repl_state{ user_contracts = [Con|S3#repl_state.user_contracts]},
+    case {RetType, DeployGasStr, CallGasStr} of
+        {{tuple, []}, "", ""} ->
+            ?IF(S4#repl_state.options#options.display_unit, {Out, S4}, S4);
+        _ -> {Out, S4}
+    end.
 
 
 -define(ParseOptionBool(Field),
