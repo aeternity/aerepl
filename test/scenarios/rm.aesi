@@ -1,0 +1,21 @@
+let x = 2
+function f() = 2
+x
+// 2
+f()
+// 2
+
+:rm x
+:rm f
+x
+// !error
+f()
+// !error
+
+function f() = 123
+function g() = f()
+g()
+// 123
+:rm f
+g()
+// !error

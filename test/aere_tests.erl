@@ -40,6 +40,8 @@ scenarios() ->
     , twoplustwo
     , twocommands
     , multiline
+    , rm
+    , deploy_tracked
     , letdef
     , fundef
     , datatypes

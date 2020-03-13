@@ -1,0 +1,2 @@
+contract D =
+  entrypoint get() = 2138
