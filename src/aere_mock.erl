@@ -242,12 +242,10 @@ typedef_namespaces(#repl_state{typedefs = Typedefs}) ->
       , [{type_def, ann(), {id, NAnn, TName}, TArgs, TD}]}
       || {{qid, NAnn, [Namespace, TName]}, {TArgs, TD}} <- Typedefs
     ].
-typedefs(#repl_state{typedefs = Typedefs, type_aliases = Aliases}) ->
+typedefs(#repl_state{typedefs = Typedefs}) ->
     [ {type_def, ann(), Name, TArgs, TD}
       || {Name = {id, _, _}, {TArgs, TD}} <- Typedefs
-    ] ++ [ {type_def, ann(), {id, ann(), TN}, Args, TD}
-          || {TN, {Args, TD}} <- Aliases
-         ].
+    ].
 
 
 %% Declarations and includes to a contract

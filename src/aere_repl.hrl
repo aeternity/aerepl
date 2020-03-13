@@ -40,8 +40,9 @@
           %% :: [{ <type name>
           %%     , {<args>, <typedef>}
           %%     }]
-        , type_aliases
-          %% :: [{<alias name>, {<args>, <type>}}]
+        , type_alias_map
+          %% :: [{<type name>, {typedef, <args>, <namespace>, <definition>}
+          %%                 | {contract, <internal name>}}]
         , user_account
         , supply :: integer()
         , warnings
