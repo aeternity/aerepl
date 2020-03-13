@@ -1,10 +1,19 @@
 function f(a) = a + 1
 function g(a) = a + f(a)
+
 f(2)
+// 3
+
 g(2)
+// 5
+
 function f(a) = 100
 f(2)
+// 100
+
 g(2)
+// 5
+
 :{
 function
   f1(1) = 1
@@ -17,11 +26,15 @@ function
   f2(n, acc) = f2(n-1, n*acc)
 :}
 f1(5) == f2(5,1)
+// true
 
 function f(x) = if(x > 1) f(x-1) else 1
 function g(x) = [k | q <- [1..x + f(f(2))], let k = q + f(10), if(f(10) == 1)]
 g(5)
+// [2, 3, 4, 5, 6, 7]
 function f(x) = 100000
 g(5)
+// [2, 3, 4, 5, 6, 7]
 f(5)
+// 100000
 
