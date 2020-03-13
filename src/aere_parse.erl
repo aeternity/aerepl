@@ -9,7 +9,7 @@ whitespaces() ->
 -spec commands() -> list(aere_repl:command()).
 commands() ->
     [ quit, type, eval, include, reinclude, cd, pwd, ls
-    , uninclude, set, load, deploy, rm].
+    , uninclude, set, load, deploy, rm, reset].
 
 
 -spec dispatch(string()) -> {ok, {aere_repl:command(), string()}}
@@ -45,7 +45,7 @@ eval_from_file(File) ->
                 aere_error:throw({file_error, File, Reason});
             {ok, F} -> binary_to_list(F)
     end,
-    split_input(C).
+    [dispatch(I) || I <- split_input(C)].
 
 split_input(C) ->
     FileSpitterProcess =
@@ -78,8 +78,7 @@ split_input(C) ->
                         FileSpitter ! die,
                         [];
                     false ->
-                        X = get_input(FileEater),
-                        [dispatch(X) | R()]
+                        [get_input(FileEater)| R()]
                 end
         end,
     Reads().

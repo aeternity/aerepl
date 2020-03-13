@@ -1,0 +1,32 @@
+datatype d = D
+let d = D
+datatype d = D
+
+d == d
+// true
+
+function f(D) = D
+datatype d = D | E
+
+f(D)
+// !error
+
+D == E
+// false
+
+record d = {d : int}
+let x = {d = 100}
+type d = int
+:t x.d : d
+// int
+
+:t d
+// TYPEDEF_0.d
+:t f
+// (TYPEDEF_2.d) => TYPEDEF_2.d
+:t D
+// !error
+:t x
+// TYPEDEF_4.d
+f(TYPEDEF_2.D)
+// D

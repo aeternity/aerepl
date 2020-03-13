@@ -77,6 +77,11 @@ throw({error,
         _ -> "Unknown error"
     end}).
 
+
+nothing_to_remove() ->
+    throw({error, ["Nothing to remove"]}).
+
+
 contract_creation_error(Reason) ->
 throw({error,
     ["Failed to create contract: ", Reason]}).

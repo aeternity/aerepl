@@ -1,0 +1,28 @@
+type id('a) = 'a
+:t 3 : id(int)
+// int
+
+record wrap('a) = { val : 'a }
+let x = {val = true}
+:t x
+// TYPEDEF_1.wrap(bool)
+
+type wrap_bool = wrap(bool)
+:t x : wrap_bool
+// TYPEDEF_1.wrap(bool)
+
+datatype maybe('a) = Just('a) | Nothing
+:t Just(3)
+// TYPEDEF_4.maybe(int)
+:t Nothing
+// TYPEDEF_4.maybe('a)
+
+type maybe_list('a) = maybe(list('a))
+:t Just([false, true]) : maybe_list(bool)
+// TYPEDEF_4.maybe(list(bool))
+
+:t Just(Just(Just(Nothing)))
+// TYPEDEF_4.maybe(TYPEDEF_4.maybe(TYPEDEF_4.maybe(TYPEDEF_4.maybe('a))))
+
+:t Just({val = (x) => x}) : TYPEDEF_0.id(TYPEDEF_4.maybe(TYPEDEF_1.wrap('a => 'a)))
+// TYPEDEF_4.maybe(TYPEDEF_1.wrap(('a) => 'a))

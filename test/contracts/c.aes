@@ -1,0 +1,5 @@
+contract C =
+  type state = int
+  entrypoint init() = 0
+  entrypoint get() = state
+  stateful entrypoint inc() = put(state + 1)

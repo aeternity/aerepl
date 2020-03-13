@@ -1,9 +1,11 @@
 -module(aere_sophia).
 
--export([ typecheck/1, parse_file/2, parse_file/3, compile_contract/3
-        , parse_body/1, parse_decl/1, parse_top/1, parse_type/1, type_of/2
+-export([ typecheck/2, typecheck/1, parse_file/2, parse_file/3, compile_contract/3
+        , parse_body/1, parse_top/2
+        , parse_decl/1, parse_top/1, parse_type/1, type_of/2
         , generate_interface_decl/1, process_err/1, get_pat_ids/1
-        , replace_var/3
+        %% , replace_ast/4, replace_type_in_decls/4, replace_type/4
+        , replace/4
         ]).
 
 -include("../_build/default/lib/aesophia/src/aeso_parse_lib.hrl").
@@ -16,7 +18,9 @@ process_err(E) -> %% idk, rethrow
 
 
 typecheck(Ast) ->
-    try aeso_ast_infer_types:infer(Ast, [])
+    typecheck(Ast, []).
+typecheck(Ast, Opts) ->
+    try aeso_ast_infer_types:infer(Ast, Opts)
     catch _:{error, Errs} ->
             throw({error, process_err(Errs)})
     end.
@@ -65,7 +69,7 @@ type_of([{contract, _, _, Defs}], FunName) ->
                 "init" -> {[], {tuple_t, [], []}};
                 _ -> error("Function " ++ FunName ++ " is not defined")
             end;
-        _ -> error("what the fuck, two entrypoints with the same name")
+        _ -> error("co kurwa, two entrypoints with the same name")
     end;
 type_of([_ | Contracts], FunName) ->
     type_of(Contracts, FunName).
@@ -92,19 +96,34 @@ to_bytecode([], _) -> [].
 
 -define(with_error_handle(X), try X catch {error, Errs} -> process_err(Errs) end).
 parse_top(I) ->
+    parse_top(I, []).
+parse_top(I, Opts) ->
     Top = aeso_parse_lib:choice
-            ([ aeso_parser:maybe_block(aeso_parser:decl()),
-               ?LET_P(Stmts, aeso_parser:maybe_block(aeso_parser:stmt()),
-                      case lists:all(fun(X) -> element(1, X) =:= letval end, Stmts) of
-                          true -> aeso_parse_lib:fail();
-                          false -> {body, Stmts}
+            ([ ?LET_P(Decl, aeso_parser:maybe_block(aeso_parser:decl()),
+                      case Decl of
+                          _ when is_list(Decl) -> Decl;
+                          _ -> [Decl]
+                      end),
+               ?LET_P(Body, aeso_parser:body(),
+                      case Body of
+                          {block, _, Stmts} when is_list(Stmts) ->
+                              ?IF(lists:all(fun(X) -> element(1, X) =:= letval end, Stmts),
+                                  aeso_parse_lib:fail(),
+                                  {body, Stmts}
+                                 );
+                          LV when element(1, LV) =:= letval -> aeso_parse_lib:fail();
+                          _ -> {body, [Body]}
                       end)
              ]),
-    ?with_error_handle(aeso_parser:run_parser(Top, I)).
+    ?with_error_handle(aeso_parser:run_parser(Top, I, Opts)).
 parse_decl(I) ->
     ?with_error_handle(aeso_parser:run_parser(aeso_parser:decl(), I)).
 parse_body(I) ->
-    ?with_error_handle(aeso_parser:run_parser(aeso_parser:maybe_block(aeso_parser:stmt()), I)).
+    ?with_error_handle(
+       case aeso_parser:run_parser(aeso_parser:body(), I) of
+           {block, _, Stmts} when is_list(Stmts) -> Stmts;
+           Other -> [Other]
+       end).
 parse_type(I) ->
     ?with_error_handle(aeso_parser:run_parser(aeso_parser:type(), I)).
 parse_file(I, Opts) ->
@@ -114,7 +133,7 @@ parse_file(I, Includes, Opts) ->
 
 
 generate_interface_decl([{contract, Ann, Name, Funs}]) ->
-    {Name, {contract, Ann, Name, get_funs_decls(Funs)}};
+    {contract, Ann, Name, get_funs_decls(Funs)};
 generate_interface_decl([_|Rest]) ->
     generate_interface_decl(Rest);
 generate_interface_decl([]) ->
@@ -155,149 +174,103 @@ get_pat_ids(_) ->
     [].
 
 
-replace_var(B, Old, New) when is_list(B) ->
-    replace_var(B, Old, New, []);
-replace_var(E, Old, New) ->
-    replace_var1(E, Old, New).
-replace_var([], _, _, Acc) ->
-    lists:reverse(Acc);
-replace_var([{letval, Ann, Pats, Expr}|Rest], Old, New, Acc) ->
-    PatIds = [I || P <- Pats, I <- get_pat_ids(P)],
-    Stmt = {letval, Ann, Pats, replace_var1(Expr, Old, New)},
-    case lists:member(Old, PatIds) of
-        true -> lists:reverse([Stmt|Acc]) ++ Rest;
-        false -> replace_var(Rest, Old, New, [Stmt|Acc])
-    end;
-replace_var([{letfun, Ann, Name, Pats, RT, Expr}|Rest], Old, New, Acc) ->
-    PatIds = [I || P <- Pats, I <- get_pat_ids(P)],
-    Stmt = {letfun, Ann, Name, Pats, RT, replace_var1(Expr, Old, New)},
-    case lists:member(Old, PatIds) of
-        true -> lists:reverse([Stmt|Acc]) ++ Rest;
-        false -> replace_var(Rest, Old, New, [Stmt|Acc])
-    end;
-replace_var([Expr|Rest], Old, New, Acc) ->
-    replace_var(Rest, Old, New, [replace_var1(Expr, Old, New)|Acc]).
+%% Replacing:
+%%  - type names        - type
+%%  - constructors      - con
+%%  - identifier names  - var
+%%  - any ids           - id
+-define(replace(O), replace(O, What, Old, New)).
+-define(replace(O, What), replace(O, What, Old, New)).
 
-
-replace_var1({lam, Ann, Args, Expr}, Old, New) ->
-    ArgIds = [I || {arg, _, I, _} <- Args],
-    Expr1 = case lists:member(Old, ArgIds) of
-                true -> Expr;
-                false -> replace_var(Expr, Old, New)
-            end,
-    {lam, Ann, Args, Expr1};
-replace_var1({'if', Ann, C, T, E}, Old, New) ->
-    {'if', Ann, replace_var1(C, Old, New),
-     replace_var1(T, Old, New), replace_var1(E, Old, New)};
-replace_var1({switch, Ann, Expr, Alts}, Old, New) ->
-    {switch, Ann, replace_var1(Expr, Old, New),
-     [ begin
-           Expr1 = case lists:member(Old, get_pat_ids(P)) of
-                       true -> ExprA;
-                       false -> replace_var(ExprA, Old, New)
-                   end,
-           {'case', A, P, Expr1}
-       end
-      || {'case', A, P, ExprA} <- Alts
-     ]};
-replace_var1({app, Ann, Expr, Args}, Old, New) ->
-    {app, Ann, replace_var1(Expr, Old, New), [replace_var1(A, Old, New) || A <- Args]};
-replace_var1({proj, Ann, Expr, Id}, Old, New) ->
-    {proj, Ann, replace_var1(Expr, Old, New), Id};
-replace_var1({tuple, Ann, Exprs}, Old, New) ->
-    {tuple, Ann, [replace_var1(Expr, Old, New) || Expr <- Exprs]};
-replace_var1({list, Ann, Exprs}, Old, New) ->
-    {list, Ann, [replace_var1(Expr, Old, New) || Expr <- Exprs]};
-replace_var1({list_comp, Ann, Expr, [{comprehension_bind, Pat, BindBy}|Rest]}, Old, New) ->
-    BindBy1 = replace_var1(BindBy, Old, New),
-    {list_comp, _, Expr1, Rest1} =
-        case lists:member(Old, get_pat_ids(Pat)) of
-            true -> {list_comp, Ann, Expr, Rest};
-            false -> replace_var({list_comp, Ann, Expr, Rest}, Old, New)
-        end,
-    {list_comp, Ann, Expr1, [{comprehension_bind, Pat, BindBy1}|Rest1]};
-replace_var1({list_comp, Ann, Expr, [{comprehension_if, A, Cond}|Rest]}, Old, New) ->
-    Cond1 = replace_var1(Cond, Old, New),
-    {list_comp, _, Expr1, Rest1} =
-            replace_var({list_comp, Ann, Expr, Rest}, Old, New),
-    {list_comp, Ann, Expr1, [{comprehension_if, A, Cond1}|Rest1]};
-replace_var1({list_comp, Ann, Expr, [{letfun, Ann, Name, Pats, RT, LExpr}|Rest]}, Old, New) ->
-    PatIds = [I || P <- Pats, I <- get_pat_ids(P)],
-    LExpr1 = replace_var(LExpr, Old, New),
-    {list_comp, _, Expr1, Rest1} =
-        case lists:member(Old, PatIds) of
-            true -> {list_comp, Ann, Expr, Rest};
-            false -> replace_var({list_comp, Ann, Expr, Rest}, Old, New)
-        end,
-    Let1 = {letfun, Ann, Name, Pats, RT, LExpr1},
-    {list_comp, Ann, Expr1, [Let1|Rest1]};
-replace_var1({list_comp, Ann, Expr, [{letval, Ann, Pats, LExpr}|Rest]}, Old, New) ->
-    PatIds = [I || P <- Pats, I <- get_pat_ids(P)],
-    LExpr1 = replace_var(LExpr, Old, New),
-    {list_comp, _, Expr1, Rest1} =
-        case lists:member(Old, PatIds) of
-            true -> {list_comp, Ann, Expr, Rest};
-            false -> replace_var({list_comp, Ann, Expr, Rest}, Old, New)
-        end,
-    Let1 = {letval, Ann, Pats, LExpr1},
-    {list_comp, Ann, Expr1, [Let1|Rest1]};
-replace_var1({list_comp, Ann, Expr, []}, Old, New) ->
-    {list_comp, Ann, replace_var1(Expr, Old, New), []};
-replace_var1({typed, Ann, Expr, T}, Old, New) ->
-    {typed, Ann, replace_var1(Expr, Old, New), T};
-replace_var1({record, Ann, Fields}, Old, New) ->
-    {record, Ann,
-    [ case F of
-          {field, A, LV, E} ->
-              {field, A, LV, replace_var1(E, Old, New)};
-          {field, A, LV, I, E} ->
-              {field, A, LV, I, replace_var1(E, Old, New)}
-      end
-      || F <- Fields
-    ]};
-replace_var1({record, Ann, Expr, Fields}, Old, New) ->
-    {record, Ann, replace_var1(Expr, Old, New),
-     [ case F of
-           {field, A, LV, E} ->
-               {field, A, LV, replace_var1(E, Old, New)};
-           {field, A, LV, I, E} ->
-               {field, A, LV, I, replace_var1(E, Old, New)}
-       end
-       || F <- Fields
-     ]};
-replace_var1({map, Ann, Fields}, Old, New) ->
-    {map, Ann,
-     [ case F of
-           {field, A, LV, E} ->
-               {field, A, LV, replace_var1(E, Old, New)};
-           {field, A, LV, I, E} ->
-               {field, A, LV, I, replace_var1(E, Old, New)}
-       end
-       || F <- Fields
-     ]};
-replace_var1({map, Ann, Expr, Fields}, Old, New) ->
-    {map, Ann, replace_var1(Expr, Old, New),
-     [ case F of
-           {field, A, LV, E} ->
-               {field, A, LV, replace_var1(E, Old, New)};
-           {field, A, LV, I, E} ->
-               {field, A, LV, I, replace_var1(E, Old, New)}
-       end
-       || F <- Fields
-     ]};
-replace_var1({map, Ann, Pairs}, Old, New) ->
-    {map, Ann, [{replace_var1(K, Old, New), replace_var1(V, Old, New)}
-                || {K, V} <- Pairs]};
-replace_var1({map_get, Ann, M, K}, Old, New) ->
-    {map_get, Ann, replace_var1(M, Old, New), replace_var1(K, Old, New)};
-replace_var1({map_get, Ann, M, K, D}, Old, New) ->
-    {map_get, Ann, replace_var1(M, Old, New), replace_var1(K, Old, New),
-     replace_var1(D, Old, New)};
-replace_var1({block, Ann, Stmts}, Old, New) ->
-    {block, Ann, replace_var(Stmts, Old, New)};
-replace_var1({id, A, Old}, Old, New) when is_list(New) ->
-    {id, A, New};
-replace_var1({id, A, Old}, Old, New) ->
+                                                % Final cases
+replace({id, Ann, Old}, id, Old, New) when is_list(New) ->
+    {id, Ann, New};
+replace({id, _, Old}, id, Old, New) ->
     New;
-replace_var1(Other, _, _) ->
-    Other.
+replace(Qid = {qid, _, _}, id, _, _) ->
+    Qid;
+replace({con, Ann, Old}, id, Old, New) when is_list(New) ->
+    {con, Ann, New};
+replace({con, _, Old}, id, Old, New) ->
+    New;
+replace({con, _, Old}, con, Old, New) ->
+    New;
+replace({id, _, Old}, var, Old, New) ->
+    New;
+
+% Dispatch rules
+%% Variable scoping
+replace(LF = {letfun, Ann, Name, Pats, RT, Expr}, What = var, Old, New) ->
+    PatIds = [I || P <- Pats, I <- get_pat_ids(P)],
+    ?IF(lists:member(Old, PatIds),
+        LF,
+        {letfun, Ann, Name, Pats, RT, ?replace(Expr)}
+       );
+replace([LF = {letfun, _, {id, _, N}, _, _, _}|Rest], What = var, Old, New) ->
+    LF1 = ?replace(LF),
+    ?IF(N == Old, [LF1|Rest], [LF1|?replace(Rest)]);
+replace([{letval, Ann, Pat, Expr}|Rest], What = var, Old, New) ->
+    PatIds = get_pat_ids(Pat),
+    LV1 = {letval, Ann, Pat, ?replace(Expr)},
+    [LV1| ?IF(lists:member(Old, PatIds), Rest, ?replace(Rest))];
+replace({lam, Ann, Args, Expr}, What = var, Old, New) ->
+    ArgIds = [I || {arg, _, I, _} <- Args],
+    Expr1 = ?IF(lists:member(Old, ArgIds), Expr, ?replace(Expr)),
+    {lam, Ann, Args, Expr1};
+%% CONtract vs CONstructor
+replace({typed, Ann, X, T}, What = con, Old, New) ->
+    {typed, Ann, ?replace(X), T};
+replace({ContrOrNs, Ann, Name, Decls}, What = con, Old, New)
+  when ContrOrNs =:= contract orelse ContrOrNs =:= namespace ->
+    {ContrOrNs, Ann, Name, ?replace(Decls)};
+%% God save the field
+replace({proj, Ann, Expr, Id}, What = var, Old, New) ->
+    {proj, Ann, ?replace(Expr), Id};
+replace(Field, _, _, _)
+  when element(1, Field) =:= field orelse element(1, Field) =:= field_t ->
+    Field;
+%% Context-free toplevel function replacement
+replace({ContrOrNs, Ann, Name, Decls}, What = var, Old, New)
+  when ContrOrNs =:= contract orelse ContrOrNs =:= namespace ->
+    {ContrOrNs, Ann, Name, [?replace(X) || X <- Decls]};
+%% Types
+replace(LF = {letfun, Ann, Name, Pats, RT, Expr}, What = type, Old, New) ->
+    PatIds = [I || P <- Pats, I <- get_pat_ids(P)],
+    ?IF(lists:member(Old, PatIds),
+        LF, {letfun, Ann, Name, Pats, ?replace(RT, id), ?replace(Expr)}
+       );
+replace([LF|Rest], What = type, Old, New) when element(1, LF) =:= letfun ->
+    [?replace(LF)|?replace(Rest)];
+replace([LF|Rest], What = type, Old, New) when element(1, LF) =:= fun_decl ->
+    [?replace(LF)|?replace(Rest)];
+replace([FCs|Rest], What = type, Old, New) when element(1, FCs) =:= fun_clauses ->
+    [?replace(FCs)|?replace(Rest)];
+replace([LV|Rest], What = type, Old, New) when element(1, LV) =:= letval ->
+    [?replace(LV)|?replace(Rest)];
+replace({lam, Ann, Args, Expr}, What = type, Old, New) ->
+    Args1 = [{arg, AAnn, AId, ?replace(AType, id)}
+             || {arg, AAnn, AId, AType} <- Args],
+    {lam, Ann, Args1, ?replace(Expr)};
+replace({typed, Ann, X, T}, What = type, Old, New) ->
+    {typed, Ann, ?replace(X), ?replace(T, id)};
+replace(TDecl, type, Old, New)
+  when element(1, TDecl) =:= type_decl
+       orelse element(1, TDecl) =:= type_def
+       orelse element(1, TDecl) =:= alias_t
+       orelse element(1, TDecl) =:= record_t
+       orelse element(1, TDecl) =:= variant_t ->
+    ?replace(TDecl, id);
+replace({ContrOrNs, Ann, Name, Decls}, What = type, Old, New)
+  when ContrOrNs =:= contract orelse ContrOrNs =:= namespace ->
+    {ContrOrNs, Ann, ?replace(Name, id), [?replace(X) || X <- Decls]};
+
+
+% General search
+replace([], _What, _Old, _New) ->
+    [];
+replace([H|T], What, Old, New) ->
+    [?replace(H)|?replace(T)]; % list comprehension shouldn't be used here
+replace(T, What, Old, New) when is_tuple(T) ->
+    list_to_tuple([?replace(X) || X <- tuple_to_list(T)]);
+replace(Other, _What, _Old, _New) -> Other.
+

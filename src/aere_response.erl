@@ -144,7 +144,7 @@ pp_response({some, X}) ->
 pp_response({variant, Cons}) ->
     text(Cons);
 pp_response({revert, Msg}) ->
-    text(aere_color:render_colored(default, aere_color:red("REVERT: ") ++ binary_to_list(Msg)));
+    text("REVERT: " ++ binary_to_list(Msg));
 pp_response({address, Addr}) ->
     text(binary_to_list(aeser_api_encoder:encode(peer_pubkey, <<Addr:256>>)));
 pp_response({bytes, Bs}) ->
@@ -274,7 +274,9 @@ decode(?FATE_VARIANT(Arities, Tag, Values), {variant_t, Cs}) ->
     decode_variant(Arities, Cs, Tag, Values, '$undefined$');
 decode(S, string) when ?IS_FATE_STRING(S)           -> S;
 decode(M, {map, KeyType, ValType}) when ?IS_FATE_MAP(M)              ->
-    maps:from_list([{decode(K, KeyType), decode(V, ValType)} || {K, V} <- maps:to_list(M)]).
+    maps:from_list([{decode(K, KeyType), decode(V, ValType)} || {K, V} <- maps:to_list(M)]);
+decode(T, {tuple, [Single]}) ->
+    decode(T, Single).
 
 decode_variant([Arity|Left1], [{C, Types}|Left2], N = 0, Values, Acc) ->
     %% These are the values that should be returned.
