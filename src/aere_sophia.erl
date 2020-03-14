@@ -187,6 +187,8 @@ replace({id, Ann, Old}, id, Old, New) when is_list(New) ->
     {id, Ann, New};
 replace({id, _, Old}, id, Old, New) ->
     New;
+replace({qid, Ann, Quals}, id, Old, New) when is_list(New) ->
+    {qid, Ann, [?IF(Q == Old, New, Q) || Q <- Quals]};
 replace(Qid = {qid, _, _}, id, _, _) ->
     Qid;
 replace({con, Ann, Old}, id, Old, New) when is_list(New) ->
@@ -234,11 +236,12 @@ replace({ContrOrNs, Ann, Name, Decls}, What = var, Old, New)
   when ContrOrNs =:= contract orelse ContrOrNs =:= namespace ->
     {ContrOrNs, Ann, Name, [?replace(X) || X <- Decls]};
 %% Types
-replace(LF = {letfun, Ann, Name, Pats, RT, Expr}, What = type, Old, New) ->
-    PatIds = [I || P <- Pats, I <- get_pat_ids(P)],
-    ?IF(lists:member(Old, PatIds),
-        LF, {letfun, Ann, Name, Pats, ?replace(RT, id), ?replace(Expr)}
-       );
+replace({letfun, Ann, Name, Pats, RT, Expr}, What = type, Old, New) ->
+    {letfun, Ann, Name, ?replace(Pats), ?replace(RT, id), ?replace(Expr)};
+replace({fun_decl, Ann, Name, T}, type, Old, New) ->
+    {fun_decl, Ann, Name, ?replace(T, id)};
+replace({fun_clauses, Ann, Name, T, Binds}, What = type, Old, New) ->
+    {fun_clauses, Ann, Name, ?replace(T, id), [?replace(B) || B <- Binds]};
 replace([LF|Rest], What = type, Old, New) when element(1, LF) =:= letfun ->
     [?replace(LF)|?replace(Rest)];
 replace([LF|Rest], What = type, Old, New) when element(1, LF) =:= fun_decl ->
