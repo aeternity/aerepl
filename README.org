@@ -119,7 +119,23 @@ The REPL will inform about all implicit removals and ask the user if they are ok
 
 *** Definitions of types
 
-Not yet supported.
+REPL allows type definitions in the same manner as contract/namespace toplevel.
+Note that due to shadowing it will keep their definitions in separate namespaces,
+which will result in possibly suspicious ~type~ query outputs.
+#+BEGIN_SRC
+AESO> datatype d = D
+AESO> D : d         
+D
+AESO> let x = D     
+AESO> datatype d = D | E 
+AESO> :type D
+TYPEDEF_2.d
+AESO> :type x
+TYPEDEF_0.d
+AESO> x == D
+REPL:0:0:Cannot unify TYPEDEF_0.d
+         and TYPEDEF_2.d
+#+END_SRC
 
 *** Tracked contracts
 :PROPERTIES:
@@ -234,3 +250,29 @@ AESO> :{
 
 
 The lines with ~:{~ and ~:}~ symbols cannot contain any other non-white characters.
+
+** Testing
+
+To run tests one just need to run
+#+BEGIN_SRC
+make test
+#+END_SRC
+Currently the tests cover only scenarios that can be inspected in the ~test/scenarios/~
+directory. A scenario file consists of regular queries that one would input to the
+repl along with expected answers prepended with ~//~ prefix. For example
+#+BEGIN_SRC
+2 + 2
+// 4
+#+END_SRC
+
+If any repl-questions will appear, the testing suite will choose always the default option.
+If you want to skip the error message, you can use the ~_~ wildcard. Errors can be
+caught using ~!error~, but for now error testing is limited only to the fact that
+it has occured.
+REPL internal errors will result in test failure regardles of this catch.
+#+BEGIN_SRC
+2 + 2
+// _
+2 + "XD"
+// !error
+#+END_SRC

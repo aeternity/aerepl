@@ -568,11 +568,11 @@ register_includes(State = #repl_state{ include_ast = Includes
     Msg = ["Registered ", IncludeWord, Colored],
     {Msg, assert_integrity(State2)}.
 
-register_tracked_contract(State0 = #repl_state
+register_tracked_contract(State = #repl_state
                           { letvals = Letvals
-                          , type_alias_map = TypeMap
                           , options = Opts
                           }, MaybeRefName, Src) ->
+
     % perform typecheck and prepare ACI
     Ast = aere_sophia:parse_file(binary_to_list(Src), []),
     TAstUnfolded = aere_sophia:typecheck(Ast, [dont_unfold]),
@@ -580,6 +580,9 @@ register_tracked_contract(State0 = #repl_state
     BCode = aere_sophia:compile_contract(fate, binary_to_list(Src), TAst),
     Interface = {contract, _, {con, _, StrDeclName}, _}
         = aere_sophia:generate_interface_decl(TAstUnfolded),
+    State0 = State#repl_state
+        {type_alias_map =
+             proplists:delete(StrDeclName, State#repl_state.type_alias_map)},
 
     % Generate the reference name by the contract name if not provided
     RefName =
@@ -611,19 +614,23 @@ register_tracked_contract(State0 = #repl_state
                  {State0_1, Sup} = next_sup(State0_0),
                  TryName =
                      "REPL_" ++ integer_to_list(Sup) ++ "_" ++ StrDeclName,
-                 case [bad || {_, {contract, NameConflict}} <- TypeMap,
+                 case [bad || {_, {contract, NameConflict}} <-
+                                  State0_1#repl_state.type_alias_map,
                               NameConflict == TryName] of
-                     [] -> {State0_1, TryName};
+                     [] -> { State0_1#repl_state
+                             {type_alias_map = [{StrDeclName, {contract, TryName}}
+                                                | State0_1#repl_state.type_alias_map
+                                               ]}
+                           , TryName};
                      _ -> Retry(State0_1)
                  end
          end)(State0),
 
     Interface1 =
         begin
-            {contract, IAnn, {con, INAnn, _}, IDecl} = Interface,
+            {contract, IAnn, {con, INAnn, _}, IDecl} = unfold_aliases(State1, Interface),
             {contract, IAnn, {con, INAnn, ActualName}, IDecl}
         end,
-
 
     {{ConAddr, DeployGas}, State2} = deploy_contract(BCode, {}, Opts, State1),
     DepGasStr = ?IF(Opts#options.display_deploy_gas,
@@ -635,8 +642,6 @@ register_tracked_contract(State0 = #repl_state
         { tracked_contracts =
               [{ RefName
                , {tracked_contract, ConAddr, Interface1}} | Cons1]
-        , type_alias_map =
-              [{StrDeclName, {contract, ActualName}}|proplists:delete(StrDeclName, TypeMap)]
         , letvals = Letvals1
         },
     {[ aere_color:green(RefName ++ " : " ++ StrDeclName)
