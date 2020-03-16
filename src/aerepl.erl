@@ -10,6 +10,7 @@
         ]).
 
 -include("aere_repl.hrl").
+-include("aere_macros.hrl").
 
 
 -spec default_options() -> options().
@@ -61,15 +62,7 @@ banner() ->
 ".
 
 
-%% load_nifs() ->
-%%     case os:getenv("NIF_DIR") of
-%%         false -> Path = "_build/default/lib/";
-%%         Path -> Path
-%%     end,
-%%     ok = enacl_nif:load(Path).
-
 main(_Args) ->
-    %% load_nifs(),
     start().
 
 -spec start() -> finito.
@@ -83,11 +76,14 @@ start() ->
 destroy_warnings(State = #repl_state{warnings = Ws}) ->
     {State#repl_state{warnings = []}, Ws}.
 
+render_msg(#repl_state{options = Opts}, Msg) ->
+    render_msg(Opts, Msg);
+render_msg(O = #options{}, Msg) ->
+    lists:flatten(aere_color:render_colored(O, Msg)).
+
 print_msg(_, "") -> ok;
-print_msg(#repl_state{options = Opts}, Msg) ->
-    print_msg(Opts, Msg);
-print_msg(O = #options{}, Msg) ->
-    Render = lists:flatten(aere_color:render_colored(O, Msg)),
+print_msg(S, M) ->
+    Render = render_msg(S, M),
     io:format("~s\n", [string:trim(Render, both, aere_parse:whitespaces())]).
 
 
@@ -105,7 +101,9 @@ loop(State) ->
                     end,
                     print_msg(State1, Resp#repl_response.output),
                     loop(State1);
-                ask -> todo;
+                ask ->
+                    print_msg(State, "Got empty question, this is a bug probably"),
+                    loop(State);
                 error ->
                     print_msg(State, Resp#repl_response.output),
                     loop(State);

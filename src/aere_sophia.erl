@@ -10,6 +10,7 @@
 
 -include("../_build/default/lib/aesophia/src/aeso_parse_lib.hrl").
 -include("aere_repl.hrl").
+-include("aere_macros.hrl").
 
 process_err(Errs) when is_list(Errs) ->
     throw({error, lists:concat([aeso_errors:err_msg(E) || E <- Errs])});

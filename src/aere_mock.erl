@@ -6,6 +6,7 @@
 -module(aere_mock).
 
 -include("aere_repl.hrl").
+-include("aere_macros.hrl").
 
 -export([ chained_query_contract/2
         , chained_initial_contract/3
