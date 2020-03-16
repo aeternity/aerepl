@@ -97,7 +97,7 @@ with_auto_imports(State = #repl_state{include_files = Includes}, Expr) ->
         [ binary_to_list(AI)
           || AI <- aeso_parser:auto_imports(Expr)
         ],
-    case aerepl:register_includes(State, AutoImports -- Includes) of
+    case aere_repl:register_includes(State, AutoImports -- Includes) of
         {_, S} -> S;
         S = #repl_state{} -> S
     end.
@@ -218,7 +218,7 @@ letfun_defs(State = #repl_state{ letfuns = LetFuns
                           UsedNames = [AN || Arg <- Args,
                                              AN <- aere_sophia:get_pat_ids(Arg)
                                       ],
-                          aerepl:remove_references(UsedNames, Cons, LetVals)
+                          aere_repl:remove_references(UsedNames, Cons, LetVals)
                       end,
                   State1 = State#repl_state{tracked_contracts = Cons1, letvals = LetVals1},
                   {letfun, A, N, Args, RT, with_value_refs(State1, Body)}

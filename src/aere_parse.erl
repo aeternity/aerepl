@@ -42,7 +42,7 @@ eval_from_file(File) ->
     MC = file:read_file(File),
     C = case MC of
             {error, Reason} ->
-                aere_error:throw({file_error, File, Reason});
+                throw(aere_error:throw({file_error, File, Reason}));
             {ok, F} -> binary_to_list(F)
     end,
     [dispatch(I) || I <- split_input(C)].

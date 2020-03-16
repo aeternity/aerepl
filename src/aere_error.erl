@@ -23,51 +23,56 @@ ambiguous_prefix(Propositions) ->
     ["Ambiguous command prefix. Matched commands: ", PropsString, "\n"].
 
 bad_option(Expected) ->
-throw({error,
-    [aere_color:yellow(string:join(Expected, aere_color:default(", "))), " expected"]}).
+{error,
+    [aere_color:yellow(case Expected of
+                           [] -> "nothing";
+                           [X] -> X;
+                           [E|More] ->
+                               [E|[[", ", M] || M <- More]]
+                       end), " expected"]}.
 
 unknown_option(Prop) ->
-throw({error,
-    ["Unknown property ", aere_color:yellow(Prop)]}).
+{error,
+    ["Unknown property ", aere_color:yellow(Prop)]}.
 
 forbidden_id(Name) ->
-throw({error,
-    ["\"", Name, "\" is forbidden here"]}).
+{error,
+    ["\"", Name, "\" is forbidden here"]}.
 
 unsupported_decl(multidecl) ->
-throw({error,
-    "One by one please"});
+{error,
+    "One by one please"};
 unsupported_decl(type_decl) ->
-throw({error,
-    "Type declaration is not yet supported"});
+{error,
+    "Type declaration is not yet supported"};
 unsupported_decl(type_def) ->
-throw({error,
-    "Type definition is not yet supported"});
+{error,
+    "Type definition is not yet supported"};
 unsupported_decl(contract) ->
-throw({error,
-    ["Contracts cannot be defined here}). Please consider ", aere_color:blue(":deploy")]});
+{error,
+    ["Contracts cannot be defined here}). Please consider ", aere_color:blue(":deploy")]};
 unsupported_decl(namespace) ->
-throw({error,
-    "Namespaces can't be defined here"}).
+{error,
+    "Namespaces can't be defined here"}.
 
 uninclude_error(Er) ->
-throw({error,
-    ["Removing includes will cause an error. Please remove conflicting entities first;\n", Er]}).
+{error,
+    ["Removing includes will cause an error. Please remove conflicting entities first;\n", Er]}.
 
 no_file_deploy() ->
-throw({error,
-    "I need a file"}).
+{error,
+    "I need a file"}.
 parse_deploy() ->
-throw({error,
+{error,
     [ "Bad format. Valid formats are ", aere_color:magenta(":deploy [FILE NAME]")
     , " and ", aere_color:magenta(":deploy [FILE NAME] as [VARIABLE NAME]")
-    ]}).
+    ]}.
 bad_deploy_name() ->
-throw({error,
-    "Contract name must begin with a lowercase letter and contain only letters, numbers or underscores"}).
+{error,
+    "Contract name must begin with a lowercase letter and contain only letters, numbers or underscores"}.
 
 file_error(File, Reason) ->
-throw({error,
+{error,
     case Reason of
         enoent -> ["No such file ", aere_color:yellow(File)];
         eaccess -> "Permission denied";
@@ -75,17 +80,17 @@ throw({error,
         enotdir -> "Invalid path";
         enomem -> [aere_color:yellow(File), " is too big"];
         _ -> "Unknown error"
-    end}).
+    end}.
 
 
 nothing_to_remove() ->
-    throw({error, ["Nothing to remove"]}).
+    {error, ["Nothing to remove"]}.
 
 
 contract_creation_error(Reason) ->
-throw({error,
-    ["Failed to create contract: ", Reason]}).
+{error,
+    ["Failed to create contract: ", Reason]}.
 
 undefined_command() ->
-throw({error,
-    "Uhm, this command seems to be undefined while it should be"}).
+{error,
+    "Uhm, this command seems to be undefined while it should be"}.
