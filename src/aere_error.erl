@@ -74,10 +74,10 @@ bad_deploy_name() ->
 file_error(File, Reason) ->
     {error,
      case Reason of
-         enoent -> ["No such file ", aere_color:yellow(File)];
+         enoent -> ["No such file or directory ", aere_color:yellow(File)];
          eaccess -> "Permission denied";
          eisdir -> [aere_color:yellow(File), " is a directory"];
-         enotdir -> "Invalid path";
+         enotdir -> [aere_color:yellow(File), "is not a directory"];
          enomem -> [aere_color:yellow(File), " is too big"];
          _ -> "Unknown error"
      end}.

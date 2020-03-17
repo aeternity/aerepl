@@ -44,6 +44,7 @@
           %%                 | {contract, <internal name>}}]
         , user_account
         , supply :: integer()
+        , cwd :: string()
         , warnings
         }).
 -type repl_state() :: repl_state().

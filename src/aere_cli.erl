@@ -7,29 +7,32 @@
 
 
 join(R) ->
-    R ! {start, self()}.
+    R ! {join, self()}.
+leave(R) ->
+    R ! {leave, self()}.
 query(R, S, Msg) ->
-    R ! {input, self(), S, Msg}.
+    R ! {input, S, Msg}.
 answer(R, Msg) ->
-    R ! {answer, self(), Msg}.
-goodbye(R) ->
-    R ! finito.
+    R ! {answer, Msg}.
+
 get_resp(R) ->
     receive
-        {response, R, Res = #repl_response{}} -> Res
+        {response, R, Res = #repl_response{}} -> Res;
+        finito -> finito
     end.
 
 run() ->
     R = spawn(aerepl@localhost, aerepl, start, []),
     run(R),
-    R ! finito.
+    leave(R).
 run(R) ->
     join(R),
-    MyR = receive {your_repl, Pid} -> Pid end,
-    Resp = get_resp(MyR),
+    Resp = get_resp(R),
     {success, InitState} = Resp#repl_response.status,
-    print_response(InitState, Resp),
-    loop(MyR, InitState).
+    {ok, CWD} = file:get_cwd(),
+    WithCWD = InitState#repl_state{cwd=CWD},
+    print_response(WithCWD, Resp),
+    loop(R, WithCWD).
 
 
 send_input(R, query, S) ->
@@ -74,7 +77,7 @@ loop(R, Type, State) ->
                 internal_error ->
                     loop(R, State);
                 finito ->
-                    goodbye(R),
                     finito
-            end
+            end;
+        finito -> finito
     end.

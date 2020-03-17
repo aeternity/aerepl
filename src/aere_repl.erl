@@ -30,6 +30,7 @@ default_options() ->
 -spec init_state() -> repl_state().
 init_state() ->
     {PK, ChainState} = aere_chain:new_account(100000000000000000000000000000, #{}),
+    {ok, CWD} = file:get_cwd(),
     #repl_state{ include_ast = []
                , include_hashes = sets:new()
                , include_files = []
@@ -44,6 +45,7 @@ init_state() ->
                , type_alias_map = []
                , user_account = PK
                , warnings = []
+               , cwd = CWD
                , supply = 0
                }.
 
@@ -275,7 +277,7 @@ process_input(State, set, Inp) ->
     {Prop, Val0} = lists:splitwith(fun(X) -> X /= $  end, Inp),
     Val = string:trim(Val0),
     set_option(State, Prop, Val);
-process_input(State, deploy, Inp) ->
+process_input(State = #repl_state {cwd = CWD}, deploy, Inp) ->
     {File, MaybeRefName} =
         case string:tokens(Inp, aere_parse:whitespaces()) of
             [] -> throw(aere_error:no_file_deploy());
@@ -293,7 +295,7 @@ process_input(State, deploy, Inp) ->
                 {F, N};
             _ -> throw(aere_error:parse_deploy())
         end,
-    Src = case file:read_file(File) of
+    Src = case file:read_file(filename:join(CWD, File)) of
               {ok, Src_} -> Src_;
               {error, Reason} -> throw(aere_error:file_error(File, Reason))
           end,
@@ -303,41 +305,21 @@ process_input(State, rm, Inp) ->
     [ throw(aere_error:nothing_to_remove())
       || State == State1], %% FIXME can be done smarter
     free_names(State, string:split(Inp, aere_parse:whitespaces()));
-process_input(S, pwd, _) ->
-    shell_default:pwd(),
-    S;
-process_input(S, cd, Inp) ->
-    shell_default:cd(Inp),
-    S;
-process_input(S, ls, _) ->
-    shell_default:ls(),
-    S;
-%% process_input(S, list, Inp) ->
-%%     Out =
-%%         case Inp of
-%%             "contracts" -> io_lib:format("~p", [[N || {N, {tracked_contract, _, _, _}} <- S#repl_state.tracked_contracts]]);
-%%             "vals"      -> io_lib:format("~p", [[N || {{N, _}, _} <- S#repl_state.letvals]]);
-%%             "functions" -> io_lib:format("~p", [[N || {N, _} <- S#repl_state.letfuns]]);
-%%             _ -> throw({error, "I don't understand. I can print you list of: contracts, let, def, letval, letfun, names"})
-%%         end,
-%%     {success, Out, S};
-process_input(S, load, Inp) ->
-    Agg = lists:foldl(fun(Command, Prev) ->
-                            case Prev of
-                                {continue, Msgs, PrevS} ->
-                                    case handle_dispatch(PrevS, Command) of
-                                        {continue, Msg, NewS} ->
-                                            {continue, Msgs ++ Msg, NewS};
-                                        finito -> finito
-                                    end;
-                                finito -> finito
-                            end
-                    end, {continue, "", S}, aere_parse:eval_from_file(Inp)),
-    case Agg of
-        {continue, M, NS} ->
-            {string:trim(M), NS};
-        finito -> finito
-    end;
+process_input(S = #repl_state{cwd = CWD}, pwd, _) ->
+    {CWD, S};
+process_input(S = #repl_state{cwd = CWD}, cd, Inp) ->
+    Target = filename:join(CWD, Inp),
+    [throw(aere_error:file_error(Target, enoent)) || not filelib:is_dir(Target)],
+    S#repl_state{cwd = Target};
+process_input(S = #repl_state{cwd = CWD}, ls, _) ->
+    {ok, Files} = file:list_dir_all(CWD),
+    { case Files of
+          [] -> "";
+          [F] -> F;
+          [F|More] ->
+              [F|[[", ", Fx] || Fx <- More]]
+      end
+    , S};
 process_input(_, _, _) ->
     throw(aere_error:undefined_command()).
 
@@ -506,10 +488,11 @@ name_status(#repl_state
 
 -spec register_includes(repl_state(), list(string())) -> repl_state().
 register_includes(State, []) ->
-    State; %% This case may be necessary to break check-loops
+    State; %% This is necessary to break check-loops
 register_includes(State = #repl_state{ include_ast = Includes
                                      , include_hashes = Hashes
                                      , include_files = PrevFiles
+                                     , cwd = CWD
                                      }
                  , Files) ->
     Trimmed = lists:map(fun string:trim/1, Files),
@@ -520,8 +503,14 @@ register_includes(State = #repl_state{ include_ast = Includes
                      ColoredD = lists:flatten([" " ++ D || D <- Duplicates]),
                      warning(State, ["Following files are already included: ", ColoredD])
     end,
-    IncludingContract = lists:flatmap(fun(I) -> "include \"" ++ I ++ "\"\n" end, NoDups),
-    {Addition, NewHashes} = aere_sophia:parse_file(IncludingContract, Hashes, [keep_included]),
+    IncludingContract =
+        lists:flatmap(fun(I) -> "include \"" ++ I ++ "\"\n" end, NoDups),
+    {Addition, NewHashes} =
+        aere_sophia:parse_file( IncludingContract
+                              , Hashes
+                              , aeso_compiler:add_include_path(
+                                  %% this "mock" is because `add_include_path` removes head
+                                  filename:join(CWD, "mock"), [keep_included])),
     NewIncludes = Includes ++ Addition,
     State2 = State1#repl_state{ include_ast    = NewIncludes
                               , include_hashes = NewHashes
@@ -540,10 +529,11 @@ register_includes(State = #repl_state{ include_ast = Includes
 register_tracked_contract(State = #repl_state
                           { letvals = Letvals
                           , options = Opts
+                          , cwd = CWD
                           }, MaybeRefName, Src) ->
 
-    % perform typecheck and prepare ACI
-    Ast = aere_sophia:parse_file(binary_to_list(Src), []),
+    % typecheck and prepare ACI
+    Ast = aere_sophia:parse_file(binary_to_list(Src), aeso_compiler:add_include_path(CWD, [])),
     TAstUnfolded = aere_sophia:typecheck(Ast, [dont_unfold]),
     TAst = aere_sophia:typecheck(Ast),
     BCode = aere_sophia:compile_contract(fate, binary_to_list(Src), TAst),
