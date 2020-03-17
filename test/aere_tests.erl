@@ -55,7 +55,7 @@ format(T) ->
 eval(I) ->
     InitSt =
         begin
-            Default = aerepl:init_state(),
+            Default = aere_repl:init_state(),
             Default#repl_state{options = Default#repl_state.options#options{colors = none}}
         end,
     Splitted = aere_parse:split_input(I),
@@ -72,7 +72,7 @@ eval(I) ->
                   end;
              (Cmd, Cont) ->
                   fun({S, {Answers, Inputs}}) ->
-                          Resp = aerepl:process_string(S, Cmd),
+                          Resp = aere_repl:process_string(S, Cmd),
                           case Resp of
                               #repl_response{status = finito} ->
                                   {lists:reverse(Answers), lists:reverse(Inputs)};
@@ -92,7 +92,7 @@ eval(I) ->
                                   io:format(format(Out)),
                                   error(internal_error);
                               #repl_question{} ->
-                                  {accept, S1} = aerepl:answer(Resp, ""),
+                                  {accept, S1} = aere_repl:answer(Resp, ""),
                                   Cont({S1, {Answers, Inputs}})
                           end
                   end

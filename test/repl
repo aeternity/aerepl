@@ -1,0 +1,5 @@
+R = spawn(aerepl@localhost, aerepl, start, []).
+R ! {start, self()}.
+MyR = receive {your_repl, P} -> P after 0 -> error end.
+R1 = receive {response, MyR, Res} -> Res after 0 -> error end.
+MyR ! {input, self(), S1, "2 + 2"}.

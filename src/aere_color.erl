@@ -19,13 +19,6 @@ color_str(none, _) ->
     "";
 color_str(_, reset) ->
     "\e[0m";
-color_str(Coloring, red) ->
-    case get(wololo) of
-        undefined ->
-            color_str(Coloring, red_);
-        _ ->
-            color_str(Coloring, blue)
-    end;
 color_str(default, C) ->
     case C of
         default ->
@@ -34,7 +27,7 @@ color_str(default, C) ->
             "\e[1m";
         black ->
             "\e[1;30m";
-        red_ ->
+        red ->
             "\e[1;31m";
         green ->
             "\e[1;32m";
@@ -57,7 +50,7 @@ color_str(no_emph, C) ->
             "\e[1m";
         black ->
             "\e[0;30m";
-        red_ ->
+        red ->
             "\e[0;31m";
         green ->
             "\e[0;32m";
@@ -73,6 +66,14 @@ color_str(no_emph, C) ->
             "\e[0;37m"
     end.
 
+
+with_color(red, Priority, Text) ->
+    case get(wololo) of
+        undefined ->
+            {colored, red, Priority, Text};
+        _ -> %% u didnt see it shhh
+            {colored, blue, Priority, Text}
+    end;
 with_color(Color, Priority, Text) ->
     {colored, Color, Priority, Text}.
 
