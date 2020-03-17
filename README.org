@@ -8,32 +8,35 @@ If you are not familiar with Sophia, check [[https://github.com/aeternity/protoc
 
 ** Setup
 
-Currently, to launch the REPL you need to:
+REPL functions as an Erlang node. To use it one needs to launch the server and connect
+using provided CLI client or via another erlang node. The server will be hosted on
+~localhost~ under ~aerepl~ name and ~aerepl_cookie~ cookie.
 
 Clone the repo:
 #+BEGIN_SRC
 git clone https://github.com/radrow/aerepl.git
 #+END_SRC
 
-Setup the rebar env:
+Build the project:
 #+BEGIN_SRC
 cd aerepl
 make
 #+END_SRC
 
-
-Launch the rebar3 shell
+Launch the server (needs to be evaluated only once in the project directory)
 #+BEGIN_SRC
-./rebar3 shell
+./aerepl_server start
 #+END_SRC
 
-
-After the erlang prompt loads, launch the repl
+Launch the client
 #+BEGIN_SRC
-aerepl:start().
+./aerepl
 #+END_SRC
 
-Future relases will simplify this process.
+To shut the server down:
+#+BEGIN_SRC
+./aerepl_server stop
+#+END_SRC
 
 ** Usage
 
