@@ -1,6 +1,6 @@
 #!/usr/bin/env escript
 %% -*- erlang -*-
-%%! -smp enable -setcookie aerepl_cookie -mnesia debug verbose
+%%! -smp enable -setcookie aerepl_cookie -mnesia debug verbose -pz _build/prod/lib/aerepl/ebin
 -mode(compile).
 
 main(_) ->

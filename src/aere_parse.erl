@@ -85,11 +85,13 @@ split_input(C) ->
 
 
 get_input(Provider) ->
-    Line = Provider("AESO> "),
+    Line = case Provider("AESO> ") of
+               eof -> ":quit"; % that's dirty
+               Other -> Other
+           end,
     Inp = case string:trim(Line, both, whitespaces()) of
               ":{" -> multiline_input(Provider);
               "" -> "";
-              eof -> ":quit"; % that's dirty
               _ -> lists:flatten(string:replace(Line, ";", "\n", all))
           end,
     string:trim(Inp, both, whitespaces()).

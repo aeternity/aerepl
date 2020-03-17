@@ -1,7 +1,6 @@
 -module(aerepl).
 
--export([ main/1, start/0, init_worker/1
-        , join/1, query/3, answer/2, get/1]).
+-export([ main/1, start/0, init_worker/1]).
 
 -include("aere_repl.hrl").
 -include("aere_macros.hrl").
@@ -11,19 +10,7 @@ main(_Args) ->
 
 start() ->
     erlang:system_flag(backtrace_depth, 100),
-    application:set_env(aecore, network_id, <<"local_lima_testnet">>),
     wait_for_connections(maps:new()).
-
-join(R) ->
-    R ! {start, self()}.
-query(R, S, Msg) ->
-    R ! {input, self(), S, Msg}.
-answer(R, Msg) ->
-    R ! {answer, self(), Msg}.
-get(R) ->
-    receive
-        {response, R, Res = #repl_response{}} -> Res
-    end.
 
 wait_for_connections(Users) ->
     receive
@@ -31,32 +18,45 @@ wait_for_connections(Users) ->
             Proc = spawn(aerepl, init_worker, [Who]),
             Who ! {your_repl, Proc},
             wait_for_connections(maps:put(Who, Proc, Users));
+        {goodbye, Dude} ->
+            wait_for_connections(maps:remove(Dude, Users));
         finito ->
             finito;
         _ -> wait_for_connections(Users)
     end.
 
+init_message() ->
+    {response, self(), #repl_response
+     { output = aere_repl:banner()
+     , warnings = []
+     , status = {success, aere_repl:init_state()}
+     }}.
+
 init_worker(User) ->
-    User !
-        {response, self(), #repl_response
-         { output = aere_repl:banner()
-         , warnings = []
-         , status = {success, aere_repl:init_state()}
-         }},
-    loop(User).
-loop(User) ->
-    {State, Inp} = receive
-              {input, User, S = #repl_state{}, I} -> {S, I}
-          end,
+    User ! init_message(),
+    loop(User, self()).
+
+loop(User, Daddy) ->
+    {State, Inp} =
+        receive
+            {input, User, S = #repl_state{}, I} ->
+                {S, I}
+        after 2000000000 ->
+                Daddy ! {goodbye, User},
+                throw(timeout)
+        end,
     case aere_repl:process_string(State, Inp) of
         Resp = #repl_response{} ->
             User ! {response, self(), Resp},
-            loop(User);
+            loop(User, Daddy);
         Q = #repl_question{} ->
             QR = fun Retry(MyQ = #repl_question{}) ->
                          User ! {response, self(), aere_repl:question_to_response(MyQ)},
                          Ans = receive
                                    {answer, User, A} -> A
+                               after 2000000000 ->
+                                       Daddy ! {goodbye, User},
+                                       throw(timeout)
                                end,
                          case aere_repl:answer(MyQ, Ans) of
                              {retry, MyQ1} -> Retry(MyQ1);
@@ -73,5 +73,9 @@ loop(User) ->
                   , warnings = Warns
                   }
                 },
-            loop(User)
+            loop(User, Daddy);
+        finito ->
+            Daddy ! {goodbye, User},
+            finito;
+        _ -> loop(User, Daddy)
     end.

@@ -6,14 +6,27 @@
 -include("aere_macros.hrl").
 
 
+join(R) ->
+    R ! {start, self()}.
+query(R, S, Msg) ->
+    R ! {input, self(), S, Msg}.
+answer(R, Msg) ->
+    R ! {answer, self(), Msg}.
+goodbye(R) ->
+    R ! finito.
+get_resp(R) ->
+    receive
+        {response, R, Res = #repl_response{}} -> Res
+    end.
+
 run() ->
-    R = spawn(aerepl, start, []),
+    R = spawn(aerepl@localhost, aerepl, start, []),
     run(R),
     R ! finito.
 run(R) ->
-    aerepl:join(R),
+    join(R),
     MyR = receive {your_repl, Pid} -> Pid end,
-    Resp = aerepl:get(MyR),
+    Resp = get_resp(MyR),
     {success, InitState} = Resp#repl_response.status,
     print_response(InitState, Resp),
     loop(MyR, InitState).
@@ -21,10 +34,14 @@ run(R) ->
 
 send_input(R, query, S) ->
     Inp = aere_parse:get_input(fun io:get_line/1),
-    aerepl:query(R, S, Inp);
+    query(R, S, Inp);
 send_input(R, answer, _) ->
-    Ans = string:trim(io:get_line("? "), both, aere_parse:whitespaces()),
-    aerepl:answer(R, Ans).
+    Inp = case io:get_line("? ") of
+              eof -> "eof";
+              Str -> Str
+          end,
+    Ans = string:trim(Inp, both, aere_parse:whitespaces()),
+    answer(R, Ans).
 
 print_response(State, #repl_response
                { output = Out
@@ -44,7 +61,7 @@ loop(R, State) ->
     loop(R, query, State).
 loop(R, Type, State) ->
     send_input(R, Type, State),
-    case aerepl:get(R) of
+    case get_resp(R) of
         Resp = #repl_response{} ->
             print_response(State, Resp),
             case Resp#repl_response.status of
@@ -56,6 +73,8 @@ loop(R, Type, State) ->
                     loop(R, State);
                 internal_error ->
                     loop(R, State);
-                finito -> finito
+                finito ->
+                    goodbye(R),
+                    finito
             end
     end.
