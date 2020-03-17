@@ -1,6 +1,6 @@
 # Compatibility reasons. rocksdb may not build without these
 CXXFLAGS="-Wno-error=shadow -Wno-deprecated-copy -Wno-redundant-move -Wno-pessimizing-move"
-.PHONY: test
+.PHONY: test all aerepl
 
 
 all: aerepl
