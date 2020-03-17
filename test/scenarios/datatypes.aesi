@@ -25,7 +25,7 @@ type d = int
 :t f
 // (TYPEDEF_2.d) => TYPEDEF_2.d
 :t D
-// !error
+// TYPEDEF_3.d
 :t x
 // TYPEDEF_4.d
 f(TYPEDEF_2.D)

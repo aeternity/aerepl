@@ -84,6 +84,8 @@ render_msg(O = #options{}, Msg) ->
     lists:flatten(aere_color:render_colored(O, Msg)).
 
 print_msg(_, "") -> ok;
+print_msg(_, "&#wololo#&") ->
+    put(wololo, wololo), ok;
 print_msg(S, M) ->
     Render = render_msg(S, M),
     io:format("~s\n", [string:trim(Render, both, aere_parse:whitespaces())]).
@@ -197,11 +199,7 @@ handle_dispatch(State = #repl_state{}, {ok, {Command, Args}}) ->
     end;
 handle_dispatch(State, {error, {no_such_command, "wololo"}}) ->
     put(wololo, wololo),
-    #repl_response
-        { output = ""
-        , warnings = []
-        , status = {success, State}
-        };
+    #repl_response{output = "&#wololo#&", warnings = [], status = {success, State}};
 handle_dispatch(#repl_state{}, {error, {no_such_command, Command}}) ->
     Msg = aere_error:no_such_command(Command),
     #repl_response
@@ -247,13 +245,13 @@ process_input(State, eval, I) ->
             register_typedef(State, TDf);
 
         [TDc] when element(1, TDc) =:= type_decl ->
-            repl_error:unsupported_decl(type_decl);
+            throw(aere_error:unsupported_decl(type_decl));
         [Con] when element(1, Con) =:= contract ->
-            repl_error:unsupported_decl(contract);
+            throw(aere_error:unsupported_decl(contract));
         [Ns] when element(1, Ns) =:= namespace ->
-            repl_error:unsupported_decl(namespace);
+            throw(aere_error:unsupported_decl(namespace));
         [_|_] ->
-            repl_error:unsupported_decl(multidecl)
+            throw(aere_error:unsupported_decl(multidecl))
     end;
 process_input(State, include, Inp) ->
     Files = string:tokens(Inp, aere_parse:whitespaces()),
@@ -610,8 +608,22 @@ register_tracked_contract(State = #repl_state
 
 
 register_typedef(State, {type_def, _, {id, NAnn, StrName}, Args, Def}) ->
+    Constructors = case Def of
+                       {variant_t, Constrs} ->
+                           [C || {constr_t, _, {con, _, C}, _} <- Constrs];
+                       _ -> []
+                   end,
+    FreeTypeMap =
+        lists:foldl(
+          fun(Con, Prev) ->
+                  proplists:delete(Con, Prev)
+          end,
+          proplists:delete(StrName, State#repl_state.type_alias_map),
+          Constructors
+         ),
     State0 = State#repl_state
-        { type_alias_map = proplists:delete(StrName, State#repl_state.type_alias_map) },
+        { type_alias_map = FreeTypeMap },
+
     % search for free namespace
     {State1, NSName} =
         (fun Retry(State0_0) ->
@@ -625,31 +637,30 @@ register_typedef(State, {type_def, _, {id, NAnn, StrName}, Args, Def}) ->
                      {State0_1, TryName}
                     )
          end)(State0),
+    NewTypeMap =
+        lists:foldr(
+          fun(Constr, Prev) -> [{Constr, {constructor, NSName}}|Prev] end,
+          [{StrName, {typedef, Args, NSName, unfold_aliases(State1, Def)}} | FreeTypeMap],
+          Constructors
+         ),
+
     State2 = State1#repl_state
         { typedefs = [{ {qid, NAnn, [NSName, StrName]}
                       , {Args, unfold_aliases(State1, Def)}}|State1#repl_state.typedefs]
-        , type_alias_map =
-              [ {StrName, {typedef, Args, NSName, unfold_aliases(State1, Def)}}
-                | State1#repl_state.type_alias_map
-              ]
+        , type_alias_map = NewTypeMap
         },
     assert_integrity(State2).
 
 
 unfold_aliases(#repl_state{type_alias_map = TypeMap}, Obj) ->
-    Run = fun R([{Name, {typedef, _, Ns, Def}}|Rest], O) ->
+    Run = fun R([{Name, {typedef, _, Ns, _}}|Rest], O) ->
                   O1 = aere_sophia:replace(
                          O, type, Name, {qid, aere_mock:ann(), [Ns, Name]}),
-                  case Def of
-                      {variant_t, Constrs} ->
-                          R(lists:zip([Ns || _ <- Constrs], Constrs) ++ Rest, O1);
-                      _ -> R(Rest, O1)
-                  end;
-              R([{Name, {contract, IName}}|Rest], O) ->
-                  O1 = aere_sophia:replace(
-                         O, type, Name, IName),
                   R(Rest, O1);
-              R([{Ns, {constr_t, _, {con, _, Name}, _}}|Rest], O) ->
+              R([{Name, {contract, IName}}|Rest], O) ->
+                  O1 = aere_sophia:replace(O, type, Name, IName),
+                  R(Rest, O1);
+              R([{Name, {constructor, Ns}}|Rest], O) ->
                   O1 = aere_sophia:replace(
                          O, con, Name, {qcon, aere_mock:ann(), [Ns, Name]}),
                   R(Rest, O1);

@@ -41,7 +41,8 @@
           %%     }]
         , type_alias_map
           %% :: [{<type name>, {typedef, <args>, <namespace>, <definition>}
-          %%                 | {contract, <internal name>}}]
+          %%                 | {contract, <internal name>}}
+          %%                 | {constructor, <namespace>}]
         , user_account
         , supply :: integer()
         , cwd :: string()

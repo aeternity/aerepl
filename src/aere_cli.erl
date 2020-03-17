@@ -58,6 +58,10 @@ print_response(State, #repl_response
     [aere_repl:print_msg( UsedState
                         , [aere_color:yellow("Warning: "), W, "\n"])
      || W <- Warnings],
+    case Status of
+        error -> aere_repl:print_msg(UsedState, aere_color:red("ERROR"));
+        _ -> ok
+    end,
     aere_repl:print_msg(UsedState, Out).
 
 loop(R, State) ->
