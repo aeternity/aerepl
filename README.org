@@ -14,7 +14,7 @@ using provided CLI client or via another erlang node. The server will be hosted 
 
 Clone the repo:
 #+BEGIN_SRC
-git clone https://github.com/radrow/aerepl.git
+git clone https://github.com/aeternity/aerepl.git
 #+END_SRC
 
 Build the project:
