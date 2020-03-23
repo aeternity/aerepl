@@ -11,44 +11,58 @@
 -type options() :: options().
 
 -record(repl_state,
-        { include_ast :: list(aeso_ast:ast())
+        { include_ast :: list(aeso_syntax:ast())
         , include_hashes :: sets:set(aeso_parser:include_hash())
         , include_files :: list(string())
         , options :: options()
-        , chain_state %% blockchain
-        , user_contract_state_type %% type of the contract `state`
-        , user_contracts %% contracts that were used to perform user calls
-        , tracked_contracts
-          %% :: [{ <variable name>
-          %%       { tracked_contract | shadowed_contract
-          %%       , <contract address>
-          %%       , <ACI>
-          %%       }}]
-        , letfuns
-          %% :: [{ <function name>
-          %%       { <declarations>
-          %%       , <used tracked contracts>
-          %%       , <used letvals>
-          %%       }
-          %%     }]
-        , letvals
-          %% :: [{ {<letval provider name>, <letval provider address>}
-          %%     , {<pattern>, <typedef aliases>}
-          %%     }]
-        , typedefs
-          %% :: [{ <type name>
-          %%     , {<args>, <typedef>}
-          %%     }]
-        , type_alias_map
-          %% :: [{<type name>, {typedef, <args>, <namespace>, <definition>}
-          %%                 | {contract, <internal name>}}
-          %%                 | {constructor, <namespace>}]
-        , user_account
+        , blockchain_state :: any() %% blockchain
+        , user_contract_state_type :: aeso_syntax:type()
+        , last_state_provider :: binary()
+        , tracked_contracts :: list(tracked_contract())
+        , letfuns :: list(letfun())
+        , letvals :: list(letval())
+        , typedefs :: list(typedef())
+        , type_alias_map :: list(type_alias())
+        , user_account :: binary()
         , supply :: integer()
         , cwd :: string()
-        , warnings
+        , warnings :: [string()]
         }).
 -type repl_state() :: repl_state().
+
+-type letfun() ::
+        { string() %% name
+        , { list(aeso_syntax:decl()) %% clauses
+          , list(tracked_contract()) %% scope of contracts
+          , list(letval()) %% scope of letvals
+          }}.
+-type tracked_contract() ::
+        { string()
+        , { tracked_contract | shadowed_contract
+          , aeso_syntax:constant() %% Reference address
+          , aeso_syntax:decl() %% ACI
+          }}.
+-type letval() ::
+        { { string() %% name
+          , aeso_syntax:constant() %% provider address
+          }
+        , { aeso_syntax:pat() %% pattern of definition
+          , list(type_alias()) %% used types at the moment of creation
+          }}.
+-type typedef() ::
+        { aeso_syntax:id() | aeso_syntax:qid() %% identifier
+        , { list(aeso_syntax:tvar()) %% args
+          , aeso_syntax:typedef() %% definition
+          }}.
+-type type_alias() ::
+        { string() %% name
+          %% for type definitions
+        , {typedef, list(aeso_syntax:tvar()), aeso_syntax:con(), aes}
+          %% for tracked contracts
+          | {contract, string()}
+          %% for constructors
+          | {constructor, aeso_syntax:con()}
+        }.
 
 -record(repl_response,
         { output :: string()
@@ -65,6 +79,22 @@
         { text :: string()
         , options :: {string(), function()}
         , default :: string()
-        , callback :: function()
+        , callback :: fun((repl_state()) -> repl_state())
         }).
 -type repl_question() :: repl_question().
+
+-type color() :: default
+               | emph
+               | black
+               | red
+               | green
+               | yellow
+               | blue
+               | magenta
+               | cyan
+               | white
+               .
+
+-type colored() :: string()
+                 | {colored, color(), integer(), colored()}
+                 | list(colored()).

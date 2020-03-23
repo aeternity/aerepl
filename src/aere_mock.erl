@@ -17,14 +17,17 @@
 
 
 %% Default annotation
+-spec ann() -> aeso_syntax:ann().
 ann() ->
     [{file, <<"REPL">>}].
 
 
 %% contract Name =
 %%   Body
+-spec contract(list(aeso_syntax:decl())) -> aeso_syntax:decl().
 contract(Body) ->
     contract(?MOCK_CONTRACT, Body).
+-spec contract(string(), list(aeso_syntax:decl())) -> aeso_syntax:decl().
 contract(Name, Body) ->
     {contract, [payable, ann()], {con, ann(), Name},
      Body
@@ -32,7 +35,8 @@ contract(Name, Body) ->
 
 
 %% type Name = Type
-typedef(Name, Type) ->
+-spec type_alias(string(), aeso_syntax:type()) -> aeso_syntax:decl().
+type_alias(Name, Type) ->
     {type_def, ann(),
      {id, ann(), Name},
      [],
@@ -41,8 +45,12 @@ typedef(Name, Type) ->
 
 %% Entrypoint without arguments
 %% Attributes entrpoint Name() = Body
+-spec val_entrypoint(string(), aeso_syntax:expr()) -> aeso_syntax:decl().
 val_entrypoint(Name, Body) ->
     val_entrypoint(Name, Body, []).
+-spec val_entrypoint( string(), aeso_syntax:expr()
+                    , full | list(payable | stateful))
+                    -> aeso_syntax:decl().
 val_entrypoint(Name, Body, full) ->
     val_entrypoint(Name, Body, [payable, stateful]);
 val_entrypoint(Name, Body, Attrs) when is_list(Attrs) ->
@@ -55,11 +63,13 @@ val_entrypoint(Name, Body, Attrs) when is_list(Attrs) ->
 
 
 %% Attributes entrypoint Name : Args -> Type
-decl(Name, Args, Type) ->
-    decl(Name, Args, Type, []).
-decl(Name, Args, Type, full) ->
-    decl(Name, Args, Type, [payable, stateful]);
-decl(Name, Args, Type, Attrs) ->
+-spec entrypoint_decl(string(), list(aeso_syntax:pat()), aeso_syntax:type())
+                     -> aeso_syntax:decl().
+entrypoint_decl(Name, Args, Type) ->
+    entrypoint_decl(Name, Args, Type, []).
+entrypoint_decl(Name, Args, Type, full) ->
+    entrypoint_decl(Name, Args, Type, [payable, stateful]);
+entrypoint_decl(Name, Args, Type, Attrs) ->
     { fun_decl
     , ann() ++ [{A, true} || A <- [entrypoint|Attrs]]
     , {id, ann(), Name}
@@ -68,30 +78,35 @@ decl(Name, Args, Type, Attrs) ->
 
 
 %% (Ref : RemoteName).FName(Args)
+-spec call_to_remote(binary(), string(), string()) -> aeso_syntax:expr().
 call_to_remote(Ref, RemoteName, FName) ->
     call_to_remote(Ref, RemoteName, FName, []).
+-spec call_to_remote(binary(), string(), string(), list(aeso_syntax:arg_expr()))
+                    -> aeso_syntax:expr().
 call_to_remote(Ref, RemoteName, FName, Args) ->
-    {app,[]
+    {app, ann()
     , {proj, ann(), {typed, ann(), {contract_pubkey, ann(), Ref}, {con, ann(), RemoteName}}
       , {id, ann(), FName}}
     , Args}.
 
 
 %% state and init() definitions
+-spec state_init(repl_state()) -> list(aeso_syntax:decl()).
 state_init(#repl_state{user_contract_state_type = {id, _, "unit"}}) ->
     [];
 state_init(#repl_state{user_contract_state_type = {tuple_t, _, []}}) ->
     [];
-state_init(#repl_state{user_contracts = []}) ->
+state_init(#repl_state{last_state_provider = undefined}) ->
     [];
 state_init(#repl_state
            { user_contract_state_type = StType
-           , user_contracts = [PrevRef|_]
+           , last_state_provider = PrevRef
            }) ->
     [ val_entrypoint("init", call_to_remote(PrevRef, ?PREV_CONTRACT, ?GET_STATE))
-    , typedef("state", StType)].
+    , type_alias("state", StType)].
 
 
+-spec with_auto_imports(repl_state(), aeso_syntax:expr()) -> aeso_syntax:expr().
 with_auto_imports(State = #repl_state{include_files = Includes}, Expr) ->
     AutoImports =
         [ binary_to_list(AI)
@@ -102,6 +117,7 @@ with_auto_imports(State = #repl_state{include_files = Includes}, Expr) ->
         S = #repl_state{} -> S
     end.
 
+-spec with_letfun_auto_imports(repl_state()) -> repl_state().
 with_letfun_auto_imports(State = #repl_state{letfuns = Letfuns}) ->
     FBodies =
           [ FBody
@@ -113,20 +129,24 @@ with_letfun_auto_imports(State = #repl_state{letfuns = Letfuns}) ->
 
 
 %% Contract that evals Expr and does not chain state
-simple_query_contract( State = #repl_state{ user_contract_state_type = StType
-                                          }, Stmts) ->
+-spec simple_query_contract(repl_state(), list(aeso_syntax:stmt()))
+                           -> aeso_syntax:ast().
+simple_query_contract(State = #repl_state{ user_contract_state_type = StType
+                                         }, Stmts) ->
     Body = {block, ann(), Stmts},
     State1 = with_auto_imports(State, Body),
     State2 = with_letfun_auto_imports(State1),
     Con = contract(
             letfun_defs(State2) ++
-                [ typedef("state", StType)
+                [ type_alias("state", StType)
                 , val_entrypoint( ?USER_INPUT
                                 , with_value_refs(State2, Body), full)]),
     prelude(State2) ++ [Con].
 
 
 %% Contract that evals expression and chains state if it makes sense
+-spec chained_query_contract(repl_state(), list(aeso_syntax:stmt()))
+                            -> aeso_syntax:ast().
 chained_query_contract(State = #repl_state
                        { user_contract_state_type = StType
                        , options = #options{call_value = CallValue}
@@ -141,13 +161,14 @@ chained_query_contract(State = #repl_state
             end},
     State1 = with_auto_imports(State, Body),
     State2 = with_letfun_auto_imports(State1),
-    Prev = contract(?PREV_CONTRACT, [decl(?GET_STATE, [], StType)]),
+    Prev = contract(?PREV_CONTRACT, [entrypoint_decl(?GET_STATE, [], StType)]),
     Query = contract(state_init(State2) ++ letfun_defs(State2) ++ typedefs(State2) ++
                          [ val_entrypoint(?USER_INPUT, with_value_refs(State2, Body), full)
                          , val_entrypoint(?GET_STATE, {id, ann(), "state"})
                          ]),
     prelude(State2) ++ [Prev, Query].
 
+-spec with_token_refund(repl_state(), list(aeso_syntax:stmt())) -> list(aeso_syntax:stmt()).
 with_token_refund(#repl_state{options = #options{call_value = 0}}, B) ->
     B; % didn't spend anything
 with_token_refund(_, L) when is_list(L) ->
@@ -165,9 +186,11 @@ with_token_refund(_, L) when is_list(L) ->
 
 
 %% Contract that initializes state chaining
+-spec chained_initial_contract(repl_state(), list(aeso_syntax:stmts()), aeso_syntax:type())
+                              -> aeso_syntax:ast().
 chained_initial_contract(State, Stmts, Type) ->
     Body = {block, ann(), Stmts},
-    Con = contract([ typedef("state", Type)
+    Con = contract([ type_alias("state", Type)
                    , val_entrypoint("init", with_value_refs(State, Body))
                    , val_entrypoint(?GET_STATE, {id, ann(), "state"})
                    ]),
@@ -176,11 +199,13 @@ chained_initial_contract(State, Stmts, Type) ->
 
 %% Contract that exposes value via entrypoint.
 %% Not stateful nor payable, but remembers already defined values.
+-spec letval_provider(repl_state(), string(), aeso_syntax:expr())
+                     -> aeso_syntax:ast().
 letval_provider(State = #repl_state{ user_contract_state_type = StType
                                    }, Name, Body) ->
     State1 = with_auto_imports(State, [Body]),
     State2 = with_letfun_auto_imports(State1),
-    Prev = contract(?PREV_CONTRACT, [decl(?GET_STATE, [], StType)]),
+    Prev = contract(?PREV_CONTRACT, [entrypoint_decl(?GET_STATE, [], StType)]),
     Con = contract(?LETVAL_PROVIDER(Name)
                   , [val_entrypoint( ?LETVAL_GETTER(Name)
                                    , with_value_refs(State2, Body))|state_init(State)]
@@ -190,14 +215,16 @@ letval_provider(State = #repl_state{ user_contract_state_type = StType
 
 
 %% Declarations of providers of values
+-spec letval_provider_decls(repl_state()) -> list(aeso_syntax:decl()).
 letval_provider_decls(#repl_state{letvals = Letvals}) ->
     [contract( ?LETVAL_PROVIDER_DECL(Name)
-             , [decl(?LETVAL_GETTER(Name), [], Type)])
+             , [entrypoint_decl(?LETVAL_GETTER(Name), [], Type)])
      || {{Name, _}, {_, Type}} <- Letvals
     ].
 
 
 %% let-statements that refer to value providers
+-spec letval_defs(repl_state()) -> list(aeso_syntax:stmt()).
 letval_defs(#repl_state{letvals = LetVals}) ->
     [ { letval, ann(), Pat
       , call_to_remote( ProvRef
@@ -206,7 +233,8 @@ letval_defs(#repl_state{letvals = LetVals}) ->
       }
       || {{Provider, ProvRef}, {Pat, _}} <- lists:reverse(LetVals)].
 
-
+%% Definitions of functions defined by the user
+-spec letfun_defs(repl_state()) -> list(aeso_syntax:decl()).
 letfun_defs(State = #repl_state{ letfuns = LetFuns
                                }) ->
     [ { block, ann()
@@ -229,6 +257,7 @@ letfun_defs(State = #repl_state{ letfuns = LetFuns
     ].
 
 %% References to contracts with their types
+-spec contract_refs(repl_state()) -> list(aeso_syntax:stmt()).
 contract_refs(#repl_state{tracked_contracts = Contracts}) ->
     [ { letval, ann(), {id, ann(), Name}
       , {typed, ann(), {contract_pubkey, ann(), ConRef}, ConName}}
@@ -236,12 +265,16 @@ contract_refs(#repl_state{tracked_contracts = Contracts}) ->
     ].
 
 
-%% Namespaces that encapsulate actual typedef definitions
+%% Namespaces that encapsulate the actual typedef definitions
+-spec typedef_namespaces(repl_state()) -> list(aeso_syntax:decl()).
 typedef_namespaces(#repl_state{typedefs = Typedefs}) ->
     [ { namespace, ann(), {con, ann(), Namespace}
       , [{type_def, ann(), {id, NAnn, TName}, TArgs, TD}]}
       || {{qid, NAnn, [Namespace, TName]}, {TArgs, TD}} <- lists:reverse(Typedefs)
     ].
+
+%% TODO for which fuck is it here?
+-spec typedefs(repl_state()) -> list(aeso_syntax:decl()).
 typedefs(#repl_state{typedefs = Typedefs}) ->
     [ {type_def, ann(), Name, TArgs, TD}
       || {Name = {id, _, _}, {TArgs, TD}} <- lists:reverse(Typedefs)
@@ -249,6 +282,7 @@ typedefs(#repl_state{typedefs = Typedefs}) ->
 
 
 %% Declarations and includes to a contract
+-spec prelude(repl_state()) -> list(aeso_syntax:decl()).
 prelude(State = #repl_state{ tracked_contracts = TrackedCons
                            , include_ast = Includes
                            }) ->
@@ -270,6 +304,7 @@ prelude(State = #repl_state{ tracked_contracts = TrackedCons
 
 %% Prefixes expression with letval definitions and contract references.
 %% Takes map that may specify name of respective provider for letvals.
+-spec with_value_refs(repl_state(), aeso_syntax:expr()) -> aeso_syntax:expr().
 with_value_refs(#repl_state{tracked_contracts = [], letvals = []}, Expr) ->
     Expr;
 with_value_refs(State, Expr) ->

@@ -71,41 +71,15 @@ convert_type(_TEnv, {fun_t, _, _, _, _}) ->
 
 -define(aere_print_options, aere_print_options).
 
-options() ->
-    case get(?aere_print_options) of
-        undefined -> [];
-        Opts      -> Opts
-    end.
-
-option(Key, Default) ->
-    proplists:get_value(Key, options(), Default).
-
-show_generated() -> option(show_generated, false).
-
-indent() -> option(indent, 2).
-
-with_options(Options, Fun) ->
-    put(?aere_print_options, Options),
-    Res = Fun(),
-    erase(?aere_print_options),
-    Res.
-
-
 punctuate(_Sep, [])      -> [];
 punctuate(_Sep, [D])     -> [D];
 punctuate(Sep, [D | Ds]) -> [beside(D, Sep) | punctuate(Sep, Ds)].
 
 
-above([])       -> empty();
-above([D])      -> D;
-above([D | Ds]) -> lists:foldl(fun(X, Y) -> above(Y, X) end, D, Ds).
-
 beside([])       -> empty();
 beside([D])      -> D;
 beside([D | Ds]) -> lists:foldl(fun(X, Y) -> beside(Y, X) end, D, Ds).
 
-
-par(Ds) -> par(Ds, indent()).
 
 par([], _) -> empty();
 par(Ds, N) -> prettypr:par(Ds, N).
@@ -189,7 +163,6 @@ apply_subst(_, T) ->
     T.
 
 encode({bits, Term}) when is_integer(Term) -> aeb_fate_data:make_bits(Term);
-%% TODO: check that each byte is in base58
 encode({address, B}) when is_binary(B)  -> aeb_fate_data:make_address(B);
 encode({address, I}) when is_integer(I)  -> B = <<I:256>>, aeb_fate_data:make_address(B);
 encode({address, S}) when is_list(S)  ->
