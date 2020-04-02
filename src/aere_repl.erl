@@ -35,9 +35,8 @@ init_state() ->
                , include_hashes = sets:new()
                , include_files = []
                , options = default_options()
-               , chain_state = ChainState
+               , blockchain_state = ChainState
                , user_contract_state_type = {tuple_t, [], []}
-               , user_contracts = []
                , tracked_contracts = []
                , letvals = []
                , letfuns = []
@@ -50,6 +49,7 @@ init_state() ->
                }.
 
 
+-spec banner() -> string().
 banner() ->
 "
     ____
@@ -65,24 +65,22 @@ banner() ->
 ".
 
 
-%% main(_Args) ->
-%%     start().
-
-%% start() ->
-%%     erlang:system_flag(backtrace_depth, 100),
-%%     io:format(banner()),
-%%     application:set_env(aecore, network_id, <<"local_lima_testnet">>),
-%%     loop(init_state()).
-
-
+%% Extract warnings from state and clear them
+-spec destroy_warnings(repl_state()) -> {repl_state(), list(string())}.
 destroy_warnings(State = #repl_state{warnings = Ws}) ->
     {State#repl_state{warnings = []}, Ws}.
 
+
+%% Renders colored and untrimmed text into a string
+-spec render_msg(repl_state(), colored()) -> string().
 render_msg(#repl_state{options = Opts}, Msg) ->
     render_msg(Opts, Msg);
 render_msg(O = #options{}, Msg) ->
     lists:flatten(aere_color:render_colored(O, Msg)).
 
+
+%% Renders and prints message
+-spec print_msg(repl_state(), colored()) -> ok.
 print_msg(_, "") -> ok;
 print_msg(_, "&#wololo#&") ->
     put(wololo, wololo), ok;
@@ -90,6 +88,9 @@ print_msg(S, M) ->
     Render = render_msg(S, M),
     io:format("~s\n", [string:trim(Render, both, aere_parse:whitespaces())]).
 
+
+%% String describing possible answers accepted by the question
+-spec valid_question_options_str(repl_question()) -> string().
 valid_question_options_str(#repl_question
                            { options = Options
                            , default = Default
@@ -101,6 +102,11 @@ valid_question_options_str(#repl_question
                    || O <- ValidOptions
                  ]).
 
+
+%% Turn a question into a remote response.
+%% Used to inform the client about the question and keeping the
+%% callback on the server side
+-spec question_to_response(repl_question()) -> repl_response().
 question_to_response( Q = #repl_question
                       { text = Text
                       }) ->
@@ -110,6 +116,9 @@ question_to_response( Q = #repl_question
         , status = ask
         }.
 
+%% Answer the question. Returns proper response if succeeded or
+%% another question if the answer is not satisfying
+-spec answer(repl_question(), string()) -> repl_question() | repl_state().
 answer(Q = #repl_question
     { options = Options
     , default = Default
@@ -129,6 +138,7 @@ answer(Q = #repl_question
     end.
 
 
+%% state + input = response
 -spec process_string(repl_state(), binary() | string())
                     -> repl_response() | repl_question() | finito.
 process_string(State, String) when is_binary(String) ->
@@ -138,6 +148,9 @@ process_string(State, String) ->
     handle_dispatch(State, Proc).
 
 
+%% Handle result of REPL command dispatcher
+-spec handle_dispatch(repl_state(), skip | {ok, {command, string()}})
+                     -> repl_response() | repl_question().
 handle_dispatch(State, skip) ->
     #repl_response
         { output = ""
@@ -216,9 +229,9 @@ handle_dispatch(#repl_state{}, {error, {ambiguous_prefix, Propositions}}) ->
         }.
 
 
+%% Specific reactions to commands and inputs
 -spec process_input(repl_state(), aere_parse:command(), string()) ->
-          finito | {error, string()} | {success, string(), repl_state()}
-                 | {success, repl_state()}.
+          finito | {string(), repl_state()} | repl_state().
 process_input(_, quit, _) ->
     finito;
 process_input(_, reset, _) ->
@@ -301,7 +314,10 @@ process_input(State = #repl_state {cwd = CWD}, deploy, Inp) ->
 process_input(State, rm, Inp) ->
     State1 = free_names(State, string:split(Inp, aere_parse:whitespaces())),
     [ throw(aere_error:nothing_to_remove())
-      || State == State1], %% FIXME can be done smarter
+      || State#repl_state.letvals == State1#repl_state.letvals
+         andalso State#repl_state.tracked_contracts == State1#repl_state.tracked_contracts
+         andalso State#repl_state.letfuns == State1#repl_state.letfuns
+    ],
     free_names(State, string:split(Inp, aere_parse:whitespaces()));
 process_input(S = #repl_state{cwd = CWD}, pwd, _) ->
     {CWD, S};
@@ -321,6 +337,8 @@ process_input(S = #repl_state{cwd = CWD}, ls, _) ->
 process_input(_, _, _) ->
     throw(aere_error:undefined_command()).
 
+-spec register_letval(repl_state(), aeso_syntax:pat(), aeso_syntax:expr())
+                     -> repl_state().
 register_letval(S0 = #repl_state{ letvals = Letvals
                                 , tracked_contracts = Cons
                                 , options = Opts
@@ -328,18 +346,24 @@ register_letval(S0 = #repl_state{ letvals = Letvals
     Expr = unfold_aliases(S0, Expr0),
     {S1, PName} = make_provider_name(S0, Pat),
     Provider = aere_mock:letval_provider(S1, PName, Expr),
+
+    %% Typecheck for deploy
     TProvider = aere_sophia:typecheck(Provider),
+    %% Typecheck for declaration of the provider
     TProviderD = aere_sophia:typecheck(Provider, [dont_unfold]),
     {[], Type} = aere_sophia:type_of(TProviderD, ?LETVAL_GETTER(PName)),
+
     {{Ref, _}, S2} = build_deploy_contract("no_source", TProvider, {}, Opts, S1),
+
     {Cons1, Letvals1} = remove_references(aere_sophia:get_pat_ids(Pat), Cons, Letvals),
     S3 = S2#repl_state{ letvals = [{{PName, Ref}, {Pat, Type}}|Letvals1]
                       , tracked_contracts = Cons1
                       },
     assert_integrity(S3).
 
+-spec register_letfun(repl_state(), list(aeso_syntax:decl())) -> repl_state().
 register_letfun(S, []) ->
-    S; % efficency
+    S; % I couldn't even extract the name
 register_letfun(S0 = #repl_state{ letfuns = Letfuns
                                 , letvals = Letvals
                                 , tracked_contracts = Cons
@@ -358,7 +382,7 @@ register_letfun(S0 = #repl_state{ letfuns = Letfuns
         case proplists:get_value(Name, Letfuns, none) of
             none -> {S0, Letfuns};
             Dupl ->
-                begin
+                begin %% Shadow duplicates
                     {SS, NewName} = make_shadowed_fun_name(S0, Name),
                     UpdateName =
                         fun(NN) -> ?IF(NN == Name, NewName, NN) end,
@@ -381,23 +405,29 @@ register_letfun(S0 = #repl_state{ letfuns = Letfuns
                       },
     assert_integrity(S2).
 
+-spec make_provider_name(repl_state(), aeso_syntax:pat()) -> {repl_state(), string()}.
 make_provider_name(S0, Pat) ->
     Ids = aere_sophia:get_pat_ids(Pat),
     {S1, Sup} = next_sup(S0),
     {S1, string:join(Ids, "_") ++ io_lib:format("#~p", [Sup])}.
 
+-spec make_shadowed_fun_name(repl_state(), string()) -> {repl_state(), string()}.
 make_shadowed_fun_name(S0, Name) ->
     {S1, Sup} = next_sup(S0),
     {S1, Name ++ "#" ++ integer_to_list(Sup)}.
 
+%% Shadows out or removes defined tracked contracts or local variables
+-spec remove_references(list(string()), list(tracked_contract()), list(letval()))
+                       -> {list(tracked_contract()), list(letval())}.
 remove_references(Names, Cons, LetVals) ->
     LetVals1 =
-        [ {{Provider, ProvRef}, {NewPat, Type}}  %% removing letvals shadowed by rec and args
+        [ {{Provider, ProvRef}, {NewPat, Type}}
           || {{Provider, ProvRef}, {Pat, Type}} <- LetVals,
              NewPat <- [lists:foldl(
                           fun(V, P) -> aere_sophia:replace(P, id, V, "_")
                           end, Pat, Names)],
-             lists:any(fun({id, _, "_"}) -> false;  %% If everything is removed, why even consider it?
+             %% If no id is used then remove the reference
+             lists:any(fun({id, _, "_"}) -> false;
                           (_) -> true
                        end, aere_sophia:get_pat_ids(NewPat))
         ],
@@ -405,6 +435,7 @@ remove_references(Names, Cons, LetVals) ->
         [ ?IF(lists:member(CName, Names), {CName, {shadowed_contract, ConRef, I}}, C)
           || C = {CName, {_, ConRef, I}} <- Cons
         ],
+    %% Get letvals after first cleansing
     LetvalNames = [N || {_, {Pat, _}} <- LetVals, N <- aere_sophia:get_pat_ids(Pat)],
     Cons2 = lists:filter(  %% If shadowed by nothing then we remove it
               fun({CName, {shadowed_contract, _, _}}) ->
@@ -413,6 +444,8 @@ remove_references(Names, Cons, LetVals) ->
               end, Cons1),
     {Cons2, LetVals1}.
 
+%% Removes variables along with everything that depends on them
+-spec free_names(repl_state(), list(string())) -> repl_state() | repl_question().
 free_names(State, Names) ->
     free_names(State, Names, fun(X) -> X end).
 free_names(State = #repl_state{ letfuns = Letfuns
@@ -463,24 +496,19 @@ free_names(State = #repl_state{ letfuns = Letfuns
     end.
 
 
+-spec name_status(repl_state(), string()) -> free | taken.
 name_status(#repl_state
             { letvals = LetDefs
             , letfuns = LocFuns
             , tracked_contracts = TCons
             }, Name) ->
-    % Behold, the state-of-the-art solution is approaching!
+    % The best 'if' you will ever see
     case { proplists:is_defined(Name, LetDefs)
          , proplists:is_defined(Name, LocFuns)
          , proplists:is_defined(Name, TCons)
          } of
-        {true, _, _} ->
-            case proplists:lookup(Name, LetDefs) of
-                {_, {letval, _, _}}    -> letval;
-                {_, {letfun, _, _, _}} -> letfun
-            end;
-        {_, true, _} -> letfun_local;
-        {_, _, true} -> tracked_contract;
-        _            -> free
+        {false, false, false} -> free;
+        _ -> taken
     end.
 
 
@@ -524,6 +552,8 @@ register_includes(State = #repl_state{ include_ast = Includes
     Msg = ["Registered ", IncludeWord, Colored],
     {Msg, assert_integrity(State2)}.
 
+-spec register_tracked_contract(repl_state(), none | string(), binary())
+                               -> {string(), repl_state()}.
 register_tracked_contract(State = #repl_state
                           { letvals = Letvals
                           , options = Opts
@@ -607,6 +637,7 @@ register_tracked_contract(State = #repl_state
     }.
 
 
+-spec register_typedef(repl_state(), typedef()) -> repl_state().
 register_typedef(State, {type_def, _, {id, NAnn, StrName}, Args, Def}) ->
     Constructors = case Def of
                        {variant_t, Constrs} ->
@@ -640,7 +671,7 @@ register_typedef(State, {type_def, _, {id, NAnn, StrName}, Args, Def}) ->
     NewTypeMap =
         lists:foldr(
           fun(Constr, Prev) -> [{Constr, {constructor, NSName}}|Prev] end,
-          [{StrName, {typedef, Args, NSName, unfold_aliases(State1, Def)}} | FreeTypeMap],
+          [{StrName, {typedef, Args, NSName}} | FreeTypeMap],
           Constructors
          ),
 
@@ -652,8 +683,9 @@ register_typedef(State, {type_def, _, {id, NAnn, StrName}, Args, Def}) ->
     assert_integrity(State2).
 
 
+-spec unfold_aliases(repl_state(), any()) -> any().
 unfold_aliases(#repl_state{type_alias_map = TypeMap}, Obj) ->
-    Run = fun R([{Name, {typedef, _, Ns, _}}|Rest], O) ->
+    Run = fun R([{Name, {typedef, _, Ns}}|Rest], O) ->
                   O1 = aere_sophia:replace(
                          O, type, Name, {qid, aere_mock:ann(), [Ns, Name]}),
                   R(Rest, O1);
@@ -669,22 +701,26 @@ unfold_aliases(#repl_state{type_alias_map = TypeMap}, Obj) ->
     Run(TypeMap, Obj).
 
 
+-spec warning(repl_state(), string()) -> repl_state().
 warning(State = #repl_state{warnings = Ws}, W) ->
     State#repl_state{warnings = [W|Ws]}.
 
 
+-spec build_deploy_contract(string(), aeso_syntax:ast(), [any()], options(), repl_state())
+                           -> {any(), repl_state()}.
 build_deploy_contract(Src, TypedAst, Args, Options, State) ->
     Code = aere_sophia:compile_contract(fate, Src, TypedAst),
     deploy_contract(Code, Args, Options, State).
 
 
-deploy_contract(ByteCode, Args, Options, State = #repl_state{ chain_state = S0
-                                                            , user_account = Owner
-                                                            }) ->
+deploy_contract( ByteCode, Args, Options
+               , State = #repl_state{ blockchain_state = S0
+                                    , user_account = Owner
+                                    }) ->
     aere_chain:state(S0),
     Serialized = aect_sophia:serialize(ByteCode, aere_version:contract_version()),
     try aere_chain:create_contract(Owner, Serialized, Args, Options, S0) of
-        {Result, S1} -> {Result, State#repl_state{chain_state = S1}}
+        {Result, S1} -> {Result, State#repl_state{blockchain_state = S1}}
     catch error:Reason ->
             ReasonS = if is_binary(Reason) -> binary_to_list(Reason);
                          is_list(Reason) -> Reason;
@@ -700,11 +736,11 @@ eval_contract(Src, Ast, S1 = #repl_state{options = Options}) ->
                                         , element(2, aere_sophia:type_of(TypedAst, ?USER_INPUT))),
     Owner = S1#repl_state.user_account,
     {{Con, GasDeploy}, S2} = build_deploy_contract(Src, TypedAst, {}, Options, S1),
-    CS1 = S2#repl_state.chain_state,
+    CS1 = S2#repl_state.blockchain_state,
     {{Resp, GasCall}, CS2} =
         aere_chain:call_contract( Owner, Con, list_to_binary(?USER_INPUT)
                                   , RetType, {}, Options, CS1),
-    S3 = S2#repl_state{chain_state = CS2},
+    S3 = S2#repl_state{blockchain_state = CS2},
 
     PPResp = prettypr:format(aere_response:pp_response(Resp)),
     DeployGasStr =
@@ -716,7 +752,7 @@ eval_contract(Src, Ast, S1 = #repl_state{options = Options}) ->
             [ aere_color:yellow("\ncall gas: "), io_lib:format("~p", [GasCall])],
             ""),
     Out = [PPResp, DeployGasStr, CallGasStr],
-    S4 = S3#repl_state{ user_contracts = [Con|S3#repl_state.user_contracts]},
+    S4 = S3#repl_state{last_state_provider = Con},
     case {RetType, DeployGasStr, CallGasStr} of
         {{tuple, []}, "", ""} ->
             ?IF(S4#repl_state.options#options.display_unit, {Out, S4}, S4);
@@ -748,11 +784,11 @@ set_option(State = #repl_state{options = Opts}, Prop, Val) ->
             "balance" ->
                 try list_to_integer(Val) of
                     ValInt ->
-                        CS0 = State#repl_state.chain_state,
+                        CS0 = State#repl_state.blockchain_state,
                         PK = State#repl_state.user_account,
                         CS1 = aere_chain:update_balance(ValInt, PK, CS0),
                         { state
-                        , State#repl_state{chain_state = CS1}
+                        , State#repl_state{blockchain_state = CS1}
                         }
                 catch error:badarg -> throw(aere_error:bad_option(["integer"]))
                 end;
@@ -775,10 +811,9 @@ set_option(State = #repl_state{options = Opts}, Prop, Val) ->
                                {{Key, _}, State2} = build_deploy_contract("no_src", TMock, {}, Opts, State1),
                                State2#repl_state
                                    { user_contract_state_type = Type
-                                   , user_contracts = [Key]
+                                   , last_state_provider = Key
                                    }
                        end,
-                %% Will work even if it's a question actually
                 {state, free_names(State, ["state", "put"], Cont)};
             _ -> throw(aere_error:unknown_option(Prop))
         end,
@@ -793,6 +828,7 @@ set_option(State = #repl_state{options = Opts}, Prop, Val) ->
             {Msg, NewState}
     end.
 
+-spec build_type_map(aeso_syntax:ast()) -> #{list(string()) => aeso_syntax:type_def()}.
 build_type_map(Ast) ->
     build_type_map([], Ast, #{}).
 build_type_map(_Scope, [], Acc) ->
@@ -811,6 +847,7 @@ build_type_map(Scope, [_|Rest], Acc) ->
 next_sup(State = #repl_state{supply=S}) ->
     {State#repl_state{supply=S+1}, S}.
 
+-spec assert_integrity(repl_state()) -> repl_state().
 assert_integrity(S) ->
     TestMock = aere_mock:chained_query_contract(S, [{tuple, aere_mock:ann(), []}]),
     aere_sophia:typecheck(TestMock),

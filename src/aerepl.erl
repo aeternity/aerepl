@@ -12,6 +12,7 @@ start() ->
     erlang:system_flag(backtrace_depth, 100),
     loop([]).
 
+-spec init_message() -> {response, pid(), repl_response()}.
 init_message() ->
     {response, self(), #repl_response
      { output = aere_repl:banner()
@@ -51,8 +52,7 @@ process_input(Clients, State, Inp) ->
             ],
             continue;
         Q = #repl_question{} ->
-            process_question(Clients, State, Inp, Q);
-        _ -> continue
+            process_question(Clients, State, Inp, Q)
     end.
 
 process_question(Clients, State, Inp, MyQ = #repl_question{}) ->
