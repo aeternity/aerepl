@@ -106,7 +106,8 @@ state_init(#repl_state
     , type_alias("state", StType)].
 
 
--spec with_auto_imports(repl_state(), aeso_syntax:expr()) -> aeso_syntax:expr().
+-spec with_auto_imports(repl_state(), aeso_syntax:expr() | list(aeso_syntax:stmt())
+                       ) -> aeso_syntax:expr() | list(aeso_syntax:stmt()).
 with_auto_imports(State = #repl_state{include_files = Includes}, Expr) ->
     AutoImports =
         [ binary_to_list(AI)

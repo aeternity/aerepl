@@ -76,6 +76,7 @@ punctuate(_Sep, [D])     -> [D];
 punctuate(Sep, [D | Ds]) -> [beside(D, Sep) | punctuate(Sep, Ds)].
 
 
+-spec beside(list(prettypr:document())) -> prettypr:document().
 beside([])       -> empty();
 beside([D])      -> D;
 beside([D | Ds]) -> lists:foldl(fun(X, Y) -> beside(Y, X) end, D, Ds).

@@ -315,8 +315,8 @@ process_input(State, rm, Inp) ->
     State1 = free_names(State, string:split(Inp, aere_parse:whitespaces())),
     [ throw(aere_error:nothing_to_remove())
       || State#repl_state.letvals == State1#repl_state.letvals
-         orelse State#repl_state.tracked_contracts == State1#repl_state.tracked_contracts
-         orelse State#repl_state.letfuns == State1#repl_state.letfuns
+         andalso State#repl_state.tracked_contracts == State1#repl_state.tracked_contracts
+         andalso State#repl_state.letfuns == State1#repl_state.letfuns
     ],
     free_names(State, string:split(Inp, aere_parse:whitespaces()));
 process_input(S = #repl_state{cwd = CWD}, pwd, _) ->
@@ -828,6 +828,7 @@ set_option(State = #repl_state{options = Opts}, Prop, Val) ->
             {Msg, NewState}
     end.
 
+-spec build_type_map(aeso_syntax:ast()) -> #{list(string()) => aeso_syntax:type_def()}.
 build_type_map(Ast) ->
     build_type_map([], Ast, #{}).
 build_type_map(_Scope, [], Acc) ->
@@ -846,6 +847,7 @@ build_type_map(Scope, [_|Rest], Acc) ->
 next_sup(State = #repl_state{supply=S}) ->
     {State#repl_state{supply=S+1}, S}.
 
+-spec assert_integrity(repl_state()) -> repl_state().
 assert_integrity(S) ->
     TestMock = aere_mock:chained_query_contract(S, [{tuple, aere_mock:ann(), []}]),
     aere_sophia:typecheck(TestMock),
