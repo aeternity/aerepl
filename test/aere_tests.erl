@@ -53,11 +53,7 @@ format(T) ->
     string:trim(aere_color:render_colored(none, T)).
 
 eval(I) ->
-    InitSt =
-        begin
-            Default = aere_repl:init_state(),
-            Default#repl_state{options = Default#repl_state.options#options{colors = none}}
-        end,
+    InitSt = aere_repl:init_state(),
     Splitted = aere_parse:split_input(I),
     Build =
         lists:foldr(
