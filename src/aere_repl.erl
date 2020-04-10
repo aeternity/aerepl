@@ -118,7 +118,7 @@ question_to_response( Q = #repl_question
 
 %% Answer the question. Returns proper response if succeeded or
 %% another question if the answer is not satisfying
--spec answer(repl_question(), string()) -> repl_question() | repl_state().
+-spec answer(repl_question(), string()) -> {retry, repl_question()} | {accept, repl_state()}.
 answer(Q = #repl_question
     { options = Options
     , default = Default
@@ -489,9 +489,11 @@ free_names(State = #repl_state{ letfuns = Letfuns
                          , aere_color:yellow(string:join(AdditionalNames, ", "))
                          , aere_color:emph(". Proceed?")
                          ]
-                , options = [{"y", ?LAZY(State1)}, {"n", ?LAZY(State)}]
+                , options = [{"y", ?LAZY({removed, State1})}, {"n", ?LAZY({not_removed, State})}]
                 , default = "y"
-                , callback = Callback
+                , callback = fun({removed, X}) -> Callback(X);
+                                ({not_removed, X}) -> X
+                             end
                 }
     end.
 
