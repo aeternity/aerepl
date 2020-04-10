@@ -19,7 +19,7 @@ color_str(none, _) ->
     "";
 color_str(_, reset) ->
     "\e[0m";
-color_str(default, C) ->
+color_str(emph, C) ->
     case C of
         default ->
             "\e[0;1m";

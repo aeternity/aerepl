@@ -21,7 +21,7 @@ default_options() ->
             , gas = 1000000
             , height = 1
             , call_value = 0
-            , colors = default
+            , colors = none
             , silent = false
             , display_unit = false
             }.
@@ -795,9 +795,9 @@ set_option(State = #repl_state{options = Opts}, Prop, Val) ->
             "colors" ->
                 case Val of
                     "none" -> {options, Opts#options{colors = none}};
-                    "default" -> erase(wololo), {options, Opts#options{colors = default}};
+                    "emph" -> erase(wololo), {options, Opts#options{colors = emph}};
                     "no-emph" -> erase(wololo), {options, Opts#options{colors = no_emph}};
-                    _ -> throw(aere_error:bad_option(["default", "none", "no-emph"]))
+                    _ -> throw(aere_error:bad_option(["emph", "none", "no-emph"]))
                 end;
             "call-gas" -> ?ParseOptionInt(gas);
             "call-value" -> ?ParseOptionInt(call_value);

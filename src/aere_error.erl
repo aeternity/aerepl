@@ -8,7 +8,6 @@ internal(Command, Error, Stacktrace) ->
           [] -> "<no stacktrace>";
           _ -> ["Stacktrace:\n", io_lib:format("~p", [Stacktrace]), "\n\n"]
       end
-    , aere_color:red("*** This is an internal error and most likely a bug.\n")
     ].
 
 internal(Command, Error) ->
