@@ -8,6 +8,7 @@
 -export([ register_includes/2, init_state/0, process_string/2
         , remove_references/3, answer/2, question_to_response/1
         , print_msg/2, render_msg/2, banner/0, destroy_warnings/1
+        , list_names/1
         ]).
 
 -include("aere_repl.hrl").
@@ -236,6 +237,8 @@ process_input(_, quit, _) ->
     finito;
 process_input(_, reset, _) ->
     init_state();
+process_input(State, '_names', _) ->
+    list_names(State);
 process_input(State, type, I) ->
     Stmts = aere_sophia:parse_body(I),
     Contract = aere_mock:chained_query_contract(State, unfold_aliases(State, Stmts)),
@@ -708,6 +711,34 @@ warning(State = #repl_state{warnings = Ws}, W) ->
     State#repl_state{warnings = [W|Ws]}.
 
 
+%% Returns the list of all names in the context. Useful for autocompletion.
+-spec list_names(repl_state()) -> list({type | constructor | variable | field | scope, string()}).
+list_names(State = #repl_state{type_alias_map = TypeMap}) ->
+    Mock = aere_mock:simple_query_contract(State, [{id, aere_mock:ann(), "state"}]),
+    {Env, _} = aere_sophia:typecheck(Mock, [return_env]),
+    Scopes = maps:to_list(element(2, Env)), % Hope nobody will change the format
+
+    Names =
+        [ {Kind, case ScopeName of
+                     [] -> "";
+                     [?MOCK_CONTRACT] -> "";
+                     _ when ScopeName == [Name] -> "";
+                     [N] -> N ++ "."
+                 end ++ Name} % NOTE Using the fact that nested scopes are forbidden
+          || {ScopeName, Scope} <- Scopes,
+             {Kind, Name} <-
+                 [ {variable, F}    || {F, _} <- element(2, Scope)] ++
+                 [ {type, T}        || {T, _} <- element(3, Scope)] ++
+                 [ {constructor, C} || {_Tname, {_Ann, {_Args, {variant_t, Constrs}}}} <- element(3, Scope),
+                                       {constr_t, _, {_, _, C}, _} <- Constrs] ++
+                 [{scope, S}        || ScopeName /= [], S <- ScopeName],
+             lists:all(fun(C) -> C /= $# end, Name) % filter out internals, hash won't be accepted by parser anyway
+            ] ++
+        [ {field, Fl} || Fl <- maps:keys(element(5, Env)) ] ++
+        [ {type, T} || {T, _} <- TypeMap],
+    {io_lib:format("~p", [Names]), State}.
+
+
 -spec build_deploy_contract(string(), aeso_syntax:ast(), [any()], options(), repl_state())
                            -> {any(), repl_state()}.
 build_deploy_contract(Src, TypedAst, Args, Options, State) ->
@@ -775,7 +806,6 @@ eval_contract(Src, Ast, S1 = #repl_state{options = Options}) ->
         try {options, Opts#options{Field = list_to_integer(Val)}}
         catch error:badarg -> throw(aere_error:bad_option(["integer"]))
         end).
-
 set_option(State = #repl_state{options = Opts}, Prop, Val) ->
     Parse =
         case Prop of
