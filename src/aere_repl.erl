@@ -238,7 +238,8 @@ process_input(_, quit, _) ->
 process_input(_, reset, _) ->
     init_state();
 process_input(State, '_names', _) ->
-    list_names(State);
+    Names = list_names(State),
+    {io_lib:format("~p", [Names]), State};
 process_input(State, type, I) ->
     Stmts = aere_sophia:parse_body(I),
     Contract = aere_mock:chained_query_contract(State, unfold_aliases(State, Stmts)),
@@ -736,7 +737,7 @@ list_names(State = #repl_state{type_alias_map = TypeMap}) ->
             ] ++
         [ {field, Fl} || Fl <- maps:keys(element(5, Env)) ] ++
         [ {type, T} || {T, _} <- TypeMap],
-    {io_lib:format("~p", [Names]), State}.
+    Names.
 
 
 -spec build_deploy_contract(string(), aeso_syntax:ast(), [any()], options(), repl_state())
