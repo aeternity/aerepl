@@ -714,7 +714,10 @@ warning(State = #repl_state{warnings = Ws}, W) ->
 
 %% Returns the list of all names in the context. Useful for autocompletion.
 -spec list_names(repl_state()) -> list({type | constructor | variable | field | scope, string()}).
-list_names(State = #repl_state{type_alias_map = TypeMap}) ->
+list_names(State = #repl_state{ type_alias_map = TypeMap
+                              , letvals = LetVals
+                              , tracked_contracts = Cons
+                              }) ->
     Mock = aere_mock:simple_query_contract(State, [{id, aere_mock:ann(), "state"}]),
     {Env, _} = aere_sophia:typecheck(Mock, [return_env]),
     Scopes = maps:to_list(element(2, Env)), % Hope nobody will change the format
@@ -732,12 +735,17 @@ list_names(State = #repl_state{type_alias_map = TypeMap}) ->
                  [ {type, T}        || {T, _} <- element(3, Scope)] ++
                  [ {constructor, C} || {_Tname, {_Ann, {_Args, {variant_t, Constrs}}}} <- element(3, Scope),
                                        {constr_t, _, {_, _, C}, _} <- Constrs] ++
-                 [{scope, S}        || ScopeName /= [], S <- ScopeName],
-             lists:all(fun(C) -> C /= $# end, Name) % filter out internals, hash won't be accepted by parser anyway
+                 [{scope, S}        || ScopeName /= [], S <- ScopeName]
             ] ++
         [ {field, Fl} || Fl <- maps:keys(element(5, Env)) ] ++
+        [ {variable, Ctr}  || {Ctr, {tracked_contract, _, _}} <- Cons] ++
+        [ {variable, V}    || {_, {Pat, _}} <- LetVals,
+                              V <- aere_sophia:get_pat_ids(Pat)] ++
         [ {type, T} || {T, _} <- TypeMap],
-    Names.
+    [{Kind, Name} || {Kind, Name} <- Names,
+                     % filter out internals, hash won't be accepted by the parser anyway].
+                     lists:all(fun(C) -> C /= $# end, Name)
+    ].
 
 
 -spec build_deploy_contract(string(), aeso_syntax:ast(), [any()], options(), repl_state())
