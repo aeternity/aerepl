@@ -70,7 +70,7 @@ type_of([{contract, _, _, Defs}], FunName) ->
                 "init" -> {[], {tuple_t, [], []}};
                 _ -> error("Function " ++ FunName ++ " is not defined")
             end;
-        _ -> error("co kurwa, two entrypoints with the same name")
+        _ -> error("two entrypoints with the same name")
     end;
 type_of([_ | Contracts], FunName) ->
     type_of(Contracts, FunName).
