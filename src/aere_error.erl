@@ -90,6 +90,14 @@ contract_creation_error(Reason) ->
     {error,
      ["Failed to create contract: ", Reason]}.
 
+
+locked_cwd() ->
+    { error
+    , "Changing working dir is forbidden"
+    }.
+
+
 undefined_command() ->
     {error,
      "Uhm, this command seems to be undefined while it should be"}.
+

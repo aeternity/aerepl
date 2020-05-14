@@ -7,6 +7,7 @@
         , colors :: none | default | no_emph
         , silent :: boolean()
         , display_unit :: boolean()
+        , lock_cwd :: boolean()
         }).
 -type options() :: options().
 

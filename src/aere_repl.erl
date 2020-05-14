@@ -8,7 +8,7 @@
 -export([ register_includes/2, init_state/0, process_string/2
         , remove_references/3, answer/2, question_to_response/1
         , print_msg/2, render_msg/2, banner/0, destroy_warnings/1
-	, register_tracked_contract/3
+        , register_tracked_contract/3
         , list_names/1
         ]).
 
@@ -26,6 +26,7 @@ default_options() ->
             , colors = none
             , silent = false
             , display_unit = false
+            , lock_cwd = false
             }.
 
 
@@ -326,6 +327,8 @@ process_input(State, rm, Inp) ->
     free_names(State, string:split(Inp, aere_parse:whitespaces()));
 process_input(S = #repl_state{cwd = CWD}, pwd, _) ->
     {CWD, S};
+process_input(#repl_state{options = #options{lock_cwd = true}}, cd, _) ->
+    throw(aere_error:locked_cwd());
 process_input(S = #repl_state{cwd = CWD}, cd, Inp) ->
     Target = filename:join(CWD, Inp),
     [throw(aere_error:file_error(Target, enoent)) || not filelib:is_dir(Target)],
