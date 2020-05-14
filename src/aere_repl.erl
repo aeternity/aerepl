@@ -8,6 +8,7 @@
 -export([ register_includes/2, init_state/0, process_string/2
         , remove_references/3, answer/2, question_to_response/1
         , print_msg/2, render_msg/2, banner/0, destroy_warnings/1
+	, register_tracked_contract/3
         , list_names/1
         ]).
 
