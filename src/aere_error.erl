@@ -1,8 +1,8 @@
 -module(aere_error).
 -compile([export_all, nowarn_export_all]).
 
-internal(Command, Error, Stacktrace) ->
-    [ "Command ", aere_color:blue(lists:flatten(io_lib:format("~p", [Command]))), " failed:\n"
+internal(Error, Stacktrace) ->
+    [ "Command failed:\n"
     , aere_color:red(lists:flatten(io_lib:format("~p", [Error]))), "\n"
     , case Stacktrace of
           [] -> "<no stacktrace>";
@@ -10,8 +10,8 @@ internal(Command, Error, Stacktrace) ->
       end
     ].
 
-internal(Command, Error) ->
-    internal(Command, Error, []).
+internal(Error) ->
+    internal(Error, []).
 
 no_such_command(Command) ->
     ["No such command ", aere_color:blue(io_lib:format("~p", [Command])), "\n"].

@@ -9,7 +9,7 @@
         , remove_references/3, answer/2, question_to_response/1
         , print_msg/2, render_msg/2, banner/0, destroy_warnings/1
         , register_tracked_contract/3
-        , list_names/1
+        , list_names/1, to_response/2
         ]).
 
 -include("aere_repl.hrl").
@@ -161,7 +161,29 @@ handle_dispatch(State, skip) ->
         , status = {success, State}
         };
 handle_dispatch(State = #repl_state{}, {ok, {Command, Args}}) ->
-    try process_input(State, Command, Args) of
+    to_response(State, fun() -> process_input(State, Command, Args) end);
+handle_dispatch(State, {error, {no_such_command, "wololo"}}) ->
+    put(wololo, wololo),
+    #repl_response{output = "&#wololo#&", warnings = [], status = {success, State}};
+handle_dispatch(#repl_state{}, {error, {no_such_command, Command}}) ->
+    Msg = aere_error:no_such_command(Command),
+    #repl_response
+        { output = Msg
+        , warnings = []
+        , status = error
+        };
+handle_dispatch(#repl_state{}, {error, {ambiguous_prefix, Propositions}}) ->
+    Msg = aere_error:ambiguous_prefix(Propositions),
+    #repl_response
+        { output = Msg
+        , warnings = []
+        , status = error
+        }.
+
+-spec to_response(repl_state(), fun(() -> finito | {string(), repl_state()} | repl_state() | none()))
+                 -> repl_response().
+to_response(FallbackState, Action) ->
+    try Action() of
         {Output, State1 = #repl_state{options = #options{silent = Silent}}} ->
             {State2, Warnings} = destroy_warnings(State1),
             Msg = ?IF(Silent, "", aere_color:emph(aere_color:default(Output))),
@@ -182,7 +204,7 @@ handle_dispatch(State = #repl_state{}, {ok, {Command, Args}}) ->
             #repl_response
                 { output = ""
                 , warnings = []
-                , status = {success, State}
+                , status = {success, FallbackState}
                 };
         finito ->
             #repl_response
@@ -200,7 +222,7 @@ handle_dispatch(State = #repl_state{}, {ok, {Command, Args}}) ->
                 , status = internal_error
                 }
     catch error:E:Stacktrace ->
-            Msg = aere_error:internal(Command, E, Stacktrace),
+            Msg = aere_error:internal(E, Stacktrace),
             #repl_response
                 { output = Msg
                 , warnings = []
@@ -212,29 +234,11 @@ handle_dispatch(State = #repl_state{}, {ok, {Command, Args}}) ->
                 , warnings = []
                 , status = error
                 }
-    end;
-handle_dispatch(State, {error, {no_such_command, "wololo"}}) ->
-    put(wololo, wololo),
-    #repl_response{output = "&#wololo#&", warnings = [], status = {success, State}};
-handle_dispatch(#repl_state{}, {error, {no_such_command, Command}}) ->
-    Msg = aere_error:no_such_command(Command),
-    #repl_response
-        { output = Msg
-        , warnings = []
-        , status = error
-        };
-handle_dispatch(#repl_state{}, {error, {ambiguous_prefix, Propositions}}) ->
-    Msg = aere_error:ambiguous_prefix(Propositions),
-    #repl_response
-        { output = Msg
-        , warnings = []
-        , status = error
-        }.
-
+    end.
 
 %% Specific reactions to commands and inputs
 -spec process_input(repl_state(), aere_parse:command(), string()) ->
-          finito | {string(), repl_state()} | repl_state().
+          finito | {string(), repl_state()} | repl_state() | none().
 process_input(_, quit, _) ->
     finito;
 process_input(_, reset, _) ->
