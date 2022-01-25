@@ -26,13 +26,10 @@ ann() ->
 %%   Body
 -spec contract(list(aeso_syntax:decl())) -> aeso_syntax:decl().
 contract(Body) ->
-    contract(?MOCK_CONTRACT, Body).
--spec contract(string(), list(aeso_syntax:decl())) -> aeso_syntax:decl().
-contract(Name, Body) ->
-    {contract, [payable, ann()], {con, ann(), Name},
-     Body
-    }.
-
+    contract(contract_main, ?MOCK_CONTRACT, Body).
+-spec contract(contract_main | contract_interface, string(), list(aeso_syntax:decl())) -> aeso_syntax:decl().
+contract(ContractType, Name, Body) ->
+    {ContractType, [payable, ann()], {con, ann(), Name}, Body}.
 
 %% type Name = Type
 -spec type_alias(string(), aeso_syntax:type()) -> aeso_syntax:decl().
@@ -59,7 +56,7 @@ val_entrypoint(Name, Body, Attrs) when is_list(Attrs) ->
     , {id, ann(), Name}
     , []
     , {id, ann(), "_"}
-    , Body}.
+    , [{guarded, ann(), [], Body}]}.
 
 
 %% Attributes entrypoint Name : Args -> Type
@@ -123,7 +120,7 @@ with_letfun_auto_imports(State = #repl_state{letfuns = Letfuns}) ->
     FBodies =
           [ FBody
             || {_, {Funs, _, _}} <- Letfuns,
-               {letfun, _, _, _, _, FBody} <- Funs
+               {letfun, _, _, _, _, [{guarded, _, _, FBody}]} <- Funs
           ],
     lists:foldr(fun(FB, S) -> with_auto_imports(S, FB) end, State, FBodies).
 
@@ -162,7 +159,9 @@ chained_query_contract(State = #repl_state
             end},
     State1 = with_auto_imports(State, Body),
     State2 = with_letfun_auto_imports(State1),
-    Prev = contract(?PREV_CONTRACT, [entrypoint_decl(?GET_STATE, [], StType)]),
+    Prev = contract( contract_interface
+                   , ?PREV_CONTRACT
+                   , [entrypoint_decl(?GET_STATE, [], StType)]),
     Query = contract(state_init(State2) ++ letfun_defs(State2) ++ typedefs(State2) ++
                          [ val_entrypoint(?USER_INPUT, with_value_refs(State2, Body), full)
                          , val_entrypoint(?GET_STATE, {id, ann(), "state"})
@@ -206,8 +205,11 @@ letval_provider(State = #repl_state{ user_contract_state_type = StType
                                    }, Name, Body) ->
     State1 = with_auto_imports(State, [Body]),
     State2 = with_letfun_auto_imports(State1),
-    Prev = contract(?PREV_CONTRACT, [entrypoint_decl(?GET_STATE, [], StType)]),
-    Con = contract(?LETVAL_PROVIDER(Name)
+    Prev = contract( contract_interface
+                   , ?PREV_CONTRACT
+                   , [entrypoint_decl(?GET_STATE, [], StType)]),
+    Con = contract( contract_main
+                  , ?LETVAL_PROVIDER(Name)
                   , [val_entrypoint( ?LETVAL_GETTER(Name)
                                    , with_value_refs(State2, Body))|state_init(State)]
                    ++ letfun_defs(State2)
@@ -218,7 +220,8 @@ letval_provider(State = #repl_state{ user_contract_state_type = StType
 %% Declarations of providers of values
 -spec letval_provider_decls(repl_state()) -> list(aeso_syntax:decl()).
 letval_provider_decls(#repl_state{letvals = Letvals}) ->
-    [contract( ?LETVAL_PROVIDER_DECL(Name)
+    [contract( contract_interface
+             , ?LETVAL_PROVIDER_DECL(Name)
              , [entrypoint_decl(?LETVAL_GETTER(Name), [], Type)])
      || {{Name, _}, {_, Type}} <- Letvals
     ].
@@ -241,7 +244,7 @@ letfun_defs(State = #repl_state{ letfuns = LetFuns
     [ { block, ann()
       , [ case F of
               {fun_decl, _, _, _} -> F;
-              {letfun, A, N, Args, RT, Body} ->
+              {letfun, A, N, Args, RT, [{guarded, _, _, Body}]} ->
                   {Cons1, LetVals1} =
                       begin
                           UsedNames = [AN || Arg <- Args,
@@ -250,7 +253,7 @@ letfun_defs(State = #repl_state{ letfuns = LetFuns
                           aere_repl:remove_references(UsedNames, Cons, LetVals)
                       end,
                   State1 = State#repl_state{tracked_contracts = Cons1, letvals = LetVals1},
-                  {letfun, A, N, Args, RT, with_value_refs(State1, Body)}
+                  {letfun, A, N, Args, RT, [{guarded, A, [], with_value_refs(State1, Body)}]}
           end
           || F <- Funs
         ]}

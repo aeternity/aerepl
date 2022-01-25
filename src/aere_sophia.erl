@@ -21,17 +21,18 @@ process_err(E) -> %% idk, rethrow
 typecheck(Ast) ->
     typecheck(Ast, []).
 typecheck(Ast, Opts) ->
-    try aeso_ast_infer_types:infer(Ast, Opts)
+    try
+        {_, UnfoldedTypedAst, _} = aeso_ast_infer_types:infer(Ast, Opts),
+        UnfoldedTypedAst
     catch _:{error, Errs} ->
-            throw({error, process_err(Errs)})
+              throw({error, process_err(Errs)})
     end.
 
-
 compile_contract(fate, Src, TypedAst) ->
-    FCode    = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, [])
-               catch {error, Ec} -> process_err(Ec) end,
-    Fate     = try aeso_fcode_to_fate:compile(FCode, [])
-               catch {error, Ef} -> process_err(Ef) end,
+    {_, FCode} = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, [])
+                 catch {error, Ec} -> process_err(Ec) end,
+    Fate       = try aeso_fcode_to_fate:compile(FCode, [])
+                 catch {error, Ef} -> process_err(Ef) end,
     ByteCode = aeb_fate_code:serialize(Fate, []),
     #{byte_code => ByteCode,
       contract_source => Src,
@@ -56,7 +57,7 @@ compile_contract(aevm, Src, TypedAst) ->
       payable => maps:get(payable, Icode)
      }.
 
-type_of([{contract, _, _, Defs}], FunName) ->
+type_of([{contract_main, _, _, Defs}], FunName) ->
     ArgType = fun(A) -> [T || {arg, _, _, T} <- A] end,
     GetType = fun({letfun, _, {id, _, Name}, Args, Ret, _})
                     when Name == FunName -> [{Args, Ret}];
@@ -203,11 +204,11 @@ replace({id, _, Old}, var, Old, New) ->
 
 % Dispatch rules
 %% Variable scoping
-replace(LF = {letfun, Ann, Name, Pats, RT, Expr}, What = var, Old, New) ->
+replace(LF = {letfun, Ann, Name, Pats, RT, [{guarded, _, _, Expr}]}, What = var, Old, New) ->
     PatIds = [I || P <- Pats, I <- get_pat_ids(P)],
     ?IF(lists:member(Old, PatIds),
         LF,
-        {letfun, Ann, Name, Pats, RT, ?replace(Expr)}
+        {letfun, Ann, Name, Pats, RT, [{guarded, Ann, [], ?replace(Expr)}]}
        );
 replace([LF = {letfun, _, {id, _, N}, _, _, _}|Rest], What = var, Old, New) ->
     LF1 = ?replace(LF),
@@ -237,8 +238,8 @@ replace({ContrOrNs, Ann, Name, Decls}, What = var, Old, New)
   when ContrOrNs =:= contract orelse ContrOrNs =:= namespace ->
     {ContrOrNs, Ann, Name, [?replace(X) || X <- Decls]};
 %% Types
-replace({letfun, Ann, Name, Pats, RT, Expr}, What = type, Old, New) ->
-    {letfun, Ann, Name, ?replace(Pats), ?replace(RT, id), ?replace(Expr)};
+replace({letfun, Ann, Name, Pats, RT, [{guarded, _, _, Expr}]}, What = type, Old, New) ->
+    {letfun, Ann, Name, ?replace(Pats), ?replace(RT, id), [{guarded, Ann, [], ?replace(Expr)}]};
 replace({fun_decl, Ann, Name, T}, type, Old, New) ->
     {fun_decl, Ann, Name, ?replace(T, id)};
 replace({fun_clauses, Ann, Name, T, Binds}, What = type, Old, New) ->

@@ -262,7 +262,7 @@ process_input(State, eval, I) ->
             register_includes(State, [binary_to_list(Inc)]);
         [{letval, _, Pat, Expr}] -> register_letval(State, Pat, Expr);
         [FD = {fun_decl, _, _Name, _Type}] -> register_letfun(State, [FD]);
-        [FD = {letfun, _, _Name, _Args, _RetType, _Body}] -> register_letfun(State, [FD]);
+        [FD = {letfun, _, _Name, _Args, _RetType, _GuardedBodies}] -> register_letfun(State, [FD]);
         [{block, _, Funs}] -> register_letfun(State, Funs);
         [TDf] when element(1, TDf) =:= type_def ->
             register_typedef(State, TDf);
@@ -402,9 +402,9 @@ register_letfun(S0 = #repl_state{ letfuns = Letfuns
                            {[case F of
                                  {fun_decl, A, {id, AName, Fn}, RT} ->
                                      {fun_decl, A, {id, AName, UpdateName(Fn)}, RT};
-                                 {letfun, A, {id, AName, Fn}, Args, RT, B} ->
+                                 {letfun, A, {id, AName, Fn}, Args, RT, [{guarded, _, _, B}]} ->
                                      {letfun, A, {id, AName, UpdateName(Fn)}, Args, RT,
-                                      aere_sophia:replace(B, id, Name, NewName)}
+                                      [{guarded, A, [], aere_sophia:replace(B, id, Name, NewName)}]}
                              end
                              || F <- Fs], Cs, Ls}}
                           || {FName, {Fs, Cs, Ls}} <- [{NewName, Dupl}|proplists:delete(Name, Letfuns)]
