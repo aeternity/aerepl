@@ -38,23 +38,9 @@ compile_contract(fate, Src, TypedAst) ->
       contract_source => Src,
       type_info => [],
       fate_code => Fate,
-      compiler_version => aere_version:sophia_version(fate),
-      abi_version => aere_version:abi_version(fate),
+      compiler_version => aere_version:sophia_version(),
+      abi_version => aere_version:abi_version(),
       payable => maps:get(payable, FCode)
-     };
-compile_contract(aevm, Src, TypedAst) ->
-    Icode = try aeso_ast_to_icode:convert_typed(TypedAst, [])
-            catch {error, Ei} -> process_err(Ei) end,
-    TypeInfo  = extract_type_info(Icode),
-    Assembler = aeso_icode_to_asm:convert(Icode, []),
-    ByteCodeList = to_bytecode(Assembler, []),
-    ByteCode = << << B:8 >> || B <- ByteCodeList >>,
-    #{byte_code => ByteCode,
-      contract_source => Src,
-      type_info => TypeInfo,
-      compiler_version => aere_version:sophia_version(aevm),
-      abi_version => aeb_aevm_abi:abi_version(),
-      payable => maps:get(payable, Icode)
      }.
 
 type_of([{contract_main, _, _, Defs}], FunName) ->
@@ -75,19 +61,6 @@ type_of([{contract_main, _, _, Defs}], FunName) ->
     end;
 type_of([_ | Contracts], FunName) ->
     type_of(Contracts, FunName).
-
-
-extract_type_info(#{functions := Functions} =_Icode) ->
-    ArgTypesOnly = fun(As) -> [ T || {_, T} <- As ] end,
-    Payable = fun(Attrs) -> proplists:get_value(payable, Attrs, false) end,
-    TypeInfo = [aeb_aevm_abi:function_type_info(list_to_binary(lists:last(Name)),
-                                                Payable(Attrs), ArgTypesOnly(Args), TypeRep)
-                || {Name, Attrs, Args,_Body, TypeRep} <- Functions,
-                   not is_tuple(Name),
-                   not lists:member(private, Attrs)
-               ],
-    lists:sort(TypeInfo).
-
 
 to_bytecode(['COMMENT',_|Rest],_Options) ->
     to_bytecode(Rest,_Options);
