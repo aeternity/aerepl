@@ -1,16 +1,13 @@
-# Compatibility reasons. rocksdb may not build without these
-CXXFLAGS="-Wno-error=shadow -Wno-deprecated-copy -Wno-redundant-move -Wno-pessimizing-move"
-.PHONY: test all aerepl
-
+.PHONY: all aerepl test clean nuke
 
 all: aerepl
 
 aerepl:
 	git submodule init
 	git submodule update
-	ln -sfn node/apps .
+	cd node && git checkout v6.4.0 && make dev1-build
 	ln -sfn node/data .
-	CXXFLAGS="-Wno-error=shadow -Wno-deprecated-copy -Wno-redundant-move -Wno-pessimizing-move" ./rebar3 as prod release
+	./rebar3 as prod release
 	chmod +x aerepl
 	ln -sfn _build/prod/rel/aerepl/bin/aerepl aerepl_server
 
