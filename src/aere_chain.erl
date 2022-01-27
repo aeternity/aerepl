@@ -1,7 +1,7 @@
 -module(aere_chain).
 
--include("../apps/aecontract/include/aecontract.hrl").
--include("../apps/aecore/include/blocks.hrl").
+-include("../node/apps/aecontract/include/aecontract.hrl").
+-include("../node/apps/aecore/include/blocks.hrl").
 -include("aere_repl.hrl").
 
 -define(cid(__x__), {'@ct', __x__}).
