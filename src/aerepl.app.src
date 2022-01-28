@@ -3,7 +3,9 @@
   {vsn, "2.0.0"},
   {registered, []},
   {applications,
-   [aesophia]},
+   [kernel,
+    stdlib,
+    aesophia]},
   {env,[]},
   {modules, []},
   {links, []}
