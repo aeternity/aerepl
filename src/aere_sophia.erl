@@ -62,13 +62,6 @@ type_of([{contract_main, _, _, Defs}], FunName) ->
 type_of([_ | Contracts], FunName) ->
     type_of(Contracts, FunName).
 
-to_bytecode(['COMMENT',_|Rest],_Options) ->
-    to_bytecode(Rest,_Options);
-to_bytecode([Op|Rest], Options) ->
-    [aeb_opcodes:m_to_op(Op)|to_bytecode(Rest, Options)];
-to_bytecode([], _) -> [].
-
-
 -define(with_error_handle(X), try X catch {error, Errs} -> process_err(Errs) end).
 parse_top(I) ->
     parse_top(I, []).
