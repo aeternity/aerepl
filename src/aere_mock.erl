@@ -265,7 +265,7 @@ letfun_defs(State = #repl_state{ letfuns = LetFuns
 contract_refs(#repl_state{tracked_contracts = Contracts}) ->
     [ { letval, ann(), {id, ann(), Name}
       , {typed, ann(), {contract_pubkey, ann(), ConRef}, ConName}}
-      || {Name, {tracked_contract, ConRef, {contract, _, ConName, _}}} <- Contracts
+      || {Name, {tracked_contract, ConRef, {contract_interface, _, ConName, _}}} <- Contracts
     ].
 
 
@@ -293,7 +293,7 @@ prelude(State = #repl_state{ tracked_contracts = TrackedCons
     TDNamespaces = typedef_namespaces(State),
     LetvalProviders = letval_provider_decls(State),
     {TCUnique, _} = lists:foldr(
-                      fun(C = {_, {_, _, {contract, _, TC, _}}}, {Acc, Set}) ->
+                      fun(C = {_, {_, _, {contract_interface, _, TC, _}}}, {Acc, Set}) ->
                               { case sets:is_element(TC, Set) of
                                     true -> Acc;
                                     false -> [C|Acc]

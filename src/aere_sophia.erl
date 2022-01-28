@@ -100,8 +100,8 @@ parse_file(I, Includes, Opts) ->
     ?with_error_handle(aeso_parser:string(I, Includes, Opts)).
 
 
-generate_interface_decl([{contract, Ann, Name, Funs}]) ->
-    {contract, Ann, Name, get_funs_decls(Funs)};
+generate_interface_decl([{contract_main, Ann, Name, Funs}]) ->
+    {contract_interface, Ann, Name, get_funs_decls(Funs)};
 generate_interface_decl([_|Rest]) ->
     generate_interface_decl(Rest);
 generate_interface_decl([]) ->
