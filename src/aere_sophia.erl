@@ -21,42 +21,29 @@ process_err(E) -> %% idk, rethrow
 typecheck(Ast) ->
     typecheck(Ast, []).
 typecheck(Ast, Opts) ->
-    try aeso_ast_infer_types:infer(Ast, Opts)
+    try
+        {_, UnfoldedTypedAst, _} = aeso_ast_infer_types:infer(Ast, Opts),
+        UnfoldedTypedAst
     catch _:{error, Errs} ->
-            throw({error, process_err(Errs)})
+              throw({error, process_err(Errs)})
     end.
 
-
 compile_contract(fate, Src, TypedAst) ->
-    FCode    = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, [])
-               catch {error, Ec} -> process_err(Ec) end,
-    Fate     = try aeso_fcode_to_fate:compile(FCode, [])
-               catch {error, Ef} -> process_err(Ef) end,
+    {_, FCode} = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, [])
+                 catch {error, Ec} -> process_err(Ec) end,
+    Fate       = try aeso_fcode_to_fate:compile(FCode, [])
+                 catch {error, Ef} -> process_err(Ef) end,
     ByteCode = aeb_fate_code:serialize(Fate, []),
     #{byte_code => ByteCode,
       contract_source => Src,
       type_info => [],
       fate_code => Fate,
-      compiler_version => aere_version:sophia_version(fate),
-      abi_version => aere_version:abi_version(fate),
+      compiler_version => aere_version:sophia_version(),
+      abi_version => aere_version:abi_version(),
       payable => maps:get(payable, FCode)
-     };
-compile_contract(aevm, Src, TypedAst) ->
-    Icode = try aeso_ast_to_icode:convert_typed(TypedAst, [])
-            catch {error, Ei} -> process_err(Ei) end,
-    TypeInfo  = extract_type_info(Icode),
-    Assembler = aeso_icode_to_asm:convert(Icode, []),
-    ByteCodeList = to_bytecode(Assembler, []),
-    ByteCode = << << B:8 >> || B <- ByteCodeList >>,
-    #{byte_code => ByteCode,
-      contract_source => Src,
-      type_info => TypeInfo,
-      compiler_version => aere_version:sophia_version(aevm),
-      abi_version => aeb_aevm_abi:abi_version(),
-      payable => maps:get(payable, Icode)
      }.
 
-type_of([{contract, _, _, Defs}], FunName) ->
+type_of([{contract_main, _, _, Defs}], FunName) ->
     ArgType = fun(A) -> [T || {arg, _, _, T} <- A] end,
     GetType = fun({letfun, _, {id, _, Name}, Args, Ret, _})
                     when Name == FunName -> [{Args, Ret}];
@@ -74,26 +61,6 @@ type_of([{contract, _, _, Defs}], FunName) ->
     end;
 type_of([_ | Contracts], FunName) ->
     type_of(Contracts, FunName).
-
-
-extract_type_info(#{functions := Functions} =_Icode) ->
-    ArgTypesOnly = fun(As) -> [ T || {_, T} <- As ] end,
-    Payable = fun(Attrs) -> proplists:get_value(payable, Attrs, false) end,
-    TypeInfo = [aeb_aevm_abi:function_type_info(list_to_binary(lists:last(Name)),
-                                                Payable(Attrs), ArgTypesOnly(Args), TypeRep)
-                || {Name, Attrs, Args,_Body, TypeRep} <- Functions,
-                   not is_tuple(Name),
-                   not lists:member(private, Attrs)
-               ],
-    lists:sort(TypeInfo).
-
-
-to_bytecode(['COMMENT',_|Rest],_Options) ->
-    to_bytecode(Rest,_Options);
-to_bytecode([Op|Rest], Options) ->
-    [aeb_opcodes:m_to_op(Op)|to_bytecode(Rest, Options)];
-to_bytecode([], _) -> [].
-
 
 -define(with_error_handle(X), try X catch {error, Errs} -> process_err(Errs) end).
 parse_top(I) ->
@@ -133,8 +100,8 @@ parse_file(I, Includes, Opts) ->
     ?with_error_handle(aeso_parser:string(I, Includes, Opts)).
 
 
-generate_interface_decl([{contract, Ann, Name, Funs}]) ->
-    {contract, Ann, Name, get_funs_decls(Funs)};
+generate_interface_decl([{contract_main, Ann, Name, Funs}]) ->
+    {contract_interface, Ann, Name, get_funs_decls(Funs)};
 generate_interface_decl([_|Rest]) ->
     generate_interface_decl(Rest);
 generate_interface_decl([]) ->
@@ -203,11 +170,11 @@ replace({id, _, Old}, var, Old, New) ->
 
 % Dispatch rules
 %% Variable scoping
-replace(LF = {letfun, Ann, Name, Pats, RT, Expr}, What = var, Old, New) ->
+replace(LF = {letfun, Ann, Name, Pats, RT, [{guarded, _, _, Expr}]}, What = var, Old, New) ->
     PatIds = [I || P <- Pats, I <- get_pat_ids(P)],
     ?IF(lists:member(Old, PatIds),
         LF,
-        {letfun, Ann, Name, Pats, RT, ?replace(Expr)}
+        {letfun, Ann, Name, Pats, RT, [{guarded, Ann, [], ?replace(Expr)}]}
        );
 replace([LF = {letfun, _, {id, _, N}, _, _, _}|Rest], What = var, Old, New) ->
     LF1 = ?replace(LF),
@@ -237,8 +204,8 @@ replace({ContrOrNs, Ann, Name, Decls}, What = var, Old, New)
   when ContrOrNs =:= contract orelse ContrOrNs =:= namespace ->
     {ContrOrNs, Ann, Name, [?replace(X) || X <- Decls]};
 %% Types
-replace({letfun, Ann, Name, Pats, RT, Expr}, What = type, Old, New) ->
-    {letfun, Ann, Name, ?replace(Pats), ?replace(RT, id), ?replace(Expr)};
+replace({letfun, Ann, Name, Pats, RT, [{guarded, _, _, Expr}]}, What = type, Old, New) ->
+    {letfun, Ann, Name, ?replace(Pats), ?replace(RT, id), [{guarded, Ann, [], ?replace(Expr)}]};
 replace({fun_decl, Ann, Name, T}, type, Old, New) ->
     {fun_decl, Ann, Name, ?replace(T, id)};
 replace({fun_clauses, Ann, Name, T, Binds}, What = type, Old, New) ->

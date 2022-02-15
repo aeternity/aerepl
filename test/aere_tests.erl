@@ -13,7 +13,32 @@ run_test(Test) ->
       end || {Label, Fun} <- ?MODULE:TestFun() ],
     ok.
 
+load_deps() ->
+    code:add_pathz("node/_build/dev1/lib/aechannel/ebin/"),
+    code:add_pathz("node/_build/dev1/lib/aecontract/ebin/"),
+    code:add_pathz("node/_build/dev1/lib/aecore/ebin/"),
+    code:add_pathz("node/_build/dev1/lib/aefate/ebin/"),
+    code:add_pathz("node/_build/dev1/lib/aens/ebin/"),
+    code:add_pathz("node/_build/dev1/lib/aeoracle/ebin/"),
+    code:add_pathz("node/_build/dev1/lib/aeprimop/ebin/"),
+    code:add_pathz("node/_build/dev1/lib/aetx/ebin/"),
+    code:add_pathz("node/_build/dev1/lib/aeutils/ebin/"),
+    code:add_pathz("node/_build/dev1/lib/setup/ebin/"),
+    application:load(aechannel),
+    application:load(aecontract),
+    application:load(aecore),
+    application:load(aefate),
+    application:load(aens),
+    application:load(aeoracle),
+    application:load(aeprimop),
+    application:load(aetx),
+    application:load(aeutils),
+    application:load(setup).
+
 eval_test_() ->
+    {setup, fun load_deps/0, [{generator, fun tests/0}]}.
+
+tests() ->
     [{"Testing the " ++ atom_to_list(TestScenario) ++ " scenario",
       fun() ->
               File = "test/scenarios/" ++ atom_to_list(TestScenario) ++ ".aesi",
