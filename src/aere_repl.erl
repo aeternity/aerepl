@@ -269,8 +269,9 @@ process_input(State, eval, I) ->
 
         [TDc] when element(1, TDc) =:= type_decl ->
             throw(aere_error:unsupported_decl(type_decl));
-        [Con] when element(1, Con) =:= contract ->
-            throw(aere_error:unsupported_decl(contract));
+        [Con] when element(1, Con) =:= contract_main orelse
+                   element(1, Con) =:= contract_child ->
+            register_tracked_contract(State, none, list_to_binary(I));
         [Ns] when element(1, Ns) =:= namespace ->
             throw(aere_error:unsupported_decl(namespace));
         [_|_] ->
