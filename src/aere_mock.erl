@@ -211,7 +211,8 @@ letval_provider(State = #repl_state{ user_contract_state_type = StType
     Con = contract( contract_main
                   , ?LETVAL_PROVIDER(Name)
                   , [val_entrypoint( ?LETVAL_GETTER(Name)
-                                   , with_value_refs(State2, Body))|state_init(State)]
+                                   , with_value_refs(State2, Body)
+                                   , [stateful] )|state_init(State)]
                    ++ letfun_defs(State2)
                   ),
     prelude(State2) ++ [Prev, Con].
