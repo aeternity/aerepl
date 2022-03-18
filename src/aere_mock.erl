@@ -217,7 +217,7 @@ letval_provider(State = #repl_state{ user_contract_state_type = StType
                                    , [stateful] )|state_init(State)]
                    ++ letfun_defs(State2)
                   ),
-    prelude(State2) ++ DefinedContracts ++ [Prev, Con].
+    DefinedContracts ++ prelude(State2) ++ [Prev, Con].
 
 
 %% Declarations of providers of values
