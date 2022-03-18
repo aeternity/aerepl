@@ -8,7 +8,6 @@
 -export([ register_includes/2, init_state/0, process_string/2
         , remove_references/3, answer/2, question_to_response/1
         , print_msg/2, render_msg/2, banner/0, destroy_warnings/1
-        , register_tracked_contract/3
         , list_names/1, to_response/2
         ]).
 
@@ -301,28 +300,17 @@ process_input(State, set, Inp) ->
     Val = string:trim(Val0),
     set_option(State, Prop, Val);
 process_input(State = #repl_state {cwd = CWD}, deploy, Inp) ->
-    {File, MaybeRefName} =
+    File =
         case string:tokens(Inp, aere_parse:whitespaces()) of
             [] -> throw(aere_error:no_file_deploy());
-            [F] -> {F, none};
-            [F, "as", N] ->
-                Valid = fun(C) -> ((C >= $a) and (C =< $z))
-                                      or ((C >= $A) and (C =< $Z))
-                                      or ((C >= $0) and (C =< $9))
-                                      or (C == $_)
-                        end,
-                [throw(aere_error:bad_deploy_name())
-                 || (lists:nth(1, N) < $a) or (lists:nth(1, N) > $z)],
-                [throw(aere_error:bad_deploy_name())
-                 || not lists:all(Valid, N)],
-                {F, N};
+            [F] -> F;
             _ -> throw(aere_error:parse_deploy())
         end,
     Src = case file:read_file(filename:join(CWD, File)) of
               {ok, Src_} -> Src_;
               {error, Reason} -> throw(aere_error:file_error(File, Reason))
           end,
-    register_tracked_contract(State, MaybeRefName, Src);
+    register_defined_contract(State, binary_to_list(Src));
 process_input(State, rm, Inp) ->
     State1 = free_names(State, string:split(Inp, aere_parse:whitespaces())),
     [ throw(aere_error:nothing_to_remove())
@@ -512,22 +500,6 @@ free_names(State = #repl_state{ letfuns = Letfuns
     end.
 
 
--spec name_status(repl_state(), string()) -> free | taken.
-name_status(#repl_state
-            { letvals = LetDefs
-            , letfuns = LocFuns
-            , tracked_contracts = TCons
-            }, Name) ->
-    % The best 'if' you will ever see
-    case { proplists:is_defined(Name, LetDefs)
-         , proplists:is_defined(Name, LocFuns)
-         , proplists:is_defined(Name, TCons)
-         } of
-        {false, false, false} -> free;
-        _ -> taken
-    end.
-
-
 -spec register_includes(repl_state(), list(string())) -> repl_state().
 register_includes(State, []) ->
     State; %% This is necessary to break check-loops
@@ -568,6 +540,8 @@ register_includes(State = #repl_state{ include_ast = Includes
     Msg = ["Registered ", IncludeWord, Colored],
     {Msg, assert_integrity(State2)}.
 
+
+-spec register_defined_contract(repl_state(), binary()) -> {string(), repl_state()}.
 register_defined_contract(State = #repl_state
                           { cwd = CWD
                           }, Src) ->
@@ -608,90 +582,6 @@ register_defined_contract(State = #repl_state
 
     {[aere_color:green(StrDeclName), " was successfully deployed"]
     , assert_integrity(State2)
-    }.
-
--spec register_tracked_contract(repl_state(), none | string(), binary())
-                               -> {string(), repl_state()}.
-register_tracked_contract(State = #repl_state
-                          { letvals = Letvals
-                          , options = Opts
-                          , cwd = CWD
-                          }, MaybeRefName, Src) ->
-
-    % typecheck and prepare ACI
-    Ast = aere_sophia:parse_file(binary_to_list(Src), aeso_compiler:add_include_path(CWD, [])),
-    TAstUnfolded = aere_sophia:typecheck(Ast, [dont_unfold]),
-    TAst = aere_sophia:typecheck(Ast),
-    BCode = aere_sophia:compile_contract(fate, binary_to_list(Src), TAst),
-    Interface = {contract_interface, _, {con, _, StrDeclName}, _}
-        = aere_sophia:generate_interface_decl(TAstUnfolded),
-    State0 = State#repl_state
-        {type_alias_map =
-             proplists:delete(StrDeclName, State#repl_state.type_alias_map)},
-
-    % Generate the reference name by the contract name if not provided
-    RefName =
-        case MaybeRefName of
-            none ->
-                [FstChar|OrigNameRest] = StrDeclName,
-                NameWithIndex =
-                    fun(X) -> string:lowercase([FstChar]) ++
-                                  OrigNameRest ++
-                                  case X of
-                                      -1 -> "";
-                                      _ -> integer_to_list(X)
-                                  end
-                    end,
-                MakeIndex =
-                    fun R(X) ->
-                            case name_status(State0, NameWithIndex(X)) of
-                                free -> X;
-                                _    -> R(X + 1)
-                            end
-                    end,
-                NameWithIndex(MakeIndex(-1));
-            _ -> MaybeRefName
-        end,
-
-    % Generate the unique name for the contract declaration
-    {State1, ActualName} =
-        (fun Retry(State0_0) ->
-                 {State0_1, Sup} = next_sup(State0_0),
-                 TryName =
-                     "REPL_" ++ integer_to_list(Sup) ++ "_" ++ StrDeclName,
-                 case [bad || {_, {contract, NameConflict}} <-
-                                  State0_1#repl_state.type_alias_map,
-                              NameConflict == TryName] of
-                     [] -> { State0_1#repl_state
-                             {type_alias_map = [{StrDeclName, {contract, TryName}}
-                                                | State0_1#repl_state.type_alias_map
-                                               ]}
-                           , TryName};
-                     _ -> Retry(State0_1)
-                 end
-         end)(State0),
-
-    Interface1 =
-        begin
-            {contract_interface, IAnn, {con, INAnn, _}, IDecl} = unfold_aliases(State1, Interface),
-            {contract_interface, IAnn, {con, INAnn, ActualName}, IDecl}
-        end,
-
-    {{ConAddr, DeployGas}, State2} = deploy_contract(BCode, {}, Opts, State1),
-    DepGasStr = ?IF(Opts#options.display_deploy_gas,
-                    [ aere_color:yellow("\ndeploy gas: "), io_lib:format("~p", [DeployGas])],
-                    ""
-                   ),
-    {Cons1, Letvals1} = remove_references([RefName], State2#repl_state.tracked_contracts, Letvals),
-    State3 = State2#repl_state
-        { tracked_contracts =
-              [{ RefName
-               , {tracked_contract, ConAddr, Interface1}} | Cons1]
-        , letvals = Letvals1
-        },
-    {[ aere_color:green(RefName ++ " : " ++ StrDeclName)
-     , " was successfully deployed", DepGasStr]
-    , assert_integrity(State3)
     }.
 
 
