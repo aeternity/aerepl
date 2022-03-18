@@ -147,6 +147,7 @@ simple_query_contract(State = #repl_state{ user_contract_state_type = StType
                             -> aeso_syntax:ast().
 chained_query_contract(State = #repl_state
                        { user_contract_state_type = StType
+                       , defined_contracts = DefinedContracts
                        , options = #options{call_value = CallValue}
                        }, Stmts) ->
     Stmts1 = if is_list(Stmts) -> Stmts;
@@ -166,7 +167,7 @@ chained_query_contract(State = #repl_state
                          [ val_entrypoint(?USER_INPUT, with_value_refs(State2, Body), full)
                          , val_entrypoint(?GET_STATE, {id, ann(), "state"})
                          ]),
-    prelude(State2) ++ [Prev, Query].
+    DefinedContracts ++ prelude(State2) ++ [Prev, Query].
 
 -spec with_token_refund(repl_state(), list(aeso_syntax:stmt())) -> list(aeso_syntax:stmt()).
 with_token_refund(#repl_state{options = #options{call_value = 0}}, B) ->
@@ -202,6 +203,7 @@ chained_initial_contract(State, Stmts, Type) ->
 -spec letval_provider(repl_state(), string(), aeso_syntax:expr())
                      -> aeso_syntax:ast().
 letval_provider(State = #repl_state{ user_contract_state_type = StType
+                                   , defined_contracts = DefinedContracts
                                    }, Name, Body) ->
     State1 = with_auto_imports(State, [Body]),
     State2 = with_letfun_auto_imports(State1),
@@ -215,7 +217,7 @@ letval_provider(State = #repl_state{ user_contract_state_type = StType
                                    , [stateful] )|state_init(State)]
                    ++ letfun_defs(State2)
                   ),
-    prelude(State2) ++ [Prev, Con].
+    prelude(State2) ++ DefinedContracts ++ [Prev, Con].
 
 
 %% Declarations of providers of values

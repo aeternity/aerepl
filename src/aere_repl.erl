@@ -41,6 +41,7 @@ init_state() ->
                , blockchain_state = ChainState
                , user_contract_state_type = {tuple_t, [], []}
                , tracked_contracts = []
+               , defined_contracts = []
                , letvals = []
                , letfuns = []
                , typedefs = []
@@ -271,7 +272,7 @@ process_input(State, eval, I) ->
             throw(aere_error:unsupported_decl(type_decl));
         [Con] when element(1, Con) =:= contract_main orelse
                    element(1, Con) =:= contract_child ->
-            register_tracked_contract(State, none, list_to_binary(I));
+            register_defined_contract(State, I);
         [Ns] when element(1, Ns) =:= namespace ->
             throw(aere_error:unsupported_decl(namespace));
         [_|_] ->
@@ -566,6 +567,48 @@ register_includes(State = #repl_state{ include_ast = Includes
                   end,
     Msg = ["Registered ", IncludeWord, Colored],
     {Msg, assert_integrity(State2)}.
+
+register_defined_contract(State = #repl_state
+                          { cwd = CWD
+                          }, Src) ->
+    % typecheck and prepare ACI
+    Ast = aere_sophia:parse_file(Src, aeso_compiler:add_include_path(CWD, [])),
+    TAstUnfolded = aere_sophia:typecheck(Ast, [dont_unfold]),
+    Child = {contract_child, _, {con, _, StrDeclName}, _}
+        = aere_sophia:generate_contract_child(TAstUnfolded),
+    State0 = State#repl_state
+        {type_alias_map =
+             proplists:delete(StrDeclName, State#repl_state.type_alias_map)},
+
+    {State1, ActualName} =
+        (fun Retry(State0_0) ->
+                 {State0_1, Sup} = next_sup(State0_0),
+                 TryName =
+                     "REPL_" ++ integer_to_list(Sup) ++ "_" ++ StrDeclName,
+                 case [bad || {_, {contract, NameConflict}} <-
+                                  State0_1#repl_state.type_alias_map,
+                              NameConflict == TryName] of
+                     [] -> { State0_1#repl_state
+                             {type_alias_map = [{StrDeclName, {contract, TryName}}
+                                                | State0_1#repl_state.type_alias_map
+                                               ]}
+                           , TryName};
+                     _ -> Retry(State0_1)
+                 end
+         end)(State0),
+
+    Child1 =
+        begin
+            {contract_child, ChAnn, {con, ChCAnn, _}, ChDecl} = unfold_aliases(State1, Child),
+            {contract_child, ChAnn, {con, ChCAnn, ActualName}, ChDecl}
+        end,
+
+    State2 = State1#repl_state
+                { defined_contracts = [Child1 | State1#repl_state.defined_contracts] },
+
+    {[aere_color:green(StrDeclName), " was successfully deployed"]
+    , assert_integrity(State2)
+    }.
 
 -spec register_tracked_contract(repl_state(), none | string(), binary())
                                -> {string(), repl_state()}.

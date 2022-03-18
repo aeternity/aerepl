@@ -5,7 +5,7 @@
         , parse_decl/1, parse_top/1, parse_type/1, type_of/2
         , generate_interface_decl/1, process_err/1, get_pat_ids/1
         %% , replace_ast/4, replace_type_in_decls/4, replace_type/4
-        , replace/4
+        , replace/4, generate_contract_child/1
         ]).
 
 -include("../_build/default/lib/aesophia/src/aeso_parse_lib.hrl").
@@ -29,10 +29,10 @@ typecheck(Ast, Opts) ->
     end.
 
 compile_contract(fate, Src, TypedAst) ->
-    {_, FCode} = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, [])
-                 catch {error, Ec} -> process_err(Ec) end,
-    Fate       = try aeso_fcode_to_fate:compile(FCode, [])
-                 catch {error, Ef} -> process_err(Ef) end,
+    {Env, FCode} = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, [])
+                   catch {error, Ec} -> process_err(Ec) end,
+    Fate         = try aeso_fcode_to_fate:compile(maps:get(child_con_env, Env, #{}), FCode, [])
+                   catch {error, Ef} -> process_err(Ef) end,
     ByteCode = aeb_fate_code:serialize(Fate, []),
     #{byte_code => ByteCode,
       contract_source => Src,
@@ -99,6 +99,10 @@ parse_file(I, Opts) ->
 parse_file(I, Includes, Opts) ->
     ?with_error_handle(aeso_parser:string(I, Includes, Opts)).
 
+generate_contract_child([{contract_main, Ann, Name, Funs}]) ->
+    {contract_child, Ann, Name, Funs};
+generate_contract_child(_) ->
+    error("Bad AST").
 
 generate_interface_decl([{contract_main, Ann, Name, Funs}]) ->
     {contract_interface, Ann, Name, get_funs_decls(Funs)};

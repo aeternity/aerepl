@@ -20,6 +20,7 @@
         , user_contract_state_type :: aeso_syntax:type()
         , last_state_provider :: binary()
         , tracked_contracts :: list(tracked_contract())
+        , defined_contracts :: list(defined_contract())
         , letfuns :: list(letfun())
         , letvals :: list(letval())
         , typedefs :: list(typedef())
@@ -43,6 +44,7 @@
           , aeso_syntax:constant() %% Reference address
           , aeso_syntax:decl() %% ACI
           }}.
+-type defined_contract() :: aeso_syntax:decl().
 -type letval() ::
         { { string() %% name
           , aeso_syntax:constant() %% provider address
