@@ -167,7 +167,7 @@ chained_query_contract(State = #repl_state
                          [ val_entrypoint(?USER_INPUT, with_value_refs(State2, Body), full)
                          , val_entrypoint(?GET_STATE, {id, ann(), "state"})
                          ]),
-    DefinedContracts ++ prelude(State2) ++ [Prev, Query].
+    lists:map(fun aere_sophia:generate_interface_decl/1, DefinedContracts) ++ prelude(State2) ++ [Prev, Query].
 
 -spec with_token_refund(repl_state(), list(aeso_syntax:stmt())) -> list(aeso_syntax:stmt()).
 with_token_refund(#repl_state{options = #options{call_value = 0}}, B) ->

@@ -106,6 +106,8 @@ generate_contract_child(_) ->
 
 generate_interface_decl([{contract_main, Ann, Name, Funs}]) ->
     {contract_interface, Ann, Name, get_funs_decls(Funs)};
+generate_interface_decl({contract_child, Ann, Name, Funs}) ->
+    {contract_interface, Ann, Name, get_funs_decls(Funs)};
 generate_interface_decl([_|Rest]) ->
     generate_interface_decl(Rest);
 generate_interface_decl([]) ->
