@@ -273,8 +273,16 @@ process_input(State, eval, I) ->
             throw(aere_error:unsupported_decl(contract));
         [Ns] when element(1, Ns) =:= namespace ->
             throw(aere_error:unsupported_decl(namespace));
-        [_|_] ->
-            throw(aere_error:unsupported_decl(multidecl))
+        Multi = [_|_] ->
+            case lists:all(fun({letfun, _, _, _, _, _}) -> true;
+                              ({block, _, _}) -> true;
+                              (_) -> false
+                           end, Multi) of
+                true ->
+                    register_multiple_letfuns(State, Multi);
+                false ->
+                    throw(aere_error:unsupported_decl(multidecl))
+            end
     end;
 process_input(State, include, Inp) ->
     Files = string:tokens(Inp, aere_parse:whitespaces()),
@@ -373,13 +381,26 @@ register_letval(S0 = #repl_state{ letvals = Letvals
                       },
     assert_integrity(S3).
 
+
+-spec register_multiple_letfuns(repl_state(), list(aeso_syntax:decl())) -> repl_state().
+register_multiple_letfuns(State0, MultiFuns) ->
+    Folder = fun(FD = {letfun, _, _, _, _, _}, State) -> register_letfun_no_integrity_assertion(State, [FD]);
+                ({block, _, Funs}, State)             -> register_letfun_no_integrity_assertion(State, Funs);
+                (_, _)                                -> throw(aere_error:unsupported_decl(multidecl))
+             end,
+    assert_integrity(lists:foldr(Folder, State0, MultiFuns)).
+
 -spec register_letfun(repl_state(), list(aeso_syntax:decl())) -> repl_state().
-register_letfun(S, []) ->
+register_letfun(State, Funs) ->
+    assert_integrity(register_letfun_no_integrity_assertion(State, Funs)).
+
+-spec register_letfun_no_integrity_assertion(repl_state(), list(aeso_syntax:decl())) -> repl_state().
+register_letfun_no_integrity_assertion(S, []) ->
     S; % I couldn't even extract the name
-register_letfun(S0 = #repl_state{ letfuns = Letfuns
-                                , letvals = Letvals
-                                , tracked_contracts = Cons
-                                }, Funs0) ->
+register_letfun_no_integrity_assertion(S0 = #repl_state{ letfuns = Letfuns
+                                                       , letvals = Letvals
+                                                       , tracked_contracts = Cons
+                                                       }, Funs0) ->
     Funs = unfold_aliases(S0, Funs0),
     Name = case Funs of
                [{fun_decl, _, {id, _, N}, _}|_] -> N;
@@ -415,7 +436,7 @@ register_letfun(S0 = #repl_state{ letfuns = Letfuns
                       , letvals = Letvals1
                       , tracked_contracts = Cons1
                       },
-    assert_integrity(S2).
+    S2.
 
 -spec make_provider_name(repl_state(), aeso_syntax:pat()) -> {repl_state(), string()}.
 make_provider_name(S0, Pat) ->
