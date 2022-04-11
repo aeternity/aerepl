@@ -13,7 +13,6 @@ aerepl:
 	ln -sfn _build/prod/rel/aerepl/bin/aerepl aerepl_server
 
 test:
-	erlc node/test/ct_eunit_xform.erl
 	./rebar3 eunit --module=aere_tests
 
 clean:
