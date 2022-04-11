@@ -132,7 +132,8 @@ sign_and_apply_transaction(Tx, PrivKey, S = #{trees := Trees}, Height) ->
 
 -define(BENEFICIARY_PUBKEY, <<12345:?BENEFICIARY_PUB_BYTES/unit:8>>).
 default_tx_env(Height) ->
-    aetx_env:set_beneficiary(aetx_env:tx_env(Height), ?BENEFICIARY_PUBKEY).
+    Env = aetx_env:set_beneficiary(aetx_env:tx_env(Height), ?BENEFICIARY_PUBKEY),
+    aetx_env:set_dry_run(Env, true).
 
 
 make_calldata_from_id(Id, Fun, Args, Opts, State) ->
