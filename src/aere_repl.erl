@@ -805,7 +805,10 @@ eval_contract(Src, Ast, S1 = #repl_state{options = Options}) ->
     S4 = S3#repl_state{last_state_provider = Con},
     case {RetType, DeployGasStr, CallGasStr} of
         {{tuple, []}, "", ""} ->
-            ?IF(S4#repl_state.options#options.display_unit, {Out, S4}, S4);
+            case Resp of
+                {error, _} -> {Out, S4};
+                _ -> ?IF(S4#repl_state.options#options.display_unit, {Out, S4}, S4)
+            end;
         _ -> {Out, S4}
     end.
 
