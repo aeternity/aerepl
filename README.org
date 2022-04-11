@@ -18,6 +18,11 @@ git clone https://github.com/aeternity/aerepl.git
 #+END_SRC
 
 Build the project:
+
+This project depends on `rlwrap` to save input history and make the arrow keys work as expected
+inside the repl, but it is still possible to use `aerepl` without `rlwrap` by running
+`./aerepl.escript` instead of `./aerepl`.
+
 #+BEGIN_SRC
 cd aerepl
 make
