@@ -161,7 +161,14 @@ handle_dispatch(State, skip) ->
         , status = {success, State}
         };
 handle_dispatch(State = #repl_state{}, {ok, {Command, Args}}) ->
-    to_response(State, fun() -> process_input(State, Command, Args) end);
+    to_response(State,
+        fun() ->
+            case process_input(State, Command, Args) of
+                NewState = #repl_state{}        -> assert_integrity(NewState);
+                {Msg, NewState = #repl_state{}} -> {Msg, assert_integrity(NewState)};
+                Res                             -> Res
+            end
+        end);
 handle_dispatch(State, {error, {no_such_command, "wololo"}}) ->
     put(wololo, wololo),
     #repl_response{output = "&#wololo#&", warnings = [], status = {success, State}};
@@ -297,6 +304,9 @@ process_input(State, uninclude, _) ->
                              , include_hashes = sets:new()
                              , include_files = []
                              },
+    %% TODO: state integrity assertion is done on an upper level but this had
+    %% to be kept in order to throw the right error.
+    %% this should be handled differently in the future.
     try assert_integrity(State1)
     catch {error, Msg} ->
             throw(aere_error:uninclude_error(Msg))
@@ -379,7 +389,7 @@ register_letval(S0 = #repl_state{ letvals = Letvals
     S3 = S2#repl_state{ letvals = [{{PName, Ref}, {Pat, Type}}|Letvals1]
                       , tracked_contracts = Cons1
                       },
-    assert_integrity(S3).
+    S3.
 
 
 -spec register_multiple_letfuns(repl_state(), list(aeso_syntax:decl())) -> repl_state().
@@ -388,11 +398,11 @@ register_multiple_letfuns(State0, MultiFuns) ->
                 ({block, _, Funs}, State)             -> register_letfun_no_integrity_assertion(State, Funs);
                 (_, _)                                -> throw(aere_error:unsupported_decl(multidecl))
              end,
-    assert_integrity(lists:foldr(Folder, State0, MultiFuns)).
+    lists:foldr(Folder, State0, MultiFuns).
 
 -spec register_letfun(repl_state(), list(aeso_syntax:decl())) -> repl_state().
 register_letfun(State, Funs) ->
-    assert_integrity(register_letfun_no_integrity_assertion(State, Funs)).
+    register_letfun_no_integrity_assertion(State, Funs).
 
 -spec register_letfun_no_integrity_assertion(repl_state(), list(aeso_syntax:decl())) -> repl_state().
 register_letfun_no_integrity_assertion(S, []) ->
@@ -585,7 +595,7 @@ register_includes(State = #repl_state{ include_ast = Includes
                       _   -> "includes"
                   end,
     Msg = ["Registered ", IncludeWord, Colored],
-    {Msg, assert_integrity(State2)}.
+    {Msg, State2}.
 
 -spec register_tracked_contract(repl_state(), none | string(), binary())
                                -> {string(), repl_state()}.
@@ -668,7 +678,7 @@ register_tracked_contract(State = #repl_state
         },
     {[ aere_color:green(RefName ++ " : " ++ StrDeclName)
      , " was successfully deployed", DepGasStr]
-    , assert_integrity(State3)
+    , State3
     }.
 
 
@@ -715,7 +725,7 @@ register_typedef(State, {type_def, _, {id, NAnn, StrName}, Args, Def}) ->
                       , {Args, unfold_aliases(State1, Def)}}|State1#repl_state.typedefs]
         , type_alias_map = NewTypeMap
         },
-    assert_integrity(State2).
+    State2.
 
 
 -spec unfold_aliases(repl_state(), any()) -> any().
