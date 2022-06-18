@@ -50,34 +50,5 @@ process_input(Clients, State, Inp) ->
             [C ! {response, self(), Resp}
              || C <- Clients
             ],
-            continue;
-        Q = #repl_question{} ->
-            process_question(Clients, State, Inp, Q)
-    end.
-
-process_question(Clients, State, Inp, MyQ = #repl_question{}) ->
-    [C ! {response, self(), aere_repl:question_to_response(MyQ)}
-     || C <- Clients
-    ],
-    receive
-        {answer, Ans} ->
-            case aere_repl:answer(MyQ, Ans) of
-                {retry, MyQ1} -> process_question(Clients, State, Inp, MyQ1);
-                {accept, X} ->
-                    {State1, Warns} = aere_repl:destroy_warnings(X),
-                    [C !
-                        { response
-                        , self()
-                        , #repl_response
-                          { output = ""
-                          , status = {success, State1}
-                          , warnings = Warns
-                          }
-                        }
-                     || C <- Clients
-                    ],
-                    continue
-            end
-    after 2000000000 ->
-            finito(Clients)
+            continue
     end.

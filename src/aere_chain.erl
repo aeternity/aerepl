@@ -11,7 +11,7 @@
 -define(qid(__x__), {'@oq', __x__}).
 
 
--export([state/0, state/1, new_account/2, create_contract/5, update_balance/3, call_contract/7]).
+-export([state/0, state/1, new_account/2, default_tx_env/1]).
 
 state()  -> get(the_state).
 state(S) -> put(the_state, S).
@@ -47,88 +47,6 @@ set_account(Account, State) ->
 
 trees(#{} = S) ->
     maps:get(trees, S, aec_trees:new()).
-
-create_contract(Owner, Code, Args, Options, S) ->
-    Nonce       = next_nonce(Owner, S),
-    CallData    = make_calldata_from_code(Code, init, Args, Options),
-    TxOptions    = #{ nonce       => Nonce
-                    , code        => Code
-                    , call_data   => CallData
-                    , gas         => Options#options.gas
-                    , amount      => Options#options.call_value
-                    , vm_version  => aere_version:vm_version()
-                    , abi_version => aere_version:abi_version()
-                    },
-    CreateTx    = create_tx(Owner, TxOptions, S),
-    Height      = Options#options.height,
-    PrivKey     = priv_key(Owner, S),
-    S1          = case sign_and_apply_transaction(CreateTx, PrivKey, S, Height) of
-                      {ok, TmpS}        -> TmpS;
-                      {error, R, _TmpS} -> error(R)
-                  end,
-    ContractKey = aect_contracts:compute_contract_pubkey(Owner, Nonce),
-    CallKey     = aect_call:id(Owner, Nonce, ContractKey),
-    CallTree    = calls(S1),
-    Call        = aect_call_state_tree:get_call(ContractKey, CallKey, CallTree),
-    ReturnValue = aect_call:return_value(Call),
-    ReturnType  = aect_call:return_type(Call),
-    []          = [error({failed_contract_create, ReturnValue}) || ReturnType =/= ok],
-    {{ContractKey, aect_call:gas_used(Call)}, S1}.
-
-call_contract(Caller, ContractKey, Fun, Type, Args, Options, S) ->
-    Calldata = make_calldata_from_id(ContractKey, Fun, Args, Options, S),
-    call_contract_with_calldata(Caller, ContractKey, Type, Calldata, Options, S).
-
-call_contract_with_calldata(Caller, ContractKey, Type, Calldata, Options, S) ->
-    Nonce    = next_nonce(Caller, S),
-    CallTx   = call_tx(Caller, ContractKey,
-                       #{ nonce       => Nonce
-                        , call_data   => Calldata
-                        , gas         => Options#options.gas
-                        , amount      => Options#options.call_value
-                        , abi_version => aere_version:abi_version()
-                        }, S),
-    Height   = Options#options.height,
-    PrivKey  = priv_key(Caller, S),
-    case sign_and_apply_transaction(CallTx, PrivKey, S, Height) of
-        {ok, S1} ->
-            CallKey  = aect_call:id(Caller, Nonce, ContractKey),
-            CallTree = calls(S1),
-            Call     = aect_call_state_tree:get_call(ContractKey, CallKey, CallTree),
-            Result   = call_result(Type, Call),
-            {{Result, aect_call:gas_used(Call)}, S1};
-        {error, R, S1} ->
-            {{error, R}, S1}
-    end.
-
-call_result(Type, Call) ->
-    case aect_call:return_type(Call) of
-        ok     ->
-            Res = aeb_fate_encoding:deserialize(aect_call:return_value(Call)),
-            case aere_response:decode(Res, Type) of
-                {variant, [0,1], 0, {}} when element(1, Type) =:= option ->
-                    none;
-                {variant, [0,1], 1, {Decoded}} when element(1, Type) =:= option ->
-                    {some, Decoded};
-                Decoded ->
-                    Decoded
-            end;
-        error  ->
-            {error, aect_call:return_value(Call)};
-        revert ->
-            Res = aeb_fate_encoding:deserialize(aect_call:return_value(Call)),
-            {revert, aere_response:decode(Res)}
-    end.
-
-sign_and_apply_transaction(Tx, PrivKey, S = #{trees := Trees}, Height) ->
-    SignedTx = sign_tx(Tx, PrivKey),
-    Env      = default_tx_env(Height),
-    case aec_block_micro_candidate:apply_block_txs_strict([SignedTx], Trees, Env) of
-        {ok, [SignedTx], Trees1, _} ->
-            {ok, S#{trees => Trees1}};
-        {error, R} ->
-            {error, R, S}
-    end.
 
 -define(BENEFICIARY_PUBKEY, <<12345:?BENEFICIARY_PUB_BYTES/unit:8>>).
 default_tx_env(Height) ->

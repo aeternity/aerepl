@@ -61,17 +61,8 @@ tests() ->
       end} || TestScenario <- scenarios()].
 
 scenarios() ->
-    [ my_test
-    , twoplustwo
-    , twocommands
-    , multiline
-    , rm
-    , deploy_tracked
-    , letdef
-    , fundef
-    , datatypes
-    , polytypes
-    , state
+    [ twoplustwo
+
     ].
 
 format(T) ->
@@ -111,10 +102,7 @@ eval(I) ->
                                              output = Out
                                             } ->
                                   io:format(format(Out)),
-                                  error(internal_error);
-                              #repl_question{} ->
-                                  {accept, S1} = aere_repl:answer(Resp, ""),
-                                  Cont({S1, {Answers, Inputs}})
+                                  error(internal_error)
                           end
                   end
           end, fun({_, {As, Is}}) -> {lists:reverse(As), lists:reverse(Is)} end, Splitted),

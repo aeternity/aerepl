@@ -1,6 +1,6 @@
 -module(aere_sophia).
 
--export([ typecheck/2, typecheck/1, parse_file/2, parse_file/3, compile_contract/3
+-export([ typecheck/2, typecheck/1, parse_file/2, parse_file/3, compile_contract/1
         , parse_body/1, parse_top/2
         , parse_decl/1, parse_top/1, parse_type/1, type_of/2
         , generate_interface_decl/1, process_err/1, get_pat_ids/1
@@ -28,14 +28,14 @@ typecheck(Ast, Opts) ->
               throw({error, process_err(Errs)})
     end.
 
-compile_contract(fate, Src, TypedAst) ->
+compile_contract(TypedAst) ->
     {_, FCode} = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, [])
                  catch {error, Ec} -> process_err(Ec) end,
     Fate       = try aeso_fcode_to_fate:compile(FCode, [])
                  catch {error, Ef} -> process_err(Ef) end,
     ByteCode = aeb_fate_code:serialize(Fate, []),
     #{byte_code => ByteCode,
-      contract_source => Src,
+      contract_source => "REPL INPUT",
       type_info => [],
       fate_code => Fate,
       compiler_version => aere_version:sophia_version(),

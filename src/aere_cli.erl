@@ -29,10 +29,10 @@ run(R) ->
     join(R),
     Resp = get_resp(R),
     {success, InitState} = Resp#repl_response.status,
-    WithColors = InitState#repl_state{options = InitState#repl_state.options#options{colors = emph}},
+    WithColors = InitState,
 
     {ok, CWD} = file:get_cwd(),
-    WithCWD = WithColors#repl_state{cwd=CWD},
+    WithCWD = WithColors,
     print_response(WithCWD, Resp#repl_response{status = {success, WithCWD}}),
     loop(R, WithCWD).
 

@@ -1,19 +1,17 @@
 -module(aere_color).
--export([ emph/2, emph/1
-        , default/2, default/1
-        , black/2, black/1
-        , red/2, red/1
-        , green/2, green/1
-        , yellow/2, yellow/1
-        , blue/2, blue/1
-        , magenta/2, magenta/1
-        , cyan/2, cyan/1
-        , white/2, white/1
-        , render_colored/2
-        , reset/2, reset/1
+-export([ emph/1
+        , default/1
+        , black/1
+        , red/1
+        , green/1
+        , yellow/1
+        , blue/1
+        , magenta/1
+        , cyan/1
+        , white/1
+        , render_colored/1, render_colored/2
+        , reset/1
         ]).
--include("aere_repl.hrl").
-
 
 color_str(none, _) ->
     "";
@@ -67,102 +65,63 @@ color_str(no_emph, C) ->
     end.
 
 
-with_color(red, Priority, Text) ->
+with_color(red, Text) ->
     case get(wololo) of
         undefined ->
-            {colored, red, Priority, Text};
+            {colored, red, Text};
         _ -> %% u didnt see it shhh
-            {colored, blue, Priority, Text}
+            {colored, blue, Text}
     end;
-with_color(Color, Priority, Text) ->
-    {colored, Color, Priority, Text}.
+with_color(Color, Text) ->
+    {colored, Color, Text}.
 
 
 reset(Text) ->
-    with_color(reset, 0, Text).
-
-reset(Text, Priority) ->
-    with_color(reset, Priority, Text).
+    with_color(reset, Text).
 
 default(Text) ->
-    with_color(default, 0, Text).
-
-default(Text, Priority) ->
-    with_color(default, Priority, Text).
+    with_color(default, Text).
 
 emph(Text) ->
-    with_color(emph, 0, Text).
-
-emph(Text, Priority) ->
-    with_color(emph, Priority, Text).
+    with_color(emph, Text).
 
 black(Text) ->
-    with_color(black, 0, Text).
-
-black(Text, Priority) ->
-    with_color(black, Priority, Text).
+    with_color(black, Text).
 
 red(Text) ->
-    with_color(red, 0, Text).
-
-red(Text, Priority) ->
-    with_color(red, Priority, Text).
+    with_color(red, Text).
 
 green(Text) ->
-    with_color(green, 0, Text).
-
-green(Text, Priority) ->
-    with_color(green, Priority, Text).
+    with_color(green, Text).
 
 yellow(Text) ->
-    with_color(yellow, 0, Text).
-
-yellow(Text, Priority) ->
-    with_color(yellow, Priority, Text).
+    with_color(yellow, Text).
 
 blue(Text) ->
-    with_color(blue, 0, Text).
-
-blue(Text, Priority) ->
-    with_color(blue, Priority, Text).
+    with_color(blue, Text).
 
 magenta(Text) ->
-    with_color(magenta, 0, Text).
-
-magenta(Text, Priority) ->
-    with_color(magenta, Priority, Text).
+    with_color(magenta, Text).
 
 cyan(Text) ->
-    with_color(cyan, 0, Text).
-
-cyan(Text, Priority) ->
-    with_color(cyan, Priority, Text).
+    with_color(cyan, Text).
 
 white(Text) ->
-    with_color(white, 0, Text).
-
-white(Text, Priority) ->
-    with_color(white, Priority, Text).
+    with_color(white, Text).
 
 
-render_colored(#repl_state{options = Opts}, C) ->
-    render_colored(Opts, C);
-render_colored(#options{colors = Coloring}, C) ->
-    render_colored(Coloring, C);
+render_colored(C) ->
+    render_colored(emph, C).
 render_colored(Coloring, C) ->
     lists:flatten(color_str(Coloring, default)
-                  ++ render_colored(Coloring, C, default, 0)
+                  ++ render_colored1(Coloring, C)
                   ++ color_str(Coloring, reset)
                  ).
-render_colored(_Coloring, [], _Prev, _Level) ->
+render_colored1(_Coloring, []) ->
     [];
-render_colored(Coloring, [S|Rest], Prev, Level) when not is_integer(S) ->
-    render_colored(Coloring, S, Prev, Level) ++ render_colored(Coloring, Rest, Prev, Level);
-render_colored(Coloring, {colored, _Color, LevelNew, Text}, Prev, Level) when LevelNew < Level ->
-    render_colored(Coloring, Text, Prev, Level);
-render_colored(Coloring, {colored, Color, LevelNew, Text}, Prev, _Level) ->
-    color_str(Coloring, Color) ++ render_colored(Coloring, Text, Color, LevelNew) ++ color_str(Coloring, Prev);
-render_colored(_Coloring, S, _Prev, _Level) when is_list(S) ->
-    S.
-
-
+render_colored1(Coloring, [C|Rest]) when is_integer(C) ->
+    [C|render_colored(Coloring, Rest)];
+render_colored1(Coloring, [S|Rest]) ->
+    render_colored(Coloring, S) ++ render_colored(Coloring, Rest);
+render_colored1(Coloring, {colored, Color, Text}) ->
+    color_str(Coloring, Color) ++ Text ++ color_str(Coloring, reset).
