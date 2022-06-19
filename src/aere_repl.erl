@@ -148,7 +148,7 @@ to_response(FallbackState, Action) ->
                 , status = internal_error
                 }
     catch error:E:Stacktrace ->
-            Msg = aere_error:internal(E, Stacktrace),
+            Msg = render_msg(FallbackState, aere_error:internal(E, Stacktrace)),
             #repl_response
                 { output = Msg
                 , warnings = []
@@ -156,7 +156,7 @@ to_response(FallbackState, Action) ->
                 };
           {error, Msg} ->
             #repl_response
-                { output = Msg
+                { output = render_msg(FallbackState, Msg)
                 , warnings = []
                 , status = error
                 }
@@ -174,7 +174,8 @@ process_input(State, type, I) ->
     Contract = aere_mock:mock_contract(Stmts),
     TAst = aere_sophia:typecheck([Contract], [dont_unfold]),
     {_, Type} = aere_sophia:type_of(TAst, ?USER_INPUT),
-    {aeso_ast_infer_types:pp_type("", Type), State};
+    TypeStr = aeso_ast_infer_types:pp_type("", Type),
+    {aere_color:output(TypeStr), State};
 process_input(State, eval, I) ->
     Parse = aere_sophia:parse_top(I),
     case Parse of
