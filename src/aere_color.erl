@@ -65,15 +65,16 @@ color_str(no_emph, C) ->
     end.
 
 
-with_color(red, Text) ->
-    case get(wololo) of
-        undefined ->
-            {colored, red, Text};
-        _ -> %% u didnt see it shhh
-            {colored, blue, Text}
-    end;
+%% with_color(red, Text) ->
+%%     case get(wololo) of
+%%         undefined ->
+%%             {colored, red, Text};
+%%         _ -> %% u didnt see it shhh
+%%             {colored, blue, Text}
+%%     end;
 with_color(Color, Text) ->
-    {colored, Color, Text}.
+    color_str(emph, Color) ++ Text ++ color_str(emph, reset).
+    %% {colored, Color, Text}.
 
 
 reset(Text) ->
@@ -123,5 +124,5 @@ render_colored1(Coloring, [C|Rest]) when is_integer(C) ->
     [C|render_colored(Coloring, Rest)];
 render_colored1(Coloring, [S|Rest]) ->
     render_colored(Coloring, S) ++ render_colored(Coloring, Rest);
-render_colored1(Coloring, {colored, Color, Text}) ->
+render_colored1(Coloring, {colored, Color, Text}) when is_list(Text) ->
     color_str(Coloring, Color) ++ Text ++ color_str(Coloring, reset).

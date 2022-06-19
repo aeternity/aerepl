@@ -108,6 +108,12 @@ handle_dispatch(#repl_state{}, {error, {ambiguous_prefix, Propositions}}) ->
                  -> repl_response().
 to_response(FallbackState, Action) ->
     try Action() of
+        {Out, State1 = #repl_state{}} ->
+            #repl_response
+                { output = Out
+                , warnings = []
+                , status = {success, State1}
+                };
         State1 = #repl_state{} ->
             #repl_response
                 { output = ""
@@ -172,24 +178,32 @@ process_input(State, eval, I) ->
 process_input(_, _, _) ->
     throw(aere_error:undefined_command()).
 
-eval_contract(Body, S1 = #repl_state{}) ->
+eval_contract(Body, S = #repl_state{user_account = Owner, blockchain_state = ChainApi}) ->
+    ContractPubkey = Owner,
+    Store = aect_contracts_store:new(),
+    Function = aeb_fate_code:symbol_identifier(<<?USER_INPUT>>),
+
     Ast = [aere_mock:mock_contract(Body)],
     TypedAst = aere_sophia:typecheck(Ast),
-    #{
-      byte_code := ByteCode
-    } = aere_sophia:compile_contract(TypedAst),
-    error(ByteCode),
-    Owner = S1#repl_state.user_account,
-    ChainApi = S1#repl_state.blockchain_state,
-    EngineState =
+    ByteCode = aere_sophia:compile_contract(TypedAst),
+    ES0 =
         aefa_engine_state:new(
           10000000000000000000, % Gas
           0, % Value
           #{caller => Owner}, % Spec
-          aefa_stores:new(),
+          aefa_stores:put_contract_store(ContractPubkey, Store, aefa_stores:new()),
           ChainApi,
           #{}, % Code cache
           aere_version:vm_version()
          ),
-    EngineStateAfter = aefa_fate:execute(EngineState),
-    aefa_engine_state:accumulator(EngineStateAfter).
+    Arguments = [],
+    Contract = aeb_fate_data:make_contract(ContractPubkey),
+    Stores =
+    ES1 = ES0,
+    Caller = aeb_fate_data:make_address(Owner),
+    ES2 = aefa_engine_state:update_for_remote_call(Owner, ByteCode, aere_version:vm_version(), Caller, ES1),
+    ES3 = aefa_fate:set_local_function(Function, false, ES2),
+    io:format("~p", [ByteCode]),
+    EngineStateAfter = aefa_fate:execute(ES3),
+    Res = aefa_engine_state:accumulator(EngineStateAfter),
+    {io_lib:format("~p", [Res]), S#repl_state{blockchain_state = aefa_engine_state:chain_api(EngineStateAfter)}}.

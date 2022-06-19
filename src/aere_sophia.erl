@@ -41,7 +41,8 @@ compile_contract(TypedAst) ->
       compiler_version => aere_version:sophia_version(),
       abi_version => aere_version:abi_version(),
       payable => maps:get(payable, FCode)
-     }.
+     },
+    Fate.
 
 type_of([{contract_main, _, _, Defs}], FunName) ->
     ArgType = fun(A) -> [T || {arg, _, _, T} <- A] end,
