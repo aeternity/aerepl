@@ -15,8 +15,7 @@
 %% Default annotation
 -spec ann() -> aeso_syntax:ann().
 ann() ->
-    [{file, <<"REPL">>}].
-
+    [{origin, system}].
 
 %% contract Name =
 %%   Body
@@ -29,14 +28,8 @@ contract(ContractType, Name, Body) ->
 
 %% Entrypoint without arguments
 %% Attrs entrypoint Name() = Body
--spec val_entrypoint(string(), aeso_syntax:expr()) -> aeso_syntax:decl().
-val_entrypoint(Name, Body) ->
-    val_entrypoint(Name, Body, []).
--spec val_entrypoint( string(), aeso_syntax:expr()
-                    , full | list(payable | stateful))
-                    -> aeso_syntax:decl().
-val_entrypoint(Name, Body, full) ->
-    val_entrypoint(Name, Body, [payable, stateful]);
+-spec val_entrypoint(string(), aeso_syntax:expr(), aeso_syntax:ann()) -> aeso_syntax:decl().
+
 val_entrypoint(Name, Body, Attrs) when is_list(Attrs) ->
     { letfun
     , ann() ++ [{A, true} || A <- [entrypoint|Attrs]]
@@ -48,7 +41,7 @@ val_entrypoint(Name, Body, Attrs) when is_list(Attrs) ->
 
 %% Contract that evals Expr and does not chain state
 -spec mock_contract(list(aeso_syntax:stmt()))
-                           -> aeso_syntax:ast().
+                           -> aeso_syntax:decl().
 mock_contract(Stmts) ->
     Body = {block, ann(), Stmts},
-    contract([val_entrypoint(?USER_INPUT, Body)]).
+    contract([val_entrypoint(?USER_INPUT, Body, [payable, stateful])]).

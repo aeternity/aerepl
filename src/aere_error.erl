@@ -26,8 +26,7 @@ bad_option(Expected) ->
      [aere_color:error(case Expected of
                             [] -> "nothing";
                             [X] -> X;
-                            [E|More] ->
-                                [E|[[", ", M] || M <- More]]
+                            [E|More] -> [E|[[", ", M] || M <- More]]
                         end), " expected"]}.
 
 unknown_option(Prop) ->

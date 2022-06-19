@@ -42,7 +42,7 @@ eval_from_file(File) ->
     MC = file:read_file(File),
     C = case MC of
             {error, Reason} ->
-                throw(aere_error:throw({file_error, File, Reason}));
+                throw(aere_error:file_error(File, Reason));
             {ok, F} -> binary_to_list(F)
     end,
     [dispatch(I) || I <- split_input(C)].
@@ -103,7 +103,6 @@ multiline_input(Provider, Acc) ->
     Line = Provider("| "),
     case string:trim(Line, both, whitespaces()) of
         ":}" -> lists:flatten(lists:reverse(Acc));
-        eof -> ":quit";
         _ -> multiline_input(Provider, [Line|Acc])
     end.
 

@@ -4,7 +4,7 @@
 -type repl_options() :: #repl_options{}.
 
 -record(repl_state,
-        { blockchain_state :: aefa_chain_api:state() %% blockchain
+        { blockchain_state :: aefa_chain_api:state()
         , repl_account :: binary()
         , options :: repl_options()
         }).
@@ -20,19 +20,11 @@
         }).
 -type repl_response() :: #repl_response{}.
 
--type coloring() :: #{color() => string()}.
+-type command_res() :: finish | {colored(), repl_state()} | repl_state() | none().
 
--type color() :: default
-               | emph
-               | black
-               | red
-               | green
-               | yellow
-               | blue
-               | magenta
-               | cyan
-               | white
-               .
+-type color() :: atom() | {[atom()], atom()}.
+
+-type coloring() :: #{atom() => color()}.
 
 -type colored()
  :: string()

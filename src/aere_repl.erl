@@ -11,6 +11,7 @@
 -include("aere_repl.hrl").
 -include("aere_macros.hrl").
 
+-spec init_options() -> repl_options().
 init_options() ->
     #repl_options{
        coloring = aere_color:coloring_default()
@@ -52,8 +53,8 @@ banner(State) ->
     render_msg(State, [SophiaC, "  ", InteractiveC]).
 
 %% Renders text by applying coloring and trimming whitespaces
--spec render_msg(repl_options() | repl_state(), colored()) -> ok.
-render_msg(_, "") -> ok;
+-spec render_msg(repl_options() | repl_state(), colored()) -> string().
+render_msg(_, "") -> "";
 render_msg(#repl_state{options = Opts}, Msg) ->
     render_msg(Opts, Msg);
 render_msg(#repl_options{coloring = Coloring}, Msg) ->
@@ -61,14 +62,57 @@ render_msg(#repl_options{coloring = Coloring}, Msg) ->
     string:trim(Render, both, aere_parse:whitespaces()).
 
 %% state + input = response
--spec process_string(repl_state(), binary() | string())
-                    -> repl_response() | finish.
+-spec process_string(repl_state(), binary() | string()) -> repl_response().
 process_string(State, String) when is_binary(String) ->
     process_string(State, binary_to_list(String));
 process_string(State, String) ->
     check_wololo(String),
-    Proc = aere_parse:dispatch(String),
-    handle_dispatch(State, Proc).
+    case aere_parse:dispatch(String) of
+        {ok, {Command, Args}} ->
+            try process_input(State, Command, Args) of
+                {Out, State1 = #repl_state{}} ->
+                    #repl_response
+                        { output = render_msg(State1, Out)
+                        , warnings = []
+                        , status = {ok, State1}
+                        };
+                State1 = #repl_state{} ->
+                    #repl_response
+                        { output = ""
+                        , warnings = []
+                        , status = {ok, State1}
+                        };
+                finish ->
+                    #repl_response
+                        { output = "bye!"
+                        , warnings = []
+                        , status = finish
+                        }
+            catch error:E:Stacktrace ->
+                    Msg = render_msg(State, aere_error:internal(E, Stacktrace)),
+                    #repl_response
+                        { output = Msg
+                        , warnings = []
+                        , status = internal_error
+                        };
+                  {error, Msg} ->
+                    #repl_response
+                        { output = render_msg(State, Msg)
+                        , warnings = []
+                        , status = error
+                        }
+            end;
+        {error, Error} ->
+            Msg = case Error of
+                      {no_such_command, Command} -> aere_error:no_such_command(Command);
+                      {ambiguous_prefix, Commands} -> aere_error:ambiguous_prefix(Commands)
+                  end,
+            #repl_response
+                { output = render_msg(State, Msg)
+                , warnings = []
+                , status = error
+                }
+    end.
 
 check_wololo(String) ->
     case string:find(String, "wololo") of
@@ -79,92 +123,8 @@ check_wololo(String) ->
             ok
     end.
 
-%% Handle result of REPL command dispatcher
--spec handle_dispatch(repl_state(), skip | {ok, {command, string()}})
-                     -> repl_response().
-handle_dispatch(State, skip) ->
-    #repl_response
-        { output = ""
-        , warnings = []
-        , status = {ok, State}
-        };
-handle_dispatch(State = #repl_state{}, {ok, {Command, Args}}) ->
-    to_response(State,
-        fun() ->
-            case process_input(State, Command, Args) of
-                NewState = #repl_state{}        -> NewState;
-                {Msg, NewState = #repl_state{}} -> {Msg, NewState};
-                Res                             -> Res
-            end
-        end);
-handle_dispatch(State = #repl_state{}, {error, {no_such_command, Command}}) ->
-    Msg = aere_error:no_such_command(Command),
-    #repl_response
-        { output = render_msg(State, Msg)
-        , warnings = []
-        , status = error
-        };
-handle_dispatch(State = #repl_state{}, {error, {ambiguous_prefix, Commands}}) ->
-    Msg = aere_error:ambiguous_prefix(Commands),
-    #repl_response
-        { output = render_msg(State, Msg)
-        , warnings = []
-        , status = error
-        }.
-
--spec to_response(repl_state(), fun(() -> finish | {string(), repl_state()} | repl_state() | none()))
-                 -> repl_response().
-to_response(FallbackState, Action) ->
-    try Action() of
-        {Out, State1 = #repl_state{}} ->
-            #repl_response
-                { output = render_msg(State1, Out)
-                , warnings = []
-                , status = {ok, State1}
-                };
-        State1 = #repl_state{} ->
-            #repl_response
-                { output = ""
-                , warnings = []
-                , status = {ok, State1}
-                };
-        skip ->
-            #repl_response
-                { output = ""
-                , warnings = []
-                , status = {ok, FallbackState}
-                };
-        finish ->
-            #repl_response
-                { output = "bye!"
-                , warnings = []
-                , status = finish
-                };
-        WTF ->
-            Msg = aere_color:error(io_lib:format("Unexpected dispatch: ~p", [WTF])),
-            #repl_response
-                { output = Msg
-                , warnings = []
-                , status = internal_error
-                }
-    catch error:E:Stacktrace ->
-            Msg = render_msg(FallbackState, aere_error:internal(E, Stacktrace)),
-            #repl_response
-                { output = Msg
-                , warnings = []
-                , status = internal_error
-                };
-          {error, Msg} ->
-            #repl_response
-                { output = render_msg(FallbackState, Msg)
-                , warnings = []
-                , status = error
-                }
-    end.
-
 %% Specific reactions to commands and inputs
--spec process_input(repl_state(), aere_parse:command(), string()) ->
-          finish | {string(), repl_state()} | repl_state() | none().
+-spec process_input(repl_state(), aere_parse:command(), string()) -> command_res().
 process_input(_, quit, _) ->
     finish;
 process_input(_, reset, _) ->
@@ -185,6 +145,7 @@ process_input(State, eval, I) ->
 process_input(_, _, _) ->
     throw(aere_error:undefined_command()).
 
+-spec eval_contract([aeso_syntax:stmt()], repl_state()) -> {colored(), repl_state()}.
 eval_contract(Body, S) ->
     Ast = [aere_mock:mock_contract(Body)],
     TypedAst = aere_sophia:typecheck(Ast),
