@@ -65,16 +65,15 @@ color_str(no_emph, C) ->
     end.
 
 
-%% with_color(red, Text) ->
-%%     case get(wololo) of
-%%         undefined ->
-%%             {colored, red, Text};
-%%         _ -> %% u didnt see it shhh
-%%             {colored, blue, Text}
-%%     end;
-with_color(Color, Text) ->
-    color_str(emph, Color) ++ Text ++ color_str(emph, reset).
-    %% {colored, Color, Text}.
+with_color(red, Text) when is_list(Text) ->
+    case get(wololo) of
+        undefined ->
+            {colored, red, Text};
+        _ -> %% u didnt see it shhh
+            {colored, blue, Text}
+    end;
+with_color(Color, Text) when is_list(Text) ->
+    {colored, Color, Text}.
 
 
 reset(Text) ->

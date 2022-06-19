@@ -1,89 +1,46 @@
 -module(aere_cli).
 
--export([run/0, run/1]).
+-export([run/0, load_deps/0]).
 
 -include("aere_repl.hrl").
 -include("aere_macros.hrl").
 
 
-join(R) ->
-    R ! {join, self()}.
-leave(R) ->
-    R ! {leave, self()}.
-query(R, S, Msg) ->
-    R ! {input, S, Msg}.
-answer(R, Msg) ->
-    R ! {answer, Msg}.
+load_deps() ->
+    code:add_pathz("node/_build/dev1/lib/aechannel/ebin/"),
+    code:add_pathz("node/_build/dev1/lib/aecontract/ebin/"),
+    code:add_pathz("node/_build/dev1/lib/aecore/ebin/"),
+    code:add_pathz("node/_build/dev1/lib/aefate/ebin/"),
+    code:add_pathz("node/_build/dev1/lib/aens/ebin/"),
+    code:add_pathz("node/_build/dev1/lib/aeoracle/ebin/"),
+    code:add_pathz("node/_build/dev1/lib/aeprimop/ebin/"),
+    code:add_pathz("node/_build/dev1/lib/aetx/ebin/"),
+    code:add_pathz("node/_build/dev1/lib/aeutils/ebin/"),
+    code:add_pathz("node/_build/dev1/lib/setup/ebin/"),
+    application:load(aechannel),
+    application:load(aecontract),
+    application:load(aecore),
+    application:load(aefate),
+    application:load(aens),
+    application:load(aeoracle),
+    application:load(aeprimop),
+    application:load(aetx),
+    application:load(aeutils),
+    application:load(setup).
 
-get_resp(R) ->
-    receive
-        {response, R, Res = #repl_response{}} -> Res;
-        finito -> finito
-    end.
 
 run() ->
-    R = spawn(aerepl@localhost, aerepl, start, []),
-    run(R),
-    leave(R).
-run(R) ->
-    join(R),
-    Resp = get_resp(R),
-    {success, InitState} = Resp#repl_response.status,
-    WithColors = InitState,
-
-    {ok, CWD} = file:get_cwd(),
-    WithCWD = WithColors,
-    print_response(WithCWD, Resp#repl_response{status = {success, WithCWD}}),
-    loop(R, WithCWD).
+    aere_gen_server:start_link(),
+    Banner = gen_server:call(aere_gen_server, banner),
+    io:format(Banner),
+    loop().
 
 
-send_input(R, query, S) ->
+loop() ->
     Inp = aere_parse:get_input(fun io:get_line/1),
-    query(R, S, Inp);
-send_input(R, answer, _) ->
-    Inp = case io:get_line("? ") of
-              eof -> "eof";
-              Str -> Str
-          end,
-    Ans = string:trim(Inp, both, aere_parse:whitespaces()),
-    answer(R, Ans).
-
-print_response(State, #repl_response
-               { output = Out
-               , warnings = Warnings
-               , status = Status
-               }) ->
-    UsedState = case Status of
-                    {success, State1} -> State1;
-                    _ -> State
-                end,
-    [aere_repl:print_msg( UsedState
-                        , [aere_color:yellow("Warning: "), W, "\n"])
-     || W <- Warnings],
+    {Status, Out} = aere_gen_server:input(Inp),
+    io:format("~s\n", [Out]),
     case Status of
-        error -> aere_repl:print_msg(UsedState, aere_color:red("ERROR"));
-        _ -> ok
-    end,
-    aere_repl:print_msg(UsedState, Out).
-
-loop(R, State) ->
-    loop(R, query, State).
-loop(R, Type, State) ->
-    send_input(R, Type, State),
-    case get_resp(R) of
-        Resp = #repl_response{} ->
-            print_response(State, Resp),
-            case Resp#repl_response.status of
-                {success, State1} ->
-                    loop(R, State1);
-                ask ->
-                    loop(R, answer, State);
-                error ->
-                    loop(R, State);
-                internal_error ->
-                    loop(R, State);
-                finito ->
-                    finito
-            end;
-        finito -> finito
+        quit -> ok;
+        _ -> loop()
     end.

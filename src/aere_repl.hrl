@@ -1,16 +1,16 @@
 -record(repl_state,
         { blockchain_state :: aefa_chain_api:state() %% blockchain
-        , user_account :: binary()
+        , repl_account :: binary()
         }).
 -type repl_state() :: repl_state().
 
 -record(repl_response,
         { output :: string()
         , warnings :: [string()]
-        , status :: {success, repl_state()}
+        , status :: {ok, repl_state()}
                   | error
                   | internal_error
-                  | finito
+                  | finish
         }).
 -type repl_response() :: repl_response().
 
