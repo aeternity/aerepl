@@ -1,3 +1,15 @@
-#!/bin/bash
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%%! -smp enable -setcookie aerepl_cookie -mnesia debug verbose
+-mode(compile).
 
-rlwrap ./aerepl.escript
+load_deps() ->
+    Paths = filelib:wildcard(
+              "_build/prod/lib/*/ebin/",
+              filename:dirname(escript:script_name())),
+    [code:add_pathz(Path) || Path <- Paths],
+    ok.
+
+main(Args) ->
+    load_deps(),
+    aerepl:main(Args).

@@ -1,6 +1,6 @@
 .PHONY: all node aerepl test clean nuke nuke-all
 
-all: node aerepl
+all:  aerepl
 
 node:
 	git submodule init
@@ -10,7 +10,6 @@ node:
 aerepl:
 	./rebar3 as prod release
 	chmod +x aerepl
-	ln -sfn _build/prod/rel/aerepl/bin/aerepl aerepl_server
 
 test:
 	./rebar3 eunit --module=aere_tests

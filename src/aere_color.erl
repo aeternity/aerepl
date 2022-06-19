@@ -1,127 +1,99 @@
 -module(aere_color).
--export([ emph/1
-        , default/1
-        , black/1
-        , red/1
-        , green/1
-        , yellow/1
-        , blue/1
-        , magenta/1
-        , cyan/1
-        , white/1
-        , render_colored/1, render_colored/2
-        , reset/1
+
+-export([ render_colored/1
+        , render_colored/2
         ]).
 
-color_str(none, _) ->
-    "";
-color_str(_, reset) ->
-    "\e[0m";
-color_str(emph, C) ->
-    case C of
-        default ->
-            "\e[0;1m";
-        emph ->
-            "\e[1m";
-        black ->
-            "\e[1;30m";
-        red ->
-            "\e[1;31m";
-        green ->
-            "\e[1;32m";
-        yellow ->
-            "\e[1;33m";
-        blue ->
-            "\e[1;34m";
-        magenta ->
-            "\e[1;35m";
-        cyan ->
-            "\e[1;36m";
-        white ->
-            "\e[1;37m"
-    end;
-color_str(no_emph, C) ->
-    case C of
-        default ->
-            "\e[0m";
-        emph ->
-            "\e[1m";
-        black ->
-            "\e[0;30m";
-        red ->
-            "\e[0;31m";
-        green ->
-            "\e[0;32m";
-        yellow ->
-            "\e[0;33m";
-        blue ->
-            "\e[0;34m";
-        magenta ->
-            "\e[0;35m";
-        cyan ->
-            "\e[0;36m";
-        white ->
-            "\e[0;37m"
+-export([ coloring_none/0
+        , coloring_default/0
+        ]).
+
+-export([ prompt/1
+        , banner/1
+        , banner_sub/1
+        , output/1
+        , error/1
+        , command/1
+        , setting/1
+        , file/1
+        ]).
+
+color_no(Color) ->
+    case Color of
+        black    -> "0";
+        red      -> "1";
+        green    -> "2";
+        yellow   -> "3";
+        blue     -> "4";
+        magenta   -> "5";
+        cyan     -> "6";
+        white    -> "7";
+        black_i  -> "8";
+        red_i    -> "9";
+        green_i  -> "10";
+        yellow_i -> "11";
+        blue_i   -> "12";
+        magenta_i -> "13";
+        cyan_i   -> "14";
+        white_i  -> "15"
     end.
 
+style_no(Style) ->
+    case Style of
+        normal    -> "0";
+        bold      -> "1";
+        faint     -> "2";
+        italic    -> "3";
+        underline -> "4";
+        blink     -> "5"
+    end.
 
-with_color(red, Text) when is_list(Text) ->
-    case get(wololo) of
-        undefined ->
-            {colored, red, Text};
-        _ -> %% u didnt see it shhh
-            {colored, blue, Text}
-    end;
-with_color(Color, Text) when is_list(Text) ->
+color_str(Color) ->
+    color_str([], Color).
+
+color_str(Styles, Color) ->
+    "\e[" ++ string:join([style_no(Style) || Style <- Styles] ++ ["38", "5", color_no(Color)], ";") ++ "m".
+
+coloring_default() ->
+    #{ prompt => {[normal], white},
+       banner => {[bold], magenta_i},
+       banner_sub => {[bold, underline], white_i},
+       output => {[bold], white_i},
+       error  => {[bold], red},
+       command => blue_i,
+       setting => yellow,
+       file => yellow_i
+    }.
+
+coloring_none() ->
+    #{}.
+
+s(Color, Text) when is_list(Text) ->
     {colored, Color, Text}.
 
-
-reset(Text) ->
-    with_color(reset, Text).
-
-default(Text) ->
-    with_color(default, Text).
-
-emph(Text) ->
-    with_color(emph, Text).
-
-black(Text) ->
-    with_color(black, Text).
-
-red(Text) ->
-    with_color(red, Text).
-
-green(Text) ->
-    with_color(green, Text).
-
-yellow(Text) ->
-    with_color(yellow, Text).
-
-blue(Text) ->
-    with_color(blue, Text).
-
-magenta(Text) ->
-    with_color(magenta, Text).
-
-cyan(Text) ->
-    with_color(cyan, Text).
-
-white(Text) ->
-    with_color(white, Text).
-
+prompt(Text) -> s(prompt, Text).
+banner(Text) -> s(banner, Text).
+banner_sub(Text) -> s(banner_sub, Text).
+output(Text) -> s(output, Text).
+error(Text) -> s(error, Text).
+command(Text) -> s(command, Text).
+setting(Text) -> s(setting, Text).
+file(Text) -> s(file, Text).
 
 render_colored(C) ->
-    render_colored(emph, C).
+    render_colored(normal, C).
 render_colored(Coloring, C) ->
-    lists:flatten(color_str(Coloring, default)
-                  ++ render_colored1(Coloring, C)
-                  ++ color_str(Coloring, reset)
-                 ).
-render_colored1(_Coloring, []) ->
+    lists:flatten(apply_color(Coloring, C)).
+
+apply_color(_Coloring, []) ->
     [];
-render_colored1(Coloring, [C|Rest]) when is_integer(C) ->
-    [C|render_colored(Coloring, Rest)];
-render_colored1(Coloring, [S|Rest]) ->
-    render_colored(Coloring, S) ++ render_colored(Coloring, Rest);
-render_colored1(Coloring, {colored, Color, Text}) when is_list(Text) ->
-    color_str(Coloring, Color) ++ Text ++ color_str(Coloring, reset).
+apply_color(Coloring, [C|Rest]) when is_integer(C) ->
+    [C|apply_color(Coloring, Rest)];
+apply_color(Coloring, [S|Rest]) ->
+    apply_color(Coloring, S) ++ apply_color(Coloring, Rest);
+apply_color(Coloring, {colored, Color, Text}) when is_list(Text) ->
+    case maps:get(Color, Coloring, none) of
+        none -> Text;
+        {Style, ColorStr} -> color_str(Style, ColorStr) ++ Text ++ color_str([normal], white);
+        ColorStr -> color_str(ColorStr) ++ Text ++ color_str([normal], white)
+    end.

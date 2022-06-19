@@ -1,54 +1,22 @@
 -module(aerepl).
 
--export([ main/1, start/0, loop/1]).
-
--include("aere_repl.hrl").
--include("aere_macros.hrl").
+-export([main/1, start/0]).
 
 main(_Args) ->
     start().
 
 start() ->
     erlang:system_flag(backtrace_depth, 100),
-    loop([]).
+    {ok, _} = aere_gen_server:start_link(),
+    Banner = gen_server:call(aere_gen_server, banner),
+    io:format(Banner ++ "\n\n"),
+    loop().
 
--spec init_message() -> {response, pid(), repl_response()}.
-init_message() ->
-    {response, self(), #repl_response
-     { output = aere_repl:banner()
-     , warnings = []
-     , status = {success, aere_repl:init_state()}
-     }}.
-
-finito(Clients) ->
-    [C ! finito || C <- Clients],
-    finito.
-
-loop(Clients) ->
-    receive
-        {join, Client} when is_pid(Client) ->
-            ?IF(lists:member(Client, Clients),
-                loop(Clients),
-                begin Client ! init_message(),
-                      loop([Client|Clients])
-                end
-               );
-        {leave, Client} -> lists:delete(Client, Clients);
-        {input, S = #repl_state{}, I} ->
-                case process_input(Clients, S, I) of
-                    continue -> loop(Clients);
-                    finito -> finito(Clients)
-                end,
-                loop(Clients);
-        finito -> finito(Clients)
-    after 2000000000 -> finito(Clients)
-    end.
-
-process_input(Clients, State, Inp) ->
-    case aere_repl:process_string(State, Inp) of
-        Resp = #repl_response{} ->
-            [C ! {response, self(), Resp}
-             || C <- Clients
-            ],
-            continue
+loop() ->
+    Inp = aere_parse:get_input(fun io:get_line/1),
+    {Status, Out} = aere_gen_server:input(Inp),
+    io:format("~s\n", [Out]),
+    case Status of
+        finish -> ok;
+        _ -> loop()
     end.

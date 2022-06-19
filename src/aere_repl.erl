@@ -5,12 +5,16 @@
 
 -module(aere_repl).
 
--export([ init_state/0, process_string/2
-        , print_msg/1, render_msg/1, banner/0
+-export([ init_state/0, process_string/2, banner/1
         ]).
 
 -include("aere_repl.hrl").
 -include("aere_macros.hrl").
+
+init_options() ->
+    #repl_options{
+       coloring = aere_color:coloring_default()
+      }.
 
 -spec init_state() -> repl_state().
 init_state() ->
@@ -23,38 +27,38 @@ init_state() ->
                       tx_env => aere_chain:default_tx_env(1)
                    }
                   ),
-    #repl_state{ blockchain_state = ChainState
-               , repl_account = PK
-               }.
+    #repl_state{
+       blockchain_state = ChainState,
+       repl_account = PK,
+       options = init_options()
+      }.
 
+banner(State) ->
+    Sophia =
+        "    ____\n"
+        "   / __ | ,             _     _\n"
+        "  / / |_|  )           | |   (_)\n"
+        " ( (_____,-` ___  _ __ | |__  _  __ _\n"
+        "  \\______ \\ / _ \\| '_ \\| '_ \\| |/ _` |\n"
+        "  ,-`    ) ) (_) ) |_) ) | | | | (_| |\n"
+        " (  ____/ / \\___/| .__/|_| |_|_|\\__,_|\n"
+        "  `(_____/       | |\n"
+        "                 |_|",
+    Interactive = "interactive",
 
--spec banner() -> string().
-banner() ->
-"
-    ____
-   / __ | ,             _     _
-  / / |_|  )           | |   (_)
- ( (_____,-` ___  _ __ | |__  _  __ _
-  \\______ \\ / _ \\| '_ \\| '_ \\| |/ _` |
-  ,-`    ) ) (_) ) |_) ) | | | | (_| |
- (  ____/ / \\___/| .__/|_| |_|_|\\__,_|
-  `(_____/       | |
-                 |_|  interactive
+    SophiaC = aere_color:banner(Sophia),
+    InteractiveC = aere_color:banner_sub(Interactive),
 
-".
+    render_msg(State, [SophiaC, "  ", InteractiveC]).
 
-%% Renders colored and untrimmed text into a string
--spec render_msg(colored()) -> string().
-render_msg(Msg) ->
-    lists:flatten(aere_color:render_colored(Msg)).
-
-
-%% Renders and prints message
--spec print_msg(colored()) -> ok.
-print_msg("") -> ok;
-print_msg(M) ->
-    Render = render_msg(M),
-    io:format("~s\n", [string:trim(Render, both, aere_parse:whitespaces())]).
+%% Renders text by applying coloring and trimming whitespaces
+-spec render_msg(repl_options() | repl_state(), colored()) -> ok.
+render_msg(_, "") -> ok;
+render_msg(#repl_state{options = Opts}, Msg) ->
+    render_msg(Opts, Msg);
+render_msg(#repl_options{coloring = Coloring}, Msg) ->
+    Render = lists:flatten(aere_color:render_colored(Coloring, Msg)),
+    string:trim(Render, both, aere_parse:whitespaces()).
 
 %% state + input = response
 -spec process_string(repl_state(), binary() | string())
@@ -93,17 +97,17 @@ handle_dispatch(State = #repl_state{}, {ok, {Command, Args}}) ->
                 Res                             -> Res
             end
         end);
-handle_dispatch(#repl_state{}, {error, {no_such_command, Command}}) ->
+handle_dispatch(State = #repl_state{}, {error, {no_such_command, Command}}) ->
     Msg = aere_error:no_such_command(Command),
     #repl_response
-        { output = Msg
+        { output = render_msg(State, Msg)
         , warnings = []
         , status = error
         };
-handle_dispatch(#repl_state{}, {error, {ambiguous_prefix, Commands}}) ->
+handle_dispatch(State = #repl_state{}, {error, {ambiguous_prefix, Commands}}) ->
     Msg = aere_error:ambiguous_prefix(Commands),
     #repl_response
-        { output = Msg
+        { output = render_msg(State, Msg)
         , warnings = []
         , status = error
         }.
@@ -114,7 +118,7 @@ to_response(FallbackState, Action) ->
     try Action() of
         {Out, State1 = #repl_state{}} ->
             #repl_response
-                { output = Out
+                { output = render_msg(State1, Out)
                 , warnings = []
                 , status = {ok, State1}
                 };
@@ -132,14 +136,12 @@ to_response(FallbackState, Action) ->
                 };
         finish ->
             #repl_response
-                { output = ""
+                { output = "bye!"
                 , warnings = []
                 , status = finish
                 };
         WTF ->
-            Msg = aere_color:emph(
-                    aere_color:red(
-                      io_lib:format("Unexpected dispatch: ~p", [WTF]))),
+            Msg = aere_color:error(io_lib:format("Unexpected dispatch: ~p", [WTF])),
             #repl_response
                 { output = Msg
                 , warnings = []
@@ -187,12 +189,14 @@ eval_contract(Body, S) ->
     TypedAst = aere_sophia:typecheck(Ast),
     ByteCode = aere_sophia:compile_contract(TypedAst),
 
-    io:format("~p", [ByteCode]),
     ES0 = setup_fate_state(ByteCode, S),
     ES1 = aefa_fate:execute(ES0),
     Res = aefa_engine_state:accumulator(ES1),
     ChainApi1 = aefa_engine_state:chain_api(ES1),
-    {io_lib:format("~p", [Res]), S#repl_state{blockchain_state = ChainApi1}}.
+
+    ResStr = io_lib:format("~p", [Res]),
+
+    {aere_color:output(ResStr), S#repl_state{blockchain_state = ChainApi1}}.
 
 setup_fate_state(ByteCode, #repl_state{repl_account = Owner, blockchain_state = ChainApi}) ->
 

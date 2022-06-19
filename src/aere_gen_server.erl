@@ -45,7 +45,7 @@ handle_call({input, Input}, _From, State) ->
     {Output, State1} = process_input(Input, State),
     {reply, Output, State1};
 handle_call(banner, _From, State) ->
-    {reply, aere_repl:banner(), State}.
+    {reply, aere_repl:banner(State), State}.
 
 handle_cast(reset, _) ->
     {noreply, new_state()};
