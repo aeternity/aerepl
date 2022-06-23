@@ -64,7 +64,7 @@ coloring_default() ->
        command => blue_i,
        setting => yellow,
        file => yellow_i,
-       info => {[italic, faint], white}
+       info => {[italic, faint], white_i}
     }.
 
 coloring_none() ->
@@ -72,7 +72,9 @@ coloring_none() ->
 
 s(_, "") -> "";
 s(Color, Text) when is_list(Text) ->
-    [{colored, Color, Text}].
+    [{colored, Color, Text}];
+s(Color, B) when is_binary(B) ->
+    s(Color, binary:bin_to_list(B)).
 
 prompt(Text) -> s(prompt, Text).
 banner(Text) -> s(banner, Text).
@@ -87,7 +89,7 @@ info(Text) -> s(info, Text).
 render_colored(C) ->
     render_colored(normal, C).
 render_colored(Coloring, C) ->
-    lists:flatten(apply_color(Coloring, C)).
+    lists:flatten(apply_color(Coloring, [C])).
 
 apply_color(_Coloring, []) ->
     [];
@@ -100,4 +102,6 @@ apply_color(Coloring, {colored, Color, Text}) when is_list(Text) ->
         none -> Text;
         {Style, ColorStr} -> color_str(Style, ColorStr) ++ Text ++ color_str([normal], white);
         ColorStr -> color_str(ColorStr) ++ Text ++ color_str([normal], white)
-    end.
+    end;
+apply_color(_, B) when is_binary(B) ->
+    binary:bin_to_list(B).

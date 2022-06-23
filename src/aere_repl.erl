@@ -95,7 +95,8 @@ process_string(State, String) ->
                         , warnings = []
                         , status = internal_error
                         };
-                  {error, Msg} ->
+                  {aefa_fate, revert, ErrMsg, _} ->
+                    Msg = aere_color:error("ABORT: ") ++ aere_color:info(ErrMsg),
                     #repl_response
                         { output = render_msg(State, Msg)
                         , warnings = []
