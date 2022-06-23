@@ -1,6 +1,6 @@
 -module(aere_sophia).
 
--export([ typecheck/2, typecheck/1, parse_file/2, parse_file/3, compile_contract/1
+-export([ typecheck/3, typecheck/2, typecheck/1, parse_file/2, parse_file/3, compile_contract/1
         , parse_body/1, parse_top/2
         , parse_decl/1, parse_top/1, parse_type/1, type_of/2
         , generate_interface_decl/1, process_err/1, get_pat_ids/1
@@ -9,7 +9,6 @@
         ]).
 
 -include("../_build/default/lib/aesophia/src/aeso_parse_lib.hrl").
--include("aere_repl.hrl").
 -include("aere_macros.hrl").
 
 process_err(Errs) when is_list(Errs) ->
@@ -21,8 +20,10 @@ process_err(E) -> %% idk, rethrow
 typecheck(Ast) ->
     typecheck(Ast, []).
 typecheck(Ast, Opts) ->
+    typecheck(fun() -> aeso_ast_infer_types:init_env(Opts) end, Ast, Opts).
+typecheck(Env, Ast, Opts) ->
     try
-        {_, UnfoldedTypedAst, _} = aeso_ast_infer_types:infer(Ast, Opts),
+        {_, UnfoldedTypedAst, _} = aeso_ast_infer_types:infer(Env, Ast, Opts),
         UnfoldedTypedAst
     catch _:{error, Errs} ->
               throw({error, process_err(Errs)})
@@ -44,7 +45,7 @@ compile_contract(TypedAst) ->
      },
     Fate.
 
-type_of([{contract_main, _, _, Defs}], FunName) ->
+type_of([{contract_main, _, _, _, Defs}], FunName) ->
     ArgType = fun(A) -> [T || {arg, _, _, T} <- A] end,
     GetType = fun({letfun, _, {id, _, Name}, Args, Ret, _})
                     when Name == FunName -> [{Args, Ret}];

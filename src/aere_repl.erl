@@ -131,8 +131,8 @@ process_input(_, reset, _) ->
     init_state();
 process_input(State, type, I) ->
     Stmts = aere_sophia:parse_body(I),
-    Contract = aere_mock:mock_contract(Stmts),
-    TAst = aere_sophia:typecheck([Contract], [dont_unfold]),
+    Contract = aere_mock:eval_contract(Stmts),
+    TAst = aere_sophia:typecheck(Contract, [dont_unfold]),
     {_, Type} = aere_sophia:type_of(TAst, ?USER_INPUT),
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
     {aere_color:output(TypeStr), State};
@@ -140,36 +140,58 @@ process_input(State, eval, I) ->
     Parse = aere_sophia:parse_top(I),
     case Parse of
         {body, Body} ->
-            eval_contract(Body, State)
+            eval_expr(Body, State);
+        [{include, _, {string, _, Inc}}] ->
+            throw(unimplemented);
+        [{letval, _, Pat, Expr}] ->
+            register_letval(Pat, Expr, State)
     end;
 process_input(_, _, _) ->
     throw(aere_error:undefined_command()).
 
--spec eval_contract([aeso_syntax:stmt()], repl_state()) -> {colored(), repl_state()}.
-eval_contract(Body, S) ->
-    Ast = [aere_mock:mock_contract(Body)],
+-spec eval_expr([aeso_syntax:stmt()], repl_state()) -> command_res().
+eval_expr(Body, S0) ->
+    Ast = aere_mock:eval_contract(Body, S0),
+    {Res, S1} = compile_and_run_contract(Ast, S0),
+    ResStr = io_lib:format("~p", [Res]),
+    {aere_color:output(ResStr), S1}.
+
+register_letval(Pat, Expr, S0 = #repl_state{vars = Vars}) ->
+    NewVars = lists:filter(fun(Var) -> Var /= "_" end, aeso_syntax_utils:used_ids({letfun, [], [], [], [], Pat})), % hack: used_ids require decl and then expr
+    Ast = aere_mock:letval_contract(Pat, NewVars, Expr, S0),
+    TypedAst = aere_sophia:typecheck(Ast, []),
+    ByteCode = aere_sophia:compile_contract(TypedAst),
+    {_, {tuple_t, _, Types}} = aere_sophia:type_of(TypedAst, ?USER_INPUT),
+    {ValsPack, S1} = run_contract(ByteCode, S0),
+    Vals = case ValsPack of
+               {tuple, Vs} -> tuple_to_list(Vs);
+               _ -> [ValsPack]
+           end,
+    S1#repl_state{vars = lists:zip3(NewVars, Types, Vals) ++ Vars}.
+
+-spec compile_and_run_contract([aeso_syntax:ast()], repl_state()) -> {term(), repl_state()}.
+compile_and_run_contract(Ast, S) ->
     TypedAst = aere_sophia:typecheck(Ast),
     ByteCode = aere_sophia:compile_contract(TypedAst),
+    run_contract(ByteCode, S).
 
+run_contract(ByteCode, S) ->
     ES0 = setup_fate_state(ByteCode, S),
     ES1 = aefa_fate:execute(ES0),
     Res = aefa_engine_state:accumulator(ES1),
     ChainApi1 = aefa_engine_state:chain_api(ES1),
+    {Res,  S#repl_state{blockchain_state = ChainApi1}}.
 
-    ResStr = io_lib:format("~p", [Res]),
-
-    {aere_color:output(ResStr), S#repl_state{blockchain_state = ChainApi1}}.
-
-setup_fate_state(ByteCode, #repl_state{repl_account = Owner, blockchain_state = ChainApi}) ->
+setup_fate_state(ByteCode, #repl_state{repl_account = Owner, blockchain_state = ChainApi, vars = Vars}) ->
 
     Store = aect_contracts_store:new(),
     Function = aeb_fate_code:symbol_identifier(<<?USER_INPUT>>),
 
     Caller = aeb_fate_data:make_address(Owner),
 
-    setup_fate_state(Owner, ByteCode, Owner, Caller, Function, 100000000, 0, Store, ChainApi).
+    setup_fate_state(Owner, ByteCode, Owner, Caller, Function, Vars, 100000000, 0, Store, ChainApi).
 
-setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Gas, Value, Store, ChainApi) ->
+setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, Store, ChainApi) ->
     ES0 =
         aefa_engine_state:new(
           Gas,
@@ -182,5 +204,6 @@ setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Gas, Value, Store,
          ),
     ES1 = aefa_engine_state:update_for_remote_call(Owner, ByteCode, aere_version:vm_version(), Caller, ES0),
     ES2 = aefa_fate:set_local_function(Function, false, ES1),
+    ES3 = aefa_fate:bind_args([Arg || {_, _, Arg} <- Vars], ES2),
 
-    ES2.
+    ES3.

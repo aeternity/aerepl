@@ -7,6 +7,7 @@
         { blockchain_state :: aefa_chain_api:state()
         , repl_account :: binary()
         , options :: repl_options()
+        , vars = [{"one", {id, [], "int"}, 1}] :: [{string(), aeso_syntax:type(), term()}]
         }).
 -type repl_state() :: #repl_state{}.
 
