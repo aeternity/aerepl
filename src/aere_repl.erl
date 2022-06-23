@@ -152,9 +152,13 @@ process_input(_, _, _) ->
 -spec eval_expr([aeso_syntax:stmt()], repl_state()) -> command_res().
 eval_expr(Body, S0) ->
     Ast = aere_mock:eval_contract(Body, S0),
-    {Res, S1} = compile_and_run_contract(Ast, S0),
+    {Res, UsedGas, S1} = compile_and_run_contract(Ast, S0),
     ResStr = io_lib:format("~p", [Res]),
-    {aere_color:output(ResStr), S1}.
+    GasStr = case (S0#repl_state.options)#repl_options.display_gas of
+                 false -> "";
+                 true -> io_lib:format("\nUSED GAS: ~p", [UsedGas])
+             end,
+    {aere_color:output(ResStr) ++ aere_color:info(GasStr), S1}.
 
 register_letval(Pat, Expr, S0 = #repl_state{vars = Vars}) ->
     NewVars = lists:filter(fun(Var) -> Var /= "_" end, aeso_syntax_utils:used_ids({letfun, [], [], [], [], Pat})), % hack: used_ids require decl and then expr
@@ -162,7 +166,7 @@ register_letval(Pat, Expr, S0 = #repl_state{vars = Vars}) ->
     TypedAst = aere_sophia:typecheck(Ast, []),
     ByteCode = aere_sophia:compile_contract(TypedAst),
     {_, {tuple_t, _, Types}} = aere_sophia:type_of(TypedAst, ?USER_INPUT),
-    {ValsPack, S1} = run_contract(ByteCode, S0),
+    {ValsPack, _, S1} = run_contract(ByteCode, S0),
     Vals = case ValsPack of
                {tuple, Vs} -> tuple_to_list(Vs);
                _ -> [ValsPack]
@@ -180,16 +184,24 @@ run_contract(ByteCode, S) ->
     ES1 = aefa_fate:execute(ES0),
     Res = aefa_engine_state:accumulator(ES1),
     ChainApi1 = aefa_engine_state:chain_api(ES1),
-    {Res,  S#repl_state{blockchain_state = ChainApi1}}.
+    UsedGas = (S#repl_state.options)#repl_options.call_gas - aefa_engine_state:gas(ES1),
+    {Res, UsedGas, S#repl_state{blockchain_state = ChainApi1}}.
 
-setup_fate_state(ByteCode, #repl_state{repl_account = Owner, blockchain_state = ChainApi, vars = Vars}) ->
+setup_fate_state(
+  ByteCode,
+  #repl_state{
+     repl_account = Owner,
+     blockchain_state = ChainApi,
+     vars = Vars,
+     options = #repl_options{call_gas = Gas}
+    }) ->
 
     Store = aect_contracts_store:new(),
     Function = aeb_fate_code:symbol_identifier(<<?USER_INPUT>>),
 
     Caller = aeb_fate_data:make_address(Owner),
 
-    setup_fate_state(Owner, ByteCode, Owner, Caller, Function, Vars, 100000000, 0, Store, ChainApi).
+    setup_fate_state(Owner, ByteCode, Owner, Caller, Function, Vars, Gas, _Value = 0, Store, ChainApi).
 
 setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, Store, ChainApi) ->
     ES0 =

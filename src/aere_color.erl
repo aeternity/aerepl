@@ -16,6 +16,7 @@
         , command/1
         , setting/1
         , file/1
+        , info/1
         ]).
 
 color_no(Color) ->
@@ -62,14 +63,16 @@ coloring_default() ->
        error  => {[bold], red},
        command => blue_i,
        setting => yellow,
-       file => yellow_i
+       file => yellow_i,
+       info => {[italic, faint], white}
     }.
 
 coloring_none() ->
     #{}.
 
+s(_, "") -> "";
 s(Color, Text) when is_list(Text) ->
-    {colored, Color, Text}.
+    [{colored, Color, Text}].
 
 prompt(Text) -> s(prompt, Text).
 banner(Text) -> s(banner, Text).
@@ -79,6 +82,7 @@ error(Text) -> s(error, Text).
 command(Text) -> s(command, Text).
 setting(Text) -> s(setting, Text).
 file(Text) -> s(file, Text).
+info(Text) -> s(info, Text).
 
 render_colored(C) ->
     render_colored(normal, C).

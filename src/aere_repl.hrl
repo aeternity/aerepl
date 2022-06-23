@@ -1,5 +1,7 @@
 -record(repl_options,
         { coloring :: coloring()
+        , display_gas = true :: boolean()
+        , call_gas = 1000000000000000000 :: pos_integer()
         }).
 -type repl_options() :: #repl_options{}.
 
@@ -7,7 +9,7 @@
         { blockchain_state :: aefa_chain_api:state()
         , repl_account :: binary()
         , options :: repl_options()
-        , vars = [{"one", {id, [], "int"}, 1}] :: [{string(), aeso_syntax:type(), term()}]
+        , vars = []
         }).
 -type repl_state() :: #repl_state{}.
 
