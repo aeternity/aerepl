@@ -29,7 +29,7 @@ init_state() ->
                    }
                   ),
     #repl_state{
-       blockchain_state = ChainState,
+       blockchain_state = {ready, ChainState},
        repl_account = PK,
        options = init_options()
       }.
@@ -95,12 +95,26 @@ process_string(State, String) ->
                         , warnings = []
                         , status = internal_error
                         };
+                  error:E ->
+                    Msg = render_msg(State, aere_error:internal(E)),
+                    #repl_response
+                        { output = Msg
+                        , warnings = []
+                        , status = internal_error
+                        };
                   {aefa_fate, revert, ErrMsg, _} ->
                     Msg = aere_color:error("ABORT: ") ++ aere_color:info(ErrMsg),
                     #repl_response
                         { output = render_msg(State, Msg)
                         , warnings = []
                         , status = error
+                        };
+                  {aefa_fate, FateErr, _} ->
+                    Msg = aere_color:error(FateErr),
+                    #repl_response
+                        { output = render_msg(State, Msg)
+                        , warnings = []
+                        , status = internal_error
                         }
             end;
         {error, Error} ->
@@ -132,7 +146,7 @@ process_input(_, reset, _) ->
     init_state();
 process_input(State, type, I) ->
     Stmts = aere_sophia:parse_body(I),
-    Contract = aere_mock:eval_contract(Stmts),
+    Contract = aere_mock:eval_contract(Stmts, State),
     TAst = aere_sophia:typecheck(Contract, [dont_unfold]),
     {_, Type} = aere_sophia:type_of(TAst, ?USER_INPUT),
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
@@ -147,6 +161,16 @@ process_input(State, eval, I) ->
         [{letval, _, Pat, Expr}] ->
             register_letval(Pat, Expr, State)
     end;
+process_input(State = #repl_state{blockchain_state = BS}, continue, _) ->
+    case BS of
+        {ready, _} ->
+            {aere_color:error("Not at breakpoint!"), State};
+        {breakpoint, ES} ->
+            Stack = aefa_engine_state:accumulator_stack(ES),
+            StackS = io_lib:format("~p", [Stack]),
+            {StackS, State}
+    end;
+
 process_input(_, _, _) ->
     throw(aere_error:undefined_command()).
 
@@ -162,16 +186,19 @@ eval_expr(Body, S0) ->
     {aere_color:output(ResStr) ++ aere_color:info(GasStr), S1}.
 
 register_letval(Pat, Expr, S0 = #repl_state{vars = Vars}) ->
-    NewVars = lists:filter(fun(Var) -> Var /= "_" end, aeso_syntax_utils:used_ids({letfun, [], [], [], [], Pat})), % hack: used_ids require decl and then expr
+    NewVars = lists:filter(
+                fun(Var) -> Var /= "_" end,
+                aeso_syntax_utils:used_ids({letfun, [], [], [], [], Pat})), % hack: used_ids require decl and then expr
     Ast = aere_mock:letval_contract(Pat, NewVars, Expr, S0),
     TypedAst = aere_sophia:typecheck(Ast, []),
     ByteCode = aere_sophia:compile_contract(TypedAst),
-    {_, {tuple_t, _, Types}} = aere_sophia:type_of(TypedAst, ?USER_INPUT),
-    {ValsPack, _, S1} = run_contract(ByteCode, S0),
-    Vals = case ValsPack of
-               {tuple, Vs} -> tuple_to_list(Vs);
-               _ -> [ValsPack]
-           end,
+
+    %% AddedFuns = [F || F <- maps:values(FunNameMap)],
+
+    {_, {tuple_t, _, [_|Types]}} = aere_sophia:type_of(TypedAst, ?USER_INPUT),
+
+    {{tuple,ValsPack}, _, S1} = run_contract(ByteCode, S0),
+    [ <<?LETVAL_INDICATOR>>|Vals] = tuple_to_list(ValsPack),
     S1#repl_state{vars = lists:zip3(NewVars, Types, Vals) ++ Vars}.
 
 -spec compile_and_run_contract([aeso_syntax:ast()], repl_state()) -> {term(), repl_state()}.
@@ -182,17 +209,26 @@ compile_and_run_contract(Ast, S) ->
 
 run_contract(ByteCode, S) ->
     ES0 = setup_fate_state(ByteCode, S),
+    eval_state(ES0, S).
+
+eval_state(ES0, S) ->
     ES1 = aefa_fate:execute(ES0),
-    Res = aefa_engine_state:accumulator(ES1),
-    ChainApi1 = aefa_engine_state:chain_api(ES1),
-    UsedGas = (S#repl_state.options)#repl_options.call_gas - aefa_engine_state:gas(ES1),
-    {Res, UsedGas, S#repl_state{blockchain_state = ChainApi1}}.
+
+    Res       = aefa_engine_state:accumulator(ES1),
+    ChainApi  = aefa_engine_state:chain_api(ES1),
+    UsedGas   = (S#repl_state.options)#repl_options.call_gas - aefa_engine_state:gas(ES1),
+    Break     = aefa_engine_state:at_breakpoint(ES1),
+
+    case Break of
+        true -> {"BREAK", UsedGas, S#repl_state{blockchain_state = {breakpoint, ES1}}};
+        false -> {Res, UsedGas, S#repl_state{blockchain_state = {ready, ChainApi}}}
+    end.
 
 setup_fate_state(
   ByteCode,
   #repl_state{
      repl_account = Owner,
-     blockchain_state = ChainApi,
+     blockchain_state = {ready, ChainApi},
      vars = Vars,
      options = #repl_options{call_gas = Gas}
     }) ->
@@ -215,7 +251,7 @@ setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, 
           #{}, % Code cache
           aere_version:vm_version()
          ),
-    ES1 = aefa_engine_state:update_for_remote_call(Owner, ByteCode, aere_version:vm_version(), Caller, ES0),
+    ES1 = aefa_engine_state:update_for_remote_call(Contract, ByteCode, aere_version:vm_version(), Caller, ES0),
     ES2 = aefa_fate:set_local_function(Function, false, ES1),
     ES3 = aefa_fate:bind_args([Arg || {_, _, Arg} <- Vars], ES2),
 

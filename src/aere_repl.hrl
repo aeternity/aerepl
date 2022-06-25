@@ -5,8 +5,11 @@
         }).
 -type repl_options() :: #repl_options{}.
 
+-type chain_state() :: {ready, aefa_chain_api:state()}
+                     | {breakpoint, aefa_engine_state:state()}.
+
 -record(repl_state,
-        { blockchain_state :: aefa_chain_api:state()
+        { blockchain_state :: chain_state()
         , repl_account :: binary()
         , options :: repl_options()
         , vars = []

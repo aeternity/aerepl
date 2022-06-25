@@ -1,6 +1,6 @@
 -module(aere_sophia).
 
--export([ typecheck/3, typecheck/2, typecheck/1, parse_file/2, parse_file/3, compile_contract/1
+-export([ typecheck/2, typecheck/1, parse_file/2, parse_file/3, compile_contract/1
         , parse_body/1, parse_top/2
         , parse_decl/1, parse_top/1, parse_type/1, type_of/2
         , generate_interface_decl/1, process_err/1, get_pat_ids/1
@@ -20,10 +20,8 @@ process_err(E) -> %% idk, rethrow
 typecheck(Ast) ->
     typecheck(Ast, []).
 typecheck(Ast, Opts) ->
-    typecheck(fun() -> aeso_ast_infer_types:init_env(Opts) end, Ast, Opts).
-typecheck(Env, Ast, Opts) ->
     try
-        {_, UnfoldedTypedAst, _} = aeso_ast_infer_types:infer(Env, Ast, Opts),
+        {_, UnfoldedTypedAst, _} = aeso_ast_infer_types:infer(Ast, Opts),
         UnfoldedTypedAst
     catch _:{error, Errs} ->
               throw({error, process_err(Errs)})
