@@ -159,7 +159,9 @@ process_input(State, eval, I) ->
         [{include, _, {string, _, Inc}}] ->
             throw(unimplemented);
         [{letval, _, Pat, Expr}] ->
-            register_letval(Pat, Expr, State)
+            register_letval(Pat, Expr, State);
+        [{letfun, _, FName, Args, _, Body}] ->
+            register_letfun(FName, Args, Body, State)
     end;
 process_input(State = #repl_state{blockchain_state = BS}, continue, _) ->
     case BS of
@@ -185,21 +187,87 @@ eval_expr(Body, S0) ->
              end,
     {aere_color:output(ResStr) ++ aere_color:info(GasStr), S1}.
 
-register_letval(Pat, Expr, S0 = #repl_state{vars = Vars}) ->
+register_letval(Pat, Expr, S0 = #repl_state{funs = Funs}) ->
     NewVars = lists:filter(
                 fun(Var) -> Var /= "_" end,
-                aeso_syntax_utils:used_ids({letfun, [], [], [], [], Pat})), % hack: used_ids require decl and then expr
+                aeso_syntax_utils:used_ids({letfun, 0, 0, [], 0, Pat})), % hack: used_ids require decl and then expr
     Ast = aere_mock:letval_contract(Pat, NewVars, Expr, S0),
     TypedAst = aere_sophia:typecheck(Ast, []),
     ByteCode = aere_sophia:compile_contract(TypedAst),
-
-    %% AddedFuns = [F || F <- maps:values(FunNameMap)],
 
     {_, {tuple_t, _, [_|Types]}} = aere_sophia:type_of(TypedAst, ?USER_INPUT),
 
     {{tuple,ValsPack}, _, S1} = run_contract(ByteCode, S0),
     [ <<?LETVAL_INDICATOR>>|Vals] = tuple_to_list(ValsPack),
-    S1#repl_state{vars = lists:zip3(NewVars, Types, Vals) ++ Vars}.
+
+    NameMap = build_fresh_name_map(ByteCode),
+    Vals1 = replace_function_name(Vals, NameMap),
+
+    Vars1 = lists:zip3(NewVars, Types, Vals1),
+    Funs1 = generated_functions(ByteCode, NameMap),
+
+    S2 = register_vars(Vars1, S1),
+
+    S2#repl_state{funs = maps:merge(Funs, Funs1)}.
+
+build_fresh_name_map(ByteCode) ->
+    Symbols = aeb_fate_code:symbols(ByteCode),
+    AddedFuns = [FSym || {FSym, FName} <- maps:to_list(Symbols), not ?IS_REPL_ENTRYPOINT(FName)],
+    NewAddedFuns = [binary:list_to_bin(erlang:ref_to_list(make_ref()))|| _ <- AddedFuns],
+    maps:from_list(lists:zip(AddedFuns, NewAddedFuns)).
+
+generated_functions(ByteCode, NameMap) ->
+    Funs = maps:to_list(aeb_fate_code:functions(ByteCode)),
+    Filter = fun({FName, Def}) ->
+                     not ?IS_REPL_ENTRYPOINT(FName) andalso
+                         {true, {maps:get(FName, NameMap, FName), replace_function_name(Def, NameMap)}}
+             end,
+    maps:from_list(lists:filtermap(Filter, Funs)).
+
+replace_function_name({tuple, {FName, Closure}}, NameMap) when is_binary(FName) ->
+    {tuple, {maps:get(FName, NameMap, FName), Closure}};
+replace_function_name(E = {I, {immediate, FName}}, NameMap) when is_atom(I) andalso is_binary(FName) ->
+    case atom_to_list(I) of
+        "CALL" ++ _ -> {I, {immediate, maps:get(FName, NameMap, FName)}};
+        _ -> E
+    end;
+replace_function_name(T, NameMap) when is_tuple(T) ->
+    list_to_tuple(replace_function_name(tuple_to_list(T), NameMap));
+replace_function_name([H|T], NameMap) ->
+    [replace_function_name(H, NameMap)|replace_function_name(T, NameMap)];
+replace_function_name(M, NameMap) when is_map(M) ->
+    maps:from_list(replace_function_name(maps:to_list(M), NameMap));
+replace_function_name(E, _) ->
+    E.
+
+register_letfun(Name = {id, _, SName}, Args, Body, S0 = #repl_state{vars = Vars, funs = Funs}) ->
+    Ast = aere_mock:letfun_contract(Name, Args, Body, S0),
+    TypedAst = aere_sophia:typecheck(Ast, []),
+    ByteCode = aere_sophia:compile_contract(TypedAst),
+
+    {_, {fun_t, Ann, [], ArgsT0, RetT}} = aere_sophia:type_of(TypedAst, ?USER_INPUT),
+    Type = {fun_t, Ann, [], tl(ArgsT0), RetT}, % Remove closure
+
+    NameMap = build_fresh_name_map(ByteCode),
+
+    Funs1 = generated_functions(ByteCode, NameMap),
+
+    FunClosure = make_closure(Vars),
+    FunNewName = maps:get(aeb_fate_code:symbol_identifier(binary:list_to_bin(SName)), NameMap),
+    FunVal = {tuple, {FunNewName, FunClosure}},
+
+    S1 = register_vars([{SName, Type, FunVal}], S0),
+
+    S1#repl_state{funs = maps:merge(Funs, Funs1)}.
+
+register_vars(NewVars, S = #repl_state{vars = OldVars}) ->
+    Filtered = [V || V = {Name, _, _} <- OldVars, [] =:= proplists:lookup_all(Name, NewVars)],
+    S#repl_state{vars = NewVars ++ Filtered}.
+
+make_closure([{_, _, V}]) ->
+    V;
+make_closure(Vars) ->
+    {tuple, list_to_tuple([V || {_, _, V} <- Vars])}.
 
 -spec compile_and_run_contract([aeso_syntax:ast()], repl_state()) -> {term(), repl_state()}.
 compile_and_run_contract(Ast, S) ->
@@ -230,6 +298,7 @@ setup_fate_state(
      repl_account = Owner,
      blockchain_state = {ready, ChainApi},
      vars = Vars,
+     funs = Funs,
      options = #repl_options{call_gas = Gas}
     }) ->
 
@@ -238,9 +307,12 @@ setup_fate_state(
 
     Caller = aeb_fate_data:make_address(Owner),
 
-    setup_fate_state(Owner, ByteCode, Owner, Caller, Function, Vars, Gas, _Value = 0, Store, ChainApi).
+    setup_fate_state(Owner, ByteCode, Owner, Caller, Function, Vars, Gas, _Value = 0, Store, Funs, ChainApi).
 
-setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, Store, ChainApi) ->
+setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, Store, Functions0, ChainApi) ->
+
+    Functions = maps:merge(Functions0, aeb_fate_code:functions(ByteCode)),
+
     ES0 =
         aefa_engine_state:new(
           Gas,
@@ -254,5 +326,6 @@ setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, 
     ES1 = aefa_engine_state:update_for_remote_call(Contract, ByteCode, aere_version:vm_version(), Caller, ES0),
     ES2 = aefa_fate:set_local_function(Function, false, ES1),
     ES3 = aefa_fate:bind_args([Arg || {_, _, Arg} <- Vars], ES2),
+    ES4 = aefa_engine_state:set_functions(Functions, ES3),
 
-    ES3.
+    ES4.

@@ -12,7 +12,8 @@
         { blockchain_state :: chain_state()
         , repl_account :: binary()
         , options :: repl_options()
-        , vars = []
+        , vars = [] :: [{string(), aeso_syntax:type(), term()}]
+        , funs = #{} :: #{binary() => term()}
         }).
 -type repl_state() :: #repl_state{}.
 

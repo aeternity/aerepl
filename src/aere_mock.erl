@@ -10,6 +10,7 @@
 
 -export([ eval_contract/2
         , letval_contract/4
+        , letfun_contract/4
         , ann/0
         ]).
 
@@ -51,6 +52,10 @@ function(Attrs, Name, Args, Body) when is_list(Attrs) ->
 eval_contract(Stmts, State) ->
     Body = {block, ann(), Stmts},
     [contract([function([entrypoint, payable, stateful], ?USER_INPUT, args(State), Body)])].
+
+letfun_contract(FName, Args, FBody, State) ->
+    FunDef = {letfun, [entrypoint| ann()], FName, [{tuple, ann(), args(State)}|Args], {id, ann(), "_"}, FBody},
+    [contract([FunDef, function([entrypoint, payable, stateful], ?USER_INPUT, [], FName)])].
 
 -spec letval_contract(aeso_syntax:pattern(), [string()], aeso_syntax:expr(), repl_state()) -> aeso_syntax:ast().
 letval_contract(Pattern, Vars, Expr, State) ->

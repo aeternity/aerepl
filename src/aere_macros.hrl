@@ -3,6 +3,8 @@
 -define(MOCK_CONTRACT, "#mock_contract#INTERNAL_REPL").
 -define(LETVAL_INDICATOR, "#VALUES#INTERNAL_REPL").
 
+-define(IS_REPL_ENTRYPOINT(X), lists:member(X, [<<?USER_INPUT>>, <<"init">>])).
+
 -define(LAZY(C), fun() -> C end).
 -define(IF(C, T, E),
         case C of
