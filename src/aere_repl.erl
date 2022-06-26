@@ -201,7 +201,7 @@ eval_expr(Body, S0) ->
 register_letval(Pat, Expr, S0 = #repl_state{funs = Funs}) ->
     NewVars = lists:filter(
                 fun(Var) -> Var /= "_" end,
-                aeso_syntax_utils:used_ids([{letfun, [], {id, [], "x"}, [], {id, [], "_"}, Pat}])), % hack: used_ids require decl and then expr
+                aeso_syntax_utils:used_ids([{letfun, [], {id, [], "x"}, [], {id, [], "_"}, [{guarded, [], [], Pat}]}])), % hack: used_ids require decl and then expr
     Ast = aere_mock:letval_contract(Pat, NewVars, Expr, S0),
     TypedAst = aere_sophia:typecheck(Ast, []),
     ByteCode = aere_sophia:compile_contract(TypedAst),
@@ -251,7 +251,7 @@ replace_function_name(M, NameMap) when is_map(M) ->
 replace_function_name(E, _) ->
     E.
 
--spec register_letfun(aeso_syntax:id(), [aeso_syntax:pat()], aeso_syntax:expr(), repl_state()) -> command_res().
+-spec register_letfun(aeso_syntax:id(), [aeso_syntax:pat()], [aeso_syntax:guarded_expr()], repl_state()) -> command_res().
 register_letfun(Name = {id, _, SName}, Args, Body, S0 = #repl_state{vars = Vars, funs = Funs}) ->
     Ast = aere_mock:letfun_contract(Name, Args, Body, S0),
     TypedAst = aere_sophia:typecheck(Ast, []),
@@ -306,7 +306,7 @@ unfold_types_in_type(T, S0) ->
     T1 = aeso_ast_infer_types:unfold_types_in_type(TEnv1, T),
     T1.
 
--spec compile_and_run_contract([aeso_syntax:ast()], repl_state()) -> {term(), repl_state()}.
+-spec compile_and_run_contract(aeso_syntax:ast(), repl_state()) -> {term(), integer(), repl_state()}.
 compile_and_run_contract(Ast, S) ->
     TypedAst = aere_sophia:typecheck(Ast),
     ByteCode = aere_sophia:compile_contract(TypedAst),
