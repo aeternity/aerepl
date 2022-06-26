@@ -26,6 +26,7 @@ ann() ->
 args(State) ->
     [{typed, ann(), {id, ann(), Arg}, ArgT} || {Arg, ArgT, _} <- State#repl_state.vars].
 
+-spec init() -> aeso_syntax:letfun().
 init() ->
     function([entrypoint], "init", [], {tuple, ann(), []}).
 
@@ -38,16 +39,19 @@ contract(Body) ->
 contract(ContractType, Name, Body) ->
     {ContractType, [payable, ann()], {con, ann(), Name}, [], [init()|Body]}.
 
+-spec namespace(string(), list(aeso_syntax:decl())) -> aeso_syntax:decl().
 namespace(Name, Body) ->
     {namespace, ann(), {con, ann(), Name}, Body}.
 
+-spec type_def(string(), [aeso_syntax:tvar()], aeso_syntax:typedef()) -> aeso_syntax:decl().
 type_def(Name, Args, Def) ->
     {type_def, ann(), {id, ann(), Name}, Args, Def}.
 
+-spec using(string()) -> aeso_syntax:decl().
 using(Namespace) ->
     {using, ann(), {con, ann(), Namespace}, none, none}.
 
-typedef_namespaces(State = #repl_state{typedefs = Typedefs}) ->
+typedef_namespaces(#repl_state{typedefs = Typedefs}) ->
     Namespaces =
         [ namespace(Ns, [type_def(Name, Args, Def)])
           || {Ns, Name, Args, Def} <- Typedefs

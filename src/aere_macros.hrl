@@ -11,6 +11,5 @@
 -define(IF(C, T, E),
         case C of
             true -> T;
-            false -> E;
-            _ -> error(condition_not_a_bool)
+            false -> E
         end).

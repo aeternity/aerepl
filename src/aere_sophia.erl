@@ -65,8 +65,10 @@ type_of([_ | Contracts], FunName) ->
     type_of(Contracts, FunName).
 
 -define(with_error_handle(X), try X catch {error, Errs} -> process_err(Errs) end).
+-spec parse_top(string()) -> [aeso_syntax:decl()] | {body, [aeso_syntax:stmt()]} | none().
 parse_top(I) ->
     parse_top(I, []).
+-spec parse_top(string(), [term()]) -> [aeso_syntax:decl()] | {body, [aeso_syntax:stmt()]} | none().
 parse_top(I, Opts) ->
     Top = aeso_parse_lib:choice
             ([ ?LET_P(Decl, aeso_parser:maybe_block(aeso_parser:decl()),

@@ -170,7 +170,8 @@ process_input(State, eval, I) ->
         [{letfun, _, FName, Args, _, Body}] ->
             register_letfun(FName, Args, Body, State);
         [{type_def, _, Name, Args, Body}] ->
-            register_typedef(Name, Args, Body, State)
+            register_typedef(Name, Args, Body, State);
+        _ -> error(too_many_shit)
     end;
 process_input(State = #repl_state{blockchain_state = BS}, continue, _) ->
     case BS of
@@ -196,10 +197,11 @@ eval_expr(Body, S0) ->
              end,
     {aere_color:output(ResStr) ++ aere_color:info(GasStr), S1}.
 
+-spec register_letval(aeso_syntax:pat(), aeso_syntax:expr(), repl_state()) -> command_res().
 register_letval(Pat, Expr, S0 = #repl_state{funs = Funs}) ->
     NewVars = lists:filter(
                 fun(Var) -> Var /= "_" end,
-                aeso_syntax_utils:used_ids({letfun, 0, 0, [], 0, Pat})), % hack: used_ids require decl and then expr
+                aeso_syntax_utils:used_ids([{letfun, [], {id, [], "x"}, [], {id, [], "_"}, Pat}])), % hack: used_ids require decl and then expr
     Ast = aere_mock:letval_contract(Pat, NewVars, Expr, S0),
     TypedAst = aere_sophia:typecheck(Ast, []),
     ByteCode = aere_sophia:compile_contract(TypedAst),
@@ -249,6 +251,7 @@ replace_function_name(M, NameMap) when is_map(M) ->
 replace_function_name(E, _) ->
     E.
 
+-spec register_letfun(aeso_syntax:id(), [aeso_syntax:pat()], aeso_syntax:expr(), repl_state()) -> command_res().
 register_letfun(Name = {id, _, SName}, Args, Body, S0 = #repl_state{vars = Vars, funs = Funs}) ->
     Ast = aere_mock:letfun_contract(Name, Args, Body, S0),
     TypedAst = aere_sophia:typecheck(Ast, []),
@@ -278,7 +281,7 @@ make_closure([{_, _, V}]) ->
 make_closure(Vars) ->
     {tuple, list_to_tuple([V || {_, _, V} <- Vars])}.
 
-
+-spec register_typedef(aeso_syntax:id(), [aeso_syntax:tvar()], aeso_syntax:typedef(), repl_state()) -> command_res().
 register_typedef({id, _, Name}, Args, Def, S0 = #repl_state{query_nonce = Nonce, typedefs = TypeDefs, type_scope = TypeScope}) ->
     NamespaceName = ?TYPE_CONTAINER(Nonce),
 
@@ -298,7 +301,6 @@ register_typedef({id, _, Name}, Args, Def, S0 = #repl_state{query_nonce = Nonce,
 
 unfold_types_in_type(T, S0) ->
     Ast = aere_mock:type_unfold_contract(S0),
-
     {TEnv, _} = aere_sophia:typecheck(Ast, [return_env, dont_unfold]),
     TEnv1 = aeso_ast_infer_types:switch_scope([?MOCK_CONTRACT], TEnv),
     T1 = aeso_ast_infer_types:unfold_types_in_type(TEnv1, T),
