@@ -20,9 +20,11 @@ process_err(E) -> %% idk, rethrow
 typecheck(Ast) ->
     typecheck(Ast, []).
 typecheck(Ast, Opts) ->
-    try
-        {_, UnfoldedTypedAst, _} = aeso_ast_infer_types:infer(Ast, Opts),
-        UnfoldedTypedAst
+    try aeso_ast_infer_types:infer(Ast, Opts) of
+        {TypedAst, _, _} ->
+            TypedAst;
+        {TEnv, TypedAst, _, _} ->
+            {TEnv, TypedAst}
     catch _:{error, Errs} ->
               throw({error, process_err(Errs)})
     end.

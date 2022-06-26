@@ -69,7 +69,7 @@ process_string(State, String) ->
     check_wololo(String),
     case aere_parse:dispatch(String) of
         {ok, {Command, Args}} ->
-            try process_input(State, Command, Args) of
+            try process_input(bump_nonce(State), Command, Args) of
                 {Out, State1 = #repl_state{}} ->
                     #repl_response
                         { output = render_msg(State1, Out)
@@ -101,6 +101,12 @@ process_string(State, String) ->
                         { output = Msg
                         , warnings = []
                         , status = internal_error
+                        };
+                  {error, E} ->
+                    #repl_response
+                        { output = render_msg(State, aere_color:error(E))
+                        , warnings = []
+                        , status = error
                         };
                   {aefa_fate, revert, ErrMsg, _} ->
                     Msg = aere_color:error("ABORT: ") ++ aere_color:info(ErrMsg),
@@ -150,7 +156,8 @@ process_input(State, type, I) ->
     TAst = aere_sophia:typecheck(Contract, [dont_unfold]),
     {_, Type} = aere_sophia:type_of(TAst, ?USER_INPUT),
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
-    {aere_color:output(TypeStr), State};
+    TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER ++ "[0-9]*\\.", "", [global, {return, list}]),
+    {aere_color:output(TypeStrClean), State};
 process_input(State, eval, I) ->
     Parse = aere_sophia:parse_top(I),
     case Parse of
@@ -161,7 +168,9 @@ process_input(State, eval, I) ->
         [{letval, _, Pat, Expr}] ->
             register_letval(Pat, Expr, State);
         [{letfun, _, FName, Args, _, Body}] ->
-            register_letfun(FName, Args, Body, State)
+            register_letfun(FName, Args, Body, State);
+        [{type_def, _, Name, Args, Body}] ->
+            register_typedef(Name, Args, Body, State)
     end;
 process_input(State = #repl_state{blockchain_state = BS}, continue, _) ->
     case BS of
@@ -269,6 +278,32 @@ make_closure([{_, _, V}]) ->
 make_closure(Vars) ->
     {tuple, list_to_tuple([V || {_, _, V} <- Vars])}.
 
+
+register_typedef({id, _, Name}, Args, Def, S0 = #repl_state{query_nonce = Nonce, typedefs = TypeDefs, type_scope = TypeScope}) ->
+    NamespaceName = ?TYPE_CONTAINER(Nonce),
+
+    TypeScope1 = proplists:delete(Name, TypeScope),
+    S1 = S0#repl_state{type_scope = TypeScope1},
+
+    Def1 = unfold_types_in_type(Def, S1),
+
+    % Check if definition is valid
+    Ast = aere_mock:typedef_contract(Name, Args, Def1, S1),
+    aere_sophia:typecheck(Ast),
+
+    TypeDefEntry = {NamespaceName, Name, Args, Def1},
+    TypeScope2 = [{Name, {NamespaceName, length(Args)}}|TypeScope1],
+
+    S1#repl_state{typedefs = [TypeDefEntry|TypeDefs], type_scope = TypeScope2}.
+
+unfold_types_in_type(T, S0) ->
+    Ast = aere_mock:type_unfold_contract(S0),
+
+    {TEnv, _} = aere_sophia:typecheck(Ast, [return_env, dont_unfold]),
+    TEnv1 = aeso_ast_infer_types:switch_scope([?MOCK_CONTRACT], TEnv),
+    T1 = aeso_ast_infer_types:unfold_types_in_type(TEnv1, T),
+    T1.
+
 -spec compile_and_run_contract([aeso_syntax:ast()], repl_state()) -> {term(), repl_state()}.
 compile_and_run_contract(Ast, S) ->
     TypedAst = aere_sophia:typecheck(Ast),
@@ -329,3 +364,6 @@ setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, 
     ES4 = aefa_engine_state:set_functions(Functions, ES3),
 
     ES4.
+
+bump_nonce(S = #repl_state{query_nonce = N}) ->
+    S#repl_state{query_nonce = N + 1}.

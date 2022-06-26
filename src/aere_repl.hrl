@@ -9,11 +9,14 @@
                      | {breakpoint, aefa_engine_state:state()}.
 
 -record(repl_state,
-        { blockchain_state :: chain_state()
-        , repl_account :: binary()
-        , options :: repl_options()
-        , vars = [] :: [{string(), aeso_syntax:type(), term()}]
-        , funs = #{} :: #{binary() => term()}
+        { blockchain_state  :: chain_state()
+        , repl_account      :: binary()
+        , options           :: repl_options()
+        , vars        = []  :: [{string(), aeso_syntax:type(), term()}]
+        , funs        = #{} :: #{binary() => term()}
+        , typedefs    = []  :: [{string(), string(), [aeso_syntax:tvar()], aeso_syntax:typedef()}]
+        , type_scope  = []  :: [{string(), {string(), non_neg_integer()}}]
+        , query_nonce = 0   :: non_neg_integer()
         }).
 -type repl_state() :: #repl_state{}.
 
@@ -33,7 +36,4 @@
 
 -type coloring() :: #{atom() => color()}.
 
--type colored()
- :: string()
-  | {colored, color(), string()}
-  | list(colored()).
+-type colored() :: string() | {colored, color(), string()} | list(colored()).
