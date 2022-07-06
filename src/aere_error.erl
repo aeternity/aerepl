@@ -3,7 +3,7 @@
 
 internal(Error, Stacktrace) ->
     [ "Command failed:\n"
-    , aere_color:error(lists:flatten(io_lib:format("~p", [Error]))), "\n"
+    , aere_theme:error(lists:flatten(io_lib:format("~p", [Error]))), "\n"
     , case Stacktrace of
           [] -> "<no stacktrace>";
           _ -> ["Stacktrace:\n", io_lib:format("~p", [Stacktrace]), "\n\n"]
@@ -14,16 +14,16 @@ internal(Error) ->
     internal(Error, []).
 
 no_such_command(Command) ->
-    ["No such command ", aere_color:command(io_lib:format("~p", [Command])), "\n"].
+    ["No such command ", aere_theme:command(io_lib:format("~p", [Command])), "\n"].
 
 ambiguous_prefix(Propositions) ->
     PropsString =
-        aere_color:command(lists:flatten([io_lib:format(" ~p", [P]) || P <- Propositions])),
+        aere_theme:command(lists:flatten([io_lib:format(" ~p", [P]) || P <- Propositions])),
     ["Ambiguous command prefix. Matched commands: ", PropsString, "\n"].
 
 bad_option(Expected) ->
     {error,
-     [aere_color:error(case Expected of
+     [aere_theme:error(case Expected of
                             [] -> "nothing";
                             [X] -> X;
                             [E|More] -> [E|[[", ", M] || M <- More]]
@@ -31,7 +31,7 @@ bad_option(Expected) ->
 
 unknown_option(Prop) ->
     {error,
-     ["Unknown setting ", aere_color:setting(Prop)]}.
+     ["Unknown setting ", aere_theme:setting(Prop)]}.
 
 forbidden_id(Name) ->
     {error,
@@ -48,7 +48,7 @@ unsupported_decl(type_def) ->
      "Type definition is not yet supported"};
 unsupported_decl(contract) ->
     {error,
-     ["Contracts cannot be defined here}). Please consider ", aere_color:command(":deploy")]};
+     ["Contracts cannot be defined here}). Please consider ", aere_theme:command(":deploy")]};
 unsupported_decl(namespace) ->
     {error,
      "Namespaces can't be defined here"}.
@@ -62,8 +62,8 @@ no_file_deploy() ->
      "I need a file"}.
 parse_deploy() ->
     {error,
-     [ "Bad format. Valid formats are ", aere_color:command(":deploy [FILE NAME]")
-     , " and ", aere_color:command(":deploy [FILE NAME] as [VARIABLE NAME]")
+     [ "Bad format. Valid formats are ", aere_theme:command(":deploy [FILE NAME]")
+     , " and ", aere_theme:command(":deploy [FILE NAME] as [VARIABLE NAME]")
      ]}.
 bad_deploy_name() ->
     {error,
@@ -72,11 +72,11 @@ bad_deploy_name() ->
 file_error(File, Reason) ->
     {error,
      case Reason of
-         enoent -> ["No such file or directory ", aere_color:file(File)];
+         enoent -> ["No such file or directory ", aere_theme:file(File)];
          eaccess -> "Permission denied";
-         eisdir -> [aere_color:file(File), " is a directory"];
-         enotdir -> [aere_color:file(File), "is not a directory"];
-         enomem -> [aere_color:file(File), " is too big"];
+         eisdir -> [aere_theme:file(File), " is a directory"];
+         enotdir -> [aere_theme:file(File), "is not a directory"];
+         enomem -> [aere_theme:file(File), " is too big"];
          _ -> "Unknown error"
      end}.
 

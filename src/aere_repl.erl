@@ -5,7 +5,9 @@
 
 -module(aere_repl).
 
--export([ init_state/0, process_string/2, banner/1
+-export([ init_state/0
+        , process_string/2
+        , banner/1
         ]).
 
 -include("aere_repl.hrl").
@@ -14,8 +16,8 @@
 -spec init_options() -> repl_options().
 init_options() ->
     #repl_options{
-       coloring = aere_color:coloring_default()
-      }.
+        theme = aere_theme:default_theme()
+    }.
 
 -spec init_state() -> repl_state().
 init_state() ->
@@ -47,18 +49,18 @@ banner(State) ->
         "                 |_|",
     Interactive = "interactive",
 
-    SophiaC = aere_color:banner(Sophia),
-    InteractiveC = aere_color:banner_sub(Interactive),
+    SophiaC = aere_theme:banner(Sophia),
+    InteractiveC = aere_theme:banner_sub(Interactive),
 
-    render_msg(State, [SophiaC, "  ", InteractiveC]).
+    render_msg(State, [SophiaC, aere_theme:output("  "), InteractiveC]).
 
 %% Renders text by applying coloring and trimming whitespaces
 -spec render_msg(repl_options() | repl_state(), colored()) -> string().
 render_msg(_, "") -> "";
 render_msg(#repl_state{options = Opts}, Msg) ->
     render_msg(Opts, Msg);
-render_msg(#repl_options{coloring = Coloring}, Msg) ->
-    Render = lists:flatten(aere_color:render_colored(Coloring, Msg)),
+render_msg(#repl_options{theme = Theme}, Msg) ->
+    Render = aere_theme:render(Theme, Msg),
     string:trim(Render, both, aere_parse:whitespaces()).
 
 %% state + input = response
@@ -104,19 +106,19 @@ process_string(State, String) ->
                         };
                   {error, E} ->
                     #repl_response
-                        { output = render_msg(State, aere_color:error(E))
+                        { output = render_msg(State, aere_theme:error(E))
                         , warnings = []
                         , status = error
                         };
                   {aefa_fate, revert, ErrMsg, _} ->
-                    Msg = aere_color:error("ABORT: ") ++ aere_color:info(ErrMsg),
+                    Msg = [aere_theme:error("ABORT: "), aere_theme:info(ErrMsg)],
                     #repl_response
                         { output = render_msg(State, Msg)
                         , warnings = []
                         , status = error
                         };
                   {aefa_fate, FateErr, _} ->
-                    Msg = aere_color:error(FateErr),
+                    Msg = aere_theme:error(FateErr),
                     #repl_response
                         { output = render_msg(State, Msg)
                         , warnings = []
@@ -157,7 +159,7 @@ process_input(State, type, I) ->
     {_, Type} = aere_sophia:type_of(TAst, ?USER_INPUT),
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
     TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER ++ "[0-9]*\\.", "", [global, {return, list}]),
-    {aere_color:output(TypeStrClean), State};
+    {aere_theme:output(TypeStrClean), State};
 process_input(State, eval, I) ->
     Parse = aere_sophia:parse_top(I),
     case Parse of
@@ -176,7 +178,7 @@ process_input(State, eval, I) ->
 process_input(State = #repl_state{blockchain_state = BS}, continue, _) ->
     case BS of
         {ready, _} ->
-            {aere_color:error("Not at breakpoint!"), State};
+            {aere_theme:error("Not at breakpoint!"), State};
         {breakpoint, ES} ->
             Stack = aefa_engine_state:accumulator_stack(ES),
             StackS = io_lib:format("~p", [Stack]),
@@ -195,7 +197,7 @@ eval_expr(Body, S0) ->
                  false -> "";
                  true -> io_lib:format("\nUSED GAS: ~p", [UsedGas])
              end,
-    {aere_color:output(ResStr) ++ aere_color:info(GasStr), S1}.
+    {[aere_theme:output(ResStr), aere_theme:info(GasStr)], S1}.
 
 -spec register_letval(aeso_syntax:pat(), aeso_syntax:expr(), repl_state()) -> command_res().
 register_letval(Pat, Expr, S0 = #repl_state{funs = Funs}) ->
@@ -322,7 +324,8 @@ eval_state(ES0, S) ->
     Res       = aefa_engine_state:accumulator(ES1),
     ChainApi  = aefa_engine_state:chain_api(ES1),
     UsedGas   = (S#repl_state.options)#repl_options.call_gas - aefa_engine_state:gas(ES1),
-    Break     = aefa_engine_state:at_breakpoint(ES1),
+    %Break     = aefa_engine_state:at_breakpoint(ES1),
+    Break     = false,
 
     case Break of
         true -> {"BREAK", UsedGas, S#repl_state{blockchain_state = {breakpoint, ES1}}};

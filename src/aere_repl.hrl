@@ -1,5 +1,5 @@
 -record(repl_options,
-        { coloring :: coloring()
+        { theme :: aere_theme:theme()
         , display_gas = true :: boolean()
         , call_gas = 1000000000000000000 :: pos_integer()
         }).
@@ -33,7 +33,5 @@
 -type command_res() :: finish | {colored(), repl_state()} | repl_state() | none().
 
 -type color() :: atom() | {[atom()], atom()}.
-
--type coloring() :: #{atom() => color()}.
 
 -type colored() :: string() | {colored, color(), string()} | list(colored()).
