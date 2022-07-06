@@ -28,19 +28,9 @@ cd aerepl
 make
 #+END_SRC
 
-Launch the server (needs to be evaluated only once in the project directory)
-#+BEGIN_SRC
-./aerepl_server start
-#+END_SRC
-
-Launch the client
+Launch the repl
 #+BEGIN_SRC
 ./aerepl
-#+END_SRC
-
-To shut the server down:
-#+BEGIN_SRC
-./aerepl_server stop
 #+END_SRC
 
 ** Usage
