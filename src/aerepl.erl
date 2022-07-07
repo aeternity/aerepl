@@ -15,8 +15,10 @@ start() ->
 loop() ->
     Inp = aere_parse:get_input(fun io:get_line/1),
     {Status, Out} = aere_gen_server:input(Inp),
-    io:format("~s\n", [Out]),
     case Status of
         finish -> ok;
-        _ -> loop()
+        skip -> loop();
+        _ ->
+            io:format("~s\n", [Out]),
+            loop()
     end.

@@ -6,7 +6,7 @@
 -module(aere_repl).
 
 -export([ init_state/0
-        , process_string/2
+        , process_input/2
         , banner/1
         ]).
 
@@ -24,18 +24,19 @@ init_state() ->
     {PK, Trees} = aere_chain:new_account(100000000000000000000000000000, #{}),
     ChainState = aefa_chain_api:new(
                    #{ gas_price => 1,
-                      fee => 0,
-                      trees => Trees,
-                      origin => PK,
-                      tx_env => aere_chain:default_tx_env(1)
+                      fee       => 0,
+                      trees     => Trees,
+                      origin    => PK,
+                      tx_env    => aere_chain:default_tx_env(1)
                    }
                   ),
     #repl_state{
        blockchain_state = {ready, ChainState},
-       repl_account = PK,
-       options = init_options()
+       repl_account     = PK,
+       options          = init_options()
       }.
 
+-spec banner(repl_state()) -> string().
 banner(State) ->
     Sophia =
         "    ____\n"
@@ -54,7 +55,7 @@ banner(State) ->
 
     render_msg(State, [SophiaC, aere_theme:output("  "), InteractiveC]).
 
-%% Renders text by applying coloring and trimming whitespaces
+%% Renders text by applying theming and trimming whitespaces
 -spec render_msg(repl_options() | repl_state(), colored()) -> string().
 render_msg(_, "") -> "";
 render_msg(#repl_state{options = Opts}, Msg) ->
@@ -63,15 +64,16 @@ render_msg(#repl_options{theme = Theme}, Msg) ->
     Render = aere_theme:render(Theme, Msg),
     string:trim(Render, both, aere_parse:whitespaces()).
 
-%% state + input = response
--spec process_string(repl_state(), binary() | string()) -> repl_response().
-process_string(State, String) when is_binary(String) ->
-    process_string(State, binary_to_list(String));
-process_string(State, String) ->
+%% Process an input string in the current state of the repl and respond accordingly
+%% This is supposed to be called after each input to the repl
+-spec process_input(repl_state(), binary() | string()) -> repl_response().
+process_input(State, String) when is_binary(String) ->
+    process_input(State, binary_to_list(String));
+process_input(State, String) ->
     check_wololo(String),
     case aere_parse:dispatch(String) of
         {ok, {Command, Args}} ->
-            try process_input(bump_nonce(State), Command, Args) of
+            try apply_command(bump_nonce(State), Command, Args) of
                 {Out, State1 = #repl_state{}} ->
                     #repl_response
                         { output = render_msg(State1, Out)
@@ -134,25 +136,30 @@ process_string(State, String) ->
                 { output = render_msg(State, Msg)
                 , warnings = []
                 , status = error
+                };
+        skip ->
+            #repl_response
+                { output = ""
+                , warnings = []
+                , status = skip
                 }
     end.
 
+%% Put wololo in the wololo ets_table if the input string has the substr wololo
+%% This is used later to turn all red colored output to blue colored
+%% Note: This is an easter egg
+-spec check_wololo(string()) -> ok.
 check_wololo(String) ->
-    case string:find(String, "wololo") of
-        nomatch ->
-            ok;
-        _ ->
-            put(wololo, wololo),
-            ok
-    end.
+    string:find(String, "wololo") =:= nomatch orelse put(wololo, wololo),
+    ok.
 
-%% Specific reactions to commands and inputs
--spec process_input(repl_state(), aere_parse:command(), string()) -> command_res().
-process_input(_, quit, _) ->
+%% Return the result of applying a repl command to the given argument
+-spec apply_command(repl_state(), aere_parse:command(), string()) -> command_res().
+apply_command(_, quit, _) ->
     finish;
-process_input(_, reset, _) ->
+apply_command(_, reset, _) ->
     init_state();
-process_input(State, type, I) ->
+apply_command(State, type, I) ->
     Stmts = aere_sophia:parse_body(I),
     Contract = aere_mock:eval_contract(Stmts, State),
     TAst = aere_sophia:typecheck(Contract, [dont_unfold]),
@@ -160,7 +167,7 @@ process_input(State, type, I) ->
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
     TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER ++ "[0-9]*\\.", "", [global, {return, list}]),
     {aere_theme:output(TypeStrClean), State};
-process_input(State, eval, I) ->
+apply_command(State, eval, I) ->
     Parse = aere_sophia:parse_top(I),
     case Parse of
         {body, Body} ->
@@ -175,7 +182,7 @@ process_input(State, eval, I) ->
             register_typedef(Name, Args, Body, State);
         _ -> error(too_many_shit)
     end;
-process_input(State = #repl_state{blockchain_state = BS}, continue, _) ->
+apply_command(State = #repl_state{blockchain_state = BS}, continue, _) ->
     case BS of
         {ready, _} ->
             {aere_theme:error("Not at breakpoint!"), State};
@@ -184,8 +191,7 @@ process_input(State = #repl_state{blockchain_state = BS}, continue, _) ->
             StackS = io_lib:format("~p", [Stack]),
             {StackS, State}
     end;
-
-process_input(_, _, _) ->
+apply_command(_, _, _) ->
     throw(aere_error:undefined_command()).
 
 -spec eval_expr([aeso_syntax:stmt()], repl_state()) -> command_res().

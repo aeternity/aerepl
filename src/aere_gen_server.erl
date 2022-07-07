@@ -77,7 +77,7 @@ process_input(Input, State) ->
     #repl_response{
        output = Output,
        status = Status
-      } = aere_repl:process_string(State, Input),
+      } = aere_repl:process_input(State, Input),
     {RetStatus, NewState} = case Status of
                  {Status1, State1 = #repl_state{}} -> {Status1, State1};
                  Status1 -> {Status1, State}
