@@ -53,16 +53,29 @@ banner(State) ->
     SophiaC = aere_theme:banner(Sophia),
     InteractiveC = aere_theme:banner_sub(Interactive),
 
-    render_msg(State, [SophiaC, aere_theme:output("  "), InteractiveC]).
+    render_msg(State, [SophiaC, "  ", InteractiveC]).
+
+-type renderable() :: aere_theme:themed_text() | string()
+                    | [aere_theme:themed_text() | string()].
 
 %% Renders text by applying theming and trimming whitespaces
--spec render_msg(repl_options() | repl_state(), colored()) -> string().
-render_msg(_, "") -> "";
-render_msg(#repl_state{options = Opts}, Msg) ->
-    render_msg(Opts, Msg);
-render_msg(#repl_options{theme = Theme}, Msg) ->
-    Render = aere_theme:render(Theme, Msg),
+-spec render_msg(repl_state(), renderable()) -> string().
+render_msg(_State, []) ->
+    "";
+render_msg(State, Str = [C | _]) when is_integer(C) ->
+    render_msg(State, [Str]);
+render_msg(State, Th = {themed, _, _}) ->
+    render_msg(State, [Th]);
+render_msg(#repl_state{options = #repl_options{theme = Theme}}, Msg) when is_list(Msg) ->
+    ThemedMsg = lists:map(fun make_themed/1, Msg),
+    Render = aere_theme:render(Theme, ThemedMsg),
     string:trim(Render, both, aere_parse:whitespaces()).
+
+%% Convert a string to aere_theme:output when given a normal string, or return
+%% the themed text when a themed text is given
+-spec make_themed(string() | aere_theme:themed_text()) -> aere_theme:themed_text().
+make_themed(Th = {themed, _, _}) -> Th;
+make_themed(Str) when is_list(Str) -> aere_theme:output(Str).
 
 %% Process an input string in the current state of the repl and respond accordingly
 %% This is supposed to be called after each input to the repl
