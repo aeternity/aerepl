@@ -100,6 +100,8 @@ parse_type(I) ->
     ?with_error_handle(aeso_parser:run_parser(aeso_parser:type(), I)).
 parse_file(I, Opts) ->
     parse_file(I, sets:new(), Opts).
+parse_file(I, Includes, Opts) when is_binary(I) ->
+    parse_file(binary:bin_to_list(I), sets:new(), Opts);
 parse_file(I, Includes, Opts) ->
     ?with_error_handle(aeso_parser:string(I, Includes, Opts)).
 

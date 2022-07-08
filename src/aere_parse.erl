@@ -8,8 +8,7 @@ whitespaces() ->
 
 -spec commands() -> list(aere_repl:command()).
 commands() ->
-    [ quit, type, eval, include, reinclude, cd, pwd, ls, continue
-    , uninclude, set, load, deploy, rm, reset, '_names'].
+    [ quit, type, eval, include, load, reload ].
 
 
 -spec dispatch(string()) -> {ok, {aere_repl:command(), string()}}

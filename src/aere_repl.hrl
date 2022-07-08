@@ -9,14 +9,17 @@
                      | {breakpoint, aefa_engine_state:state()}.
 
 -record(repl_state,
-        { blockchain_state  :: chain_state()
-        , repl_account      :: binary()
-        , options           :: repl_options()
-        , vars        = []  :: [{string(), aeso_syntax:type(), term()}]
-        , funs        = #{} :: #{binary() => term()}
-        , typedefs    = []  :: [{string(), string(), [aeso_syntax:tvar()], aeso_syntax:typedef()}]
-        , type_scope  = []  :: [{string(), {string(), non_neg_integer()}}]
-        , query_nonce = 0   :: non_neg_integer()
+        { blockchain_state     :: chain_state()
+        , repl_account         :: binary()
+        , options              :: repl_options()
+        , vars        = []     :: [{string(), aeso_syntax:type(), term()}]
+        , funs        = #{}    :: #{binary() => term()}
+        , typedefs    = []     :: [{string(), string(), [aeso_syntax:tvar()], aeso_syntax:typedef()}]
+        , type_scope  = []     :: [{string(), {string(), non_neg_integer()}}]
+        , loaded_files = #{}   :: #{string() => binary()} % Loaded files ready to be included
+        , included_files = []  :: [string()] % Files included in the context
+        , included_code = []   :: aeso_syntax:ast() % Cached AST of the included files
+        , query_nonce = 0      :: non_neg_integer()
         }).
 -type repl_state() :: #repl_state{}.
 

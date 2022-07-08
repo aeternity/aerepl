@@ -158,9 +158,7 @@ process_input(State, String) ->
                 }
     end.
 
-%% Put wololo in the wololo ets_table if the input string has the substr wololo
-%% This is used later to turn all red colored output to blue colored
-%% Note: This is an easter egg
+%% Easter egg, don't ask.
 -spec check_wololo(string()) -> ok.
 check_wololo(String) ->
     string:find(String, "wololo") =:= nomatch orelse put(wololo, wololo),
@@ -186,7 +184,7 @@ apply_command(State, eval, I) ->
         {body, Body} ->
             eval_expr(Body, State);
         [{include, _, {string, _, Inc}}] ->
-            throw(unimplemented);
+            register_include(Inc, State);
         [{letval, _, Pat, Expr}] ->
             register_letval(Pat, Expr, State);
         [{letfun, _, FName, Args, _, Body}] ->
@@ -195,6 +193,14 @@ apply_command(State, eval, I) ->
             register_typedef(Name, Args, Body, State);
         _ -> error(too_many_shit)
     end;
+apply_command(State, load, Modules) ->
+    load_modules(string:lexemes(Modules, unicode_util:whitespace()), State);
+apply_command(State, reload, Modules) ->
+    reload_modules(Modules, State);
+apply_command(State, add, Modules) ->
+    add_modules(Modules, State);
+apply_command(State, module, Modules) ->
+    register_include(Modules, State);
 apply_command(State = #repl_state{blockchain_state = BS}, continue, _) ->
     case BS of
         {ready, _} ->
@@ -217,6 +223,58 @@ eval_expr(Body, S0) ->
                  true -> io_lib:format("\nUSED GAS: ~p", [UsedGas])
              end,
     {[aere_theme:output(ResStr), aere_theme:info(GasStr)], S1}.
+
+load_modules(Modules, S0) ->
+    S1 = S0#repl_state{loaded_files = default_loaded_files()},
+    add_modules(Modules, S1).
+
+reload_modules([], S0 = #repl_state{loaded_files = LdFiles}) ->
+    reload_modules(maps:keys(LdFiles), S0);
+reload_modules(Modules, S0) ->
+    add_modules(Modules, S0). %% Worst case it will work when someone expects it to fail. Not worth checking if the modules are loaded.
+
+add_modules([], S0) ->
+    S0; %% Can happen
+add_modules(Modules, S0 = #repl_state{loaded_files = LdFiles}) ->
+    Files = [ read_file(M) || M <- Modules],
+    [ begin
+          Ast0 = aeso_parser:string(binary:bin_to_list(File)),
+          aere_sophia:typecheck(aere_mock:ast_check_contract(Ast0))
+      end
+     || File <- Files
+    ],
+
+    S1 = clear_context(S0),
+    S2 = S1#repl_state{loaded_files = maps:merge(LdFiles, maps:from_list(lists:zip(Modules, Files)))},
+    register_include(lists:last(Modules), S2).
+
+clear_context(State) ->
+    State#repl_state{vars = [], funs = #{}, typedefs = [], type_scope = []}.
+
+register_include(Include, S0 = #repl_state{included_files = IncFiles, included_code = IncCode, loaded_files = LdFiles}) ->
+    case maps:get(Include, LdFiles, not_loaded) of
+        not_loaded ->
+            throw({error, "File not loaded"});
+        File ->
+            S1 = case lists:member(Include, IncFiles) of
+                     true -> S0;
+                     false ->
+                         IncludeSet = sets:from_list([{FName, Code} || {FName, Code} <- maps:to_list(LdFiles), lists:member(FName, IncFiles)]),
+                         {Ast0, _IncludeSet1} = aere_sophia:parse_file(File, IncludeSet, [keep_included]),
+                         S0#repl_state{included_files = [Include|IncFiles], included_code = IncCode ++ Ast0}
+                 end,
+            Ast = aere_mock:eval_contract([{tuple, aere_mock:ann(), []}], S1),
+            aere_sophia:typecheck(Ast),
+            S1
+    end.
+
+read_file(Filename) ->
+    case file:read_file(Filename) of
+        {ok, File} ->
+            File;
+        {error, E} ->
+            throw(E)
+    end.
 
 -spec register_letval(aeso_syntax:pat(), aeso_syntax:expr(), repl_state()) -> command_res().
 register_letval(Pat, Expr, S0 = #repl_state{funs = Funs}) ->
@@ -391,3 +449,5 @@ setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, 
 
 bump_nonce(S = #repl_state{query_nonce = N}) ->
     S#repl_state{query_nonce = N + 1}.
+
+default_loaded_files() -> #{}.

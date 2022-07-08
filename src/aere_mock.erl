@@ -14,6 +14,7 @@
         , typedef_contract/4
         , type_unfold_contract/1
         , type_unfold_contract/2
+        , ast_check_contract/1
         , ann/0
         ]).
 
@@ -58,14 +59,18 @@ typedef_namespaces(#repl_state{typedefs = Typedefs}) ->
         ],
     lists:reverse(Namespaces).
 
+includes(#repl_state{included_code = IncFiles}) ->
+    IncFiles.
+
 type_scope_usings(#repl_state{type_scope = TypeScope}) ->
     [using(Namespace) || {_, {Namespace, _}} <- TypeScope].
 
 mock_contract_ast(Body, State) ->
+    Inc = includes(State),
     Ns = typedef_namespaces(State),
     Ta = type_scope_usings(State),
     Con = contract(Ta ++ Body),
-    Ns ++ [Con].
+    Inc ++ Ns ++ [Con].
 
 %% $Attrs entrypoint $Name($Args) = $Body
 -spec function(aeso_syntax:ann(), string(), [string()], aeso_syntax:expr()) -> aeso_syntax:decl().
@@ -79,7 +84,6 @@ function(Attrs, Name, Args, Body) when is_list(Attrs) ->
     , [{guarded, ann(), [], Body}]}.
 
 
-%% Contract that evals Expr and does not chain state
 -spec eval_contract(list(aeso_syntax:stmt()), repl_state()) -> aeso_syntax:ast().
 eval_contract(Stmts, State) ->
     Body = {block, ann(), Stmts},
@@ -87,7 +91,7 @@ eval_contract(Stmts, State) ->
     mock_contract_ast([CallFun], State).
 
 letfun_contract(FName, Args, FBody, State) ->
-    FunDef = {letfun, [entrypoint| ann()], FName, [{tuple, ann(), args(State)}|Args], {id, ann(), "_"}, FBody},
+    FunDef = {letfun, ann(), FName, [{tuple, ann(), args(State)}|Args], {id, ann(), "_"}, FBody},
     CallFun = function([entrypoint, payable, stateful], ?USER_INPUT, [], FName),
     mock_contract_ast([FunDef, CallFun], State).
 
@@ -98,10 +102,12 @@ letval_contract(Pattern, Vars, Expr, State) ->
     Body = {block, ann(), [Let, Ret]},
     mock_contract_ast([function([entrypoint, payable, stateful], ?USER_INPUT, args(State), Body)], State).
 
+-spec typedef_contract(string(), [aeso_syntax:tvar()], aeso_syntax:typedef(), repl_state()) -> aeso_syntax:ast().
 typedef_contract(Name, Args, Def, State) ->
     TDef = {type_def, ann(), {id, ann(), Name}, Args, Def},
     mock_contract_ast([TDef], State).
 
+-spec type_unfold_contract(repl_state()) -> aeso_syntax:ast().
 type_unfold_contract(State = #repl_state{type_scope = TypeScope}) ->
     type_unfold_contract(TypeScope, State).
 type_unfold_contract(Types, State) ->
@@ -117,3 +123,6 @@ type_unfold_contract(Types, State) ->
          || {Type, {Ns, ArgsN}} <- Types
         ],
     typedef_namespaces(State) ++ [contract(Aliases)].
+
+ast_check_contract(Ast) ->
+    Ast ++ [contract([function([entrypoint], ?USER_INPUT, [], {tuple, ann(), []})])].
