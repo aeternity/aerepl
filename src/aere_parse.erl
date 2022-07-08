@@ -1,16 +1,11 @@
 -module(aere_parse).
 
--export([get_input/1, eval_from_file/1, dispatch/1, whitespaces/0, split_input/1]).
-
--spec whitespaces() -> list(char()).
-whitespaces() ->
-    [$\n, $ , $\t, $ ].
+-export([get_input/1, eval_from_file/1, dispatch/1, split_input/1]).
 
 -spec commands() -> list(aere_repl:command()).
 commands() ->
     [ quit, type, eval, include, reinclude, cd, pwd, ls, continue
     , uninclude, set, load, deploy, rm, reset, '_names'].
-
 
 -spec dispatch(string()) -> {ok, {aere_repl:command(), string()}}
                           | skip
@@ -23,8 +18,8 @@ dispatch(Input) ->
         ":" ->
             skip;
         [$:|CommandAndArg] ->
-            [Command | _] = string:tokens(CommandAndArg, whitespaces()),
-            Arg = string:trim(CommandAndArg -- Command, leading, whitespaces()),
+            [Command | _] = string:tokens(CommandAndArg, unicode_util:whitespace()),
+            Arg = string:trim(CommandAndArg -- Command, leading, unicode_util:whitespace()),
             CommandStrs = [atom_to_list(C) || C <- commands()],
             case lists:filter(fun(C) -> lists:prefix(Command, C) end, CommandStrs) of
                 [C] -> {ok, {list_to_existing_atom(C), Arg}};
@@ -36,7 +31,6 @@ dispatch(Input) ->
             end;
         _ -> {ok, {eval, Input}}
     end.
-
 
 eval_from_file(File) ->
     MC = file:read_file(File),
@@ -89,20 +83,18 @@ get_input(Provider) ->
                eof -> ":quit"; % that's dirty
                Other -> Other
            end,
-    Inp = case string:trim(Line, both, whitespaces()) of
+    Inp = case string:trim(Line, both, unicode_util:whitespace()) of
               ":{" -> multiline_input(Provider);
               "" -> "";
               _ -> lists:flatten(string:replace(Line, ";", "\n", all))
           end,
-    string:trim(Inp, both, whitespaces()).
-
+    string:trim(Inp, both, unicode_util:whitespace()).
 
 multiline_input(Provider) ->
     multiline_input(Provider, []).
 multiline_input(Provider, Acc) ->
     Line = Provider("| "),
-    case string:trim(Line, both, whitespaces()) of
+    case string:trim(Line, both, unicode_util:whitespace()) of
         ":}" -> lists:flatten(lists:reverse(Acc));
         _ -> multiline_input(Provider, [Line|Acc])
     end.
-

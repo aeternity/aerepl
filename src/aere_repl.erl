@@ -69,7 +69,7 @@ render_msg(State, Th = {themed, _, _}) ->
 render_msg(#repl_state{options = #repl_options{theme = Theme}}, Msg) when is_list(Msg) ->
     ThemedMsg = lists:map(fun make_themed/1, Msg),
     Render = aere_theme:render(Theme, ThemedMsg),
-    string:trim(Render, both, aere_parse:whitespaces()).
+    string:trim(Render, both, unicode_util:whitespace()).
 
 %% Convert a string to aere_theme:output when given a normal string, or return
 %% the themed text when a themed text is given
