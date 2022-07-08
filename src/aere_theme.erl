@@ -118,12 +118,17 @@ render(ThemedTxts) ->
 
 %% Render a given themed text as an ANSI string in the provided theme
 -spec render(theme(), themed_text() | [themed_text()]) -> string().
-render(Theme, ThemedTxt = {themed, _, _}) ->
-    apply_theme(Theme, ThemedTxt);
-render(Theme, ThemedTxts) when is_list(ThemedTxts) ->
-    lists:flatten(lists:map(fun(T) -> apply_theme(Theme, T) end, ThemedTxts)).
+render(Theme, Txt = {themed, _, _}) ->
+    apply_theme(Theme, Txt);
+render(Theme, Txts) when is_list(Txts) ->
+    FlatTxt = lists:flatten(Txts),
+    lists:flatmap(fun(T = {themed, _, _}) -> apply_theme(Theme, T);
+                     (T) when is_atom(T) -> atom_to_list(T);
+                     (T) when is_binary(T) -> binary:bin_to_list(T);
+                     (T) -> [T]
+                  end, FlatTxt).
 
--spec apply_theme(theme(), themed_text()) -> string().
+-spec apply_theme(theme(), themed_text() | string() | atom() | binary()) -> string().
 apply_theme(Theme, {themed, ThemeCxt, Text}) ->
     case maps:get(ThemeCxt, Theme, none) of
         none -> Text;

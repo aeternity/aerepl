@@ -8,7 +8,7 @@ whitespaces() ->
 
 -spec commands() -> list(aere_repl:command()).
 commands() ->
-    [ quit, type, eval, include, load, reload ].
+    [ quit, type, eval, include, load, reload, add ].
 
 
 -spec dispatch(string()) -> {ok, {aere_repl:command(), string()}}

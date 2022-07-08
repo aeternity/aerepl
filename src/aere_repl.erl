@@ -33,7 +33,8 @@ init_state() ->
     #repl_state{
        blockchain_state = {ready, ChainState},
        repl_account     = PK,
-       options          = init_options()
+       options          = init_options(),
+       loaded_files     = default_loaded_files()
       }.
 
 -spec banner(repl_state()) -> string().
@@ -67,15 +68,8 @@ render_msg(State, Str = [C | _]) when is_integer(C) ->
 render_msg(State, Th = {themed, _, _}) ->
     render_msg(State, [Th]);
 render_msg(#repl_state{options = #repl_options{theme = Theme}}, Msg) when is_list(Msg) ->
-    ThemedMsg = lists:map(fun make_themed/1, Msg),
-    Render = aere_theme:render(Theme, ThemedMsg),
+    Render = aere_theme:render(Theme, Msg),
     string:trim(Render, both, aere_parse:whitespaces()).
-
-%% Convert a string to aere_theme:output when given a normal string, or return
-%% the themed text when a themed text is given
--spec make_themed(string() | aere_theme:themed_text()) -> aere_theme:themed_text().
-make_themed(Th = {themed, _, _}) -> Th;
-make_themed(Str) when is_list(Str) -> aere_theme:output(Str).
 
 %% Process an input string in the current state of the repl and respond accordingly
 %% This is supposed to be called after each input to the repl
@@ -121,7 +115,7 @@ process_input(State, String) ->
                         };
                   {error, E} ->
                     #repl_response
-                        { output = render_msg(State, aere_theme:error(E))
+                        { output = render_msg(State, E)
                         , warnings = []
                         , status = error
                         };
@@ -194,11 +188,11 @@ apply_command(State, eval, I) ->
         _ -> error(too_many_shit)
     end;
 apply_command(State, load, Modules) ->
-    load_modules(string:lexemes(Modules, unicode_util:whitespace()), State);
+    load_modules(string:lexemes(Modules, aere_parse:whitespaces()), State);
 apply_command(State, reload, Modules) ->
-    reload_modules(Modules, State);
+    reload_modules(string:lexemes(Modules, aere_parse:whitespaces()), State);
 apply_command(State, add, Modules) ->
-    add_modules(Modules, State);
+    add_modules(string:lexemes(Modules, aere_parse:whitespaces()), State);
 apply_command(State, module, Modules) ->
     register_include(Modules, State);
 apply_command(State = #repl_state{blockchain_state = BS}, continue, _) ->
@@ -236,25 +230,40 @@ reload_modules(Modules, S0) ->
 add_modules([], S0) ->
     S0; %% Can happen
 add_modules(Modules, S0 = #repl_state{loaded_files = LdFiles}) ->
-    Files = [ read_file(M) || M <- Modules],
-    [ begin
-          Ast0 = aeso_parser:string(binary:bin_to_list(File)),
-          aere_sophia:typecheck(aere_mock:ast_check_contract(Ast0))
-      end
-     || File <- Files
-    ],
+    Files = [ file:read_file(M) || M <- Modules],
+
+    case [{File, Err} || {File, {error, Err}} <- lists:zip(Modules, Files)] of
+        [] -> ok;
+        L ->
+            Msg =
+                [ aere_theme:error("Could not load files:\n")
+                ,  [[aere_theme:file(File), ": ", file:format_error(Err)] || {File, Err} <- L]
+                ],
+            throw({error, Msg})
+    end,
+
+    OkFiles =
+        [ begin
+              Ast0 = aeso_parser:string(binary:bin_to_list(File)),
+              aere_sophia:typecheck(aere_mock:ast_check_contract(Ast0)),
+              File
+          end
+          || {ok, File} <- Files
+        ],
 
     S1 = clear_context(S0),
-    S2 = S1#repl_state{loaded_files = maps:merge(LdFiles, maps:from_list(lists:zip(Modules, Files)))},
+    S2 = S1#repl_state{loaded_files = maps:merge(LdFiles, maps:from_list(lists:zip(Modules, OkFiles)))},
     register_include(lists:last(Modules), S2).
 
 clear_context(State) ->
-    State#repl_state{vars = [], funs = #{}, typedefs = [], type_scope = []}.
+    State#repl_state{vars = [], funs = #{}, typedefs = [], type_scope = [], included_files = [], included_code = []}.
 
+register_include(Include, S0) when is_binary(Include) ->
+    register_include(binary:bin_to_list(Include), S0);
 register_include(Include, S0 = #repl_state{included_files = IncFiles, included_code = IncCode, loaded_files = LdFiles}) ->
     case maps:get(Include, LdFiles, not_loaded) of
         not_loaded ->
-            throw({error, "File not loaded"});
+            throw({error, ["File not loaded: ", Include]});
         File ->
             S1 = case lists:member(Include, IncFiles) of
                      true -> S0;
@@ -266,14 +275,6 @@ register_include(Include, S0 = #repl_state{included_files = IncFiles, included_c
             Ast = aere_mock:eval_contract([{tuple, aere_mock:ann(), []}], S1),
             aere_sophia:typecheck(Ast),
             S1
-    end.
-
-read_file(Filename) ->
-    case file:read_file(Filename) of
-        {ok, File} ->
-            File;
-        {error, E} ->
-            throw(E)
     end.
 
 -spec register_letval(aeso_syntax:pat(), aeso_syntax:expr(), repl_state()) -> command_res().
@@ -450,4 +451,12 @@ setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, 
 bump_nonce(S = #repl_state{query_nonce = N}) ->
     S#repl_state{query_nonce = N + 1}.
 
-default_loaded_files() -> #{}.
+default_loaded_files() ->
+    AesoDir = filename:dirname(filename:dirname(code:which(aeso_compiler))),
+    StdlibDir = filename:absname(filename:join([AesoDir, "priv", "stdlib"])),
+    Files =
+        [ File ||
+            File <- element(2, file:list_dir(StdlibDir)),
+            filename:extension(File) =:= ".aes"
+        ],
+    maps:from_list([{File, element(2, file:read_file(filename:join(StdlibDir, File)))} || File <- Files]).
