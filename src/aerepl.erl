@@ -13,7 +13,7 @@ start() ->
     loop().
 
 loop() ->
-    Inp = aere_parse:get_input(fun io:get_line/1),
+    Inp = aere_parse:get_input(),
     {Status, Out} = aere_gen_server:input(Inp),
     case Status of
         finish -> ok;

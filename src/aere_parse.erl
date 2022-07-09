@@ -1,107 +1,59 @@
 -module(aere_parse).
 
--export([get_input/1, eval_from_file/1, dispatch/1, whitespaces/0, split_input/1]).
+-export([ parse/1, get_input/0 ]).
 
--spec whitespaces() -> list(char()).
-whitespaces() ->
-    [$\n, $ , $\t, $ ].
+-type parse_result() :: {ok, {aere_repl:command(), string()}}
+                      | {error, {no_such_command, string()}}
+                      | skip.
 
 -spec commands() -> list(aere_repl:command()).
 commands() ->
     [ quit, type, eval, include, load, reload, add ].
 
-
--spec dispatch(string()) -> {ok, {aere_repl:command(), string()}}
-                          | skip
-                          | {error, {no_such_command, string()}
-                          | {ambiguous_prefix, list(aere_repl:command())}}.
-dispatch(Input) ->
+%% Parse an input string. This function is called on strings entered by the user in the repl
+-spec parse(string()) -> parse_result().
+parse(Input) ->
     case Input of
-        [] ->
-            skip;
-        ":" ->
-            skip;
+        []  -> skip;
+        ":" -> skip;
         [$:|CommandAndArg] ->
-            [Command | _] = string:tokens(CommandAndArg, whitespaces()),
-            Arg = string:trim(CommandAndArg -- Command, leading, whitespaces()),
-            CommandStrs = [atom_to_list(C) || C <- commands()],
-            case lists:filter(fun(C) -> lists:prefix(Command, C) end, CommandStrs) of
-                [C] -> {ok, {list_to_existing_atom(C), Arg}};
-                [] -> {error, {no_such_command, Command}};
-                More -> case lists:member(Command, CommandStrs) of
-                            true -> {ok, {list_to_existing_atom(Command), Arg}};
-                            false -> {error, {ambiguous_prefix, [list_to_existing_atom(C) || C <- More]}}
-                        end
+            [Command | _] = string:tokens(CommandAndArg, unicode_util:whitespace()),
+            Arg = string:trim(CommandAndArg -- Command, leading, unicode_util:whitespace()),
+            KnownCommands = [atom_to_list(C) || C <- commands()],
+            case lists:member(Command, KnownCommands) of
+                true  -> {ok, {list_to_existing_atom(Command), Arg}};
+                false -> {error, {no_such_command, Command}}
             end;
-        _ -> {ok, {eval, Input}}
+        _ ->
+            %% Eval is the default command (i.e. 1 + 1 is just :eval 1 + 1)
+            {ok, {eval, Input}}
     end.
 
-
-eval_from_file(File) ->
-    MC = file:read_file(File),
-    C = case MC of
-            {error, Reason} ->
-                throw(aere_error:file_error(File, Reason));
-            {ok, F} -> binary_to_list(F)
-    end,
-    [dispatch(I) || I <- split_input(C)].
-
-split_input(C) ->
-    FileSpitterProcess =
-        fun R(S) ->
-                receive
-                    die -> ok;
-                    {is_eof, Back} -> Back ! (S == []),
-                                      R(S);
-                    {read, Back} ->
-                        case S of
-                            [] -> Back ! eof,
-                                  R([]);
-                            [H|T] -> Back ! H,
-                                     R(T)
-                        end
-                end
+%% Get single line or multiline input from the user and return it as a single string
+-spec get_input() -> string().
+get_input() ->
+    Line =
+        case io:get_line("AESO> ") of
+            eof          -> ":quit"; % that's dirty
+            {error, Err} -> exit(Err);
+            Data         -> Data
         end,
-    Lines = [L ++ "\n" || L <- string:tokens(C, "\n")],
-    FileSpitter = spawn(fun () -> FileSpitterProcess(Lines) end),
-    FileEater =
-        fun(_) ->
-                FileSpitter ! {read, self()},
-                receive S -> S end
+    Input =
+        case string:trim(Line, both, unicode_util:whitespace()) of
+            ":{" -> multiline_input();
+            ""   -> "";
+            _    -> lists:flatten(string:replace(Line, ";", "\n", all))
         end,
-    Reads =
-        fun R() ->
-                FileSpitter ! {is_eof, self()},
-                receive
-                    true ->
-                        FileSpitter ! die,
-                        [];
-                    false ->
-                        [get_input(FileEater)| R()]
-                end
-        end,
-    Reads().
+    string:trim(Input, both, unicode_util:whitespace()).
 
+-spec multiline_input() -> string().
+multiline_input() -> multiline_input([]).
 
-get_input(Provider) ->
-    Line = case Provider("AESO> ") of
-               eof -> ":quit"; % that's dirty
-               Other -> Other
-           end,
-    Inp = case string:trim(Line, both, whitespaces()) of
-              ":{" -> multiline_input(Provider);
-              "" -> "";
-              _ -> lists:flatten(string:replace(Line, ";", "\n", all))
-          end,
-    string:trim(Inp, both, whitespaces()).
-
-
-multiline_input(Provider) ->
-    multiline_input(Provider, []).
-multiline_input(Provider, Acc) ->
-    Line = Provider("| "),
-    case string:trim(Line, both, whitespaces()) of
-        ":}" -> lists:flatten(lists:reverse(Acc));
-        _ -> multiline_input(Provider, [Line|Acc])
+%% Keep reading input lines until :} is found. Return the code between :{ and :} as a single string
+-spec multiline_input([string()]) -> string().
+multiline_input(CodeBlock) ->
+    Line = io:get_line("| "),
+    case string:trim(Line, both, unicode_util:whitespace()) of
+        ":}" -> lists:flatten(lists:reverse(CodeBlock));
+        _    -> multiline_input([Line|CodeBlock])
     end.
-

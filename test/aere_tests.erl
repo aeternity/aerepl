@@ -70,7 +70,8 @@ format(T) ->
 
 eval(I) ->
     InitSt = aere_repl:init_state(),
-    Splitted = aere_parse:split_input(I),
+    %% TODO: Split the test file line by line
+    %Splitted = aere_parse:split_input(I),
     Build =
         lists:foldr(
           fun("", Cont) -> Cont;
