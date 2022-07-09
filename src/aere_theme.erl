@@ -19,7 +19,9 @@
         , info/1
         ]).
 
--export_type([ renderable/0 ]).
+-export_type([ renderable/0
+             , theme/0
+             ]).
 
 -type color() :: %% Standard colors
                  black | red | green | yellow
