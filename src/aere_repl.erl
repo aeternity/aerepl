@@ -176,11 +176,11 @@ apply_command(State, eval, I) ->
         _ -> error(too_many_shit)
     end;
 apply_command(State, load, Modules) ->
-    load_modules(string:lexemes(Modules, aere_parse:whitespaces()), State);
+    load_modules(string:lexemes(Modules, unicode_util:whitespace()), State);
 apply_command(State, reload, Modules) ->
-    reload_modules(string:lexemes(Modules, aere_parse:whitespaces()), State);
+    reload_modules(string:lexemes(Modules, unicode_util:whitespace()), State);
 apply_command(State, add, Modules) ->
-    add_modules(string:lexemes(Modules, aere_parse:whitespaces()), State);
+    add_modules(string:lexemes(Modules, unicode_util:whitespace()), State);
 apply_command(State, module, Modules) ->
     register_include(Modules, State);
 apply_command(State = #repl_state{blockchain_state = BS}, continue, _) ->
