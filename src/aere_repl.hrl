@@ -26,6 +26,7 @@
         , status :: {ok, repl_state()}
                   | error
                   | internal_error
+                  | skip
                   | finish
         }).
 -type repl_response() :: #repl_response{}.

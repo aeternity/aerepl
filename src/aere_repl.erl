@@ -53,29 +53,13 @@ banner(State) ->
     SophiaC = aere_theme:banner(Sophia),
     InteractiveC = aere_theme:banner_sub(Interactive),
 
-    render_msg(State, [SophiaC, "  ", InteractiveC]).
-
--type renderable() :: aere_theme:themed_text() | string()
-                    | [aere_theme:themed_text() | string()].
+    render_msg(State, [SophiaC, aere_theme:output("  "), InteractiveC]).
 
 %% Renders text by applying theming and trimming whitespaces
--spec render_msg(repl_state(), renderable()) -> string().
-render_msg(_State, []) ->
-    "";
-render_msg(State, Str = [C | _]) when is_integer(C) ->
-    render_msg(State, [Str]);
-render_msg(State, Th = {themed, _, _}) ->
-    render_msg(State, [Th]);
-render_msg(#repl_state{options = #repl_options{theme = Theme}}, Msg) when is_list(Msg) ->
-    ThemedMsg = lists:map(fun make_themed/1, Msg),
-    Render = aere_theme:render(Theme, ThemedMsg),
+-spec render_msg(repl_state(), aere_theme:renderable()) -> string().
+render_msg(#repl_state{options = #repl_options{theme = Theme}}, Msg) ->
+    Render = aere_theme:render(Theme, Msg),
     string:trim(Render, both, unicode_util:whitespace()).
-
-%% Convert a string to aere_theme:output when given a normal string, or return
-%% the themed text when a themed text is given
--spec make_themed(string() | aere_theme:themed_text()) -> aere_theme:themed_text().
-make_themed(Th = {themed, _, _}) -> Th;
-make_themed(Str) when is_list(Str) -> aere_theme:output(Str).
 
 %% Process an input string in the current state of the repl and respond accordingly
 %% This is supposed to be called after each input to the repl
@@ -84,7 +68,7 @@ process_input(State, String) when is_binary(String) ->
     process_input(State, binary_to_list(String));
 process_input(State, String) ->
     check_wololo(String),
-    case aere_parse:dispatch(String) of
+    case aere_parse:parse(String) of
         {ok, {Command, Args}} ->
             try apply_command(bump_nonce(State), Command, Args) of
                 {Out, State1 = #repl_state{}} ->
@@ -112,7 +96,7 @@ process_input(State, String) ->
                         , warnings = []
                         , status = internal_error
                         };
-                  error:E ->
+                  exit:E ->
                     Msg = render_msg(State, aere_error:internal(E)),
                     #repl_response
                         { output = Msg
@@ -140,11 +124,8 @@ process_input(State, String) ->
                         , status = internal_error
                         }
             end;
-        {error, Error} ->
-            Msg = case Error of
-                      {no_such_command, Command} -> aere_error:no_such_command(Command);
-                      {ambiguous_prefix, Commands} -> aere_error:ambiguous_prefix(Commands)
-                  end,
+        {error, {no_such_command, Command}} ->
+            Msg = aere_error:no_such_command(Command),
             #repl_response
                 { output = render_msg(State, Msg)
                 , warnings = []
@@ -185,7 +166,7 @@ apply_command(State, eval, I) ->
     case Parse of
         {body, Body} ->
             eval_expr(Body, State);
-        [{include, _, {string, _, Inc}}] ->
+        [{include, _, {string, _, _Inc}}] ->
             throw(unimplemented);
         [{letval, _, Pat, Expr}] ->
             register_letval(Pat, Expr, State);
@@ -343,13 +324,17 @@ eval_state(ES0, S) ->
     Res       = aefa_engine_state:accumulator(ES1),
     ChainApi  = aefa_engine_state:chain_api(ES1),
     UsedGas   = (S#repl_state.options)#repl_options.call_gas - aefa_engine_state:gas(ES1),
-    %Break     = aefa_engine_state:at_breakpoint(ES1),
-    Break     = false,
 
-    case Break of
-        true -> {"BREAK", UsedGas, S#repl_state{blockchain_state = {breakpoint, ES1}}};
-        false -> {Res, UsedGas, S#repl_state{blockchain_state = {ready, ChainApi}}}
-    end.
+    {Res, UsedGas, S#repl_state{blockchain_state = {ready, ChainApi}}}.
+
+    %% NOTE: the following code is used to experiment with breakpoints, but was
+    %%       commented to please dialyzer
+    %Break     = aefa_engine_state:at_breakpoint(ES1),
+
+    %case Break of
+    %    true -> {"BREAK", UsedGas, S#repl_state{blockchain_state = {breakpoint, ES1}}};
+    %    false -> {Res, UsedGas, S#repl_state{blockchain_state = {ready, ChainApi}}}
+    %end.
 
 setup_fate_state(
   ByteCode,

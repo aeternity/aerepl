@@ -19,6 +19,8 @@
         , info/1
         ]).
 
+-export_type([ renderable/0 ]).
+
 -type color() :: %% Standard colors
                  black | red | green | yellow
                | blue | magenta | cyan | white
@@ -34,6 +36,8 @@
 -type theme() :: #{theme_context() => {[style()], color()}}.
 
 -type themed_text() :: {themed, theme_context(), string()}.
+
+-type renderable() :: themed_text() | [themed_text()].
 
 -spec color_no(color()) -> string().
 color_no(Color) ->
@@ -101,23 +105,40 @@ make_themed(ThemeCxt, B) when is_binary(B) ->
 make_themed(ThemeCxt, Text) when is_list(Text) ->
     {themed, ThemeCxt, Text}.
 
+-spec prompt(string()) -> themed_text().
 prompt(Text)     -> make_themed(prompt, Text).
+
+-spec banner(string()) -> themed_text().
 banner(Text)     -> make_themed(banner, Text).
+
+-spec banner_sub(string()) -> themed_text().
 banner_sub(Text) -> make_themed(banner_sub, Text).
+
+-spec output(string()) -> themed_text().
 output(Text)     -> make_themed(output, Text).
+
+-spec error(string()) -> themed_text().
 error(Text)      -> make_themed(error, Text).
+
+-spec command(string()) -> themed_text().
 command(Text)    -> make_themed(command, Text).
+
+-spec setting(string()) -> themed_text().
 setting(Text)    -> make_themed(setting, Text).
+
+-spec file(string()) -> themed_text().
 file(Text)       -> make_themed(file, Text).
+
+-spec info(string()) -> themed_text().
 info(Text)       -> make_themed(info, Text).
 
 %% Like render/2, but with the empty theme
--spec render(themed_text() | [themed_text()]) -> string().
+-spec render(renderable()) -> string().
 render(ThemedTxts) ->
     render(empty_theme(), ThemedTxts).
 
-%% Render a given themed text as an ANSI string in the provided theme
--spec render(theme(), themed_text() | [themed_text()]) -> string().
+%% Render a given renderable as an ANSI escaped string in the provided theme
+-spec render(theme(), renderable()) -> string().
 render(Theme, ThemedTxt = {themed, _, _}) ->
     apply_theme(Theme, ThemedTxt);
 render(Theme, ThemedTxts) when is_list(ThemedTxts) ->
@@ -127,5 +148,5 @@ render(Theme, ThemedTxts) when is_list(ThemedTxts) ->
 apply_theme(Theme, {themed, ThemeCxt, Text}) ->
     case maps:get(ThemeCxt, Theme, none) of
         none -> Text;
-        {Styles, Color}-> ansi_theme_str(Styles, Color) ++ Text ++ ansi_theme_str([normal], white)
+        {Styles, Color} -> ansi_theme_str(Styles, Color) ++ Text ++ ansi_theme_str([normal], white)
     end.
