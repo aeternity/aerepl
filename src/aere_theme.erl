@@ -128,7 +128,7 @@ render(Theme, Txts) when is_list(Txts) ->
                      (T) -> [T]
                   end, FlatTxt).
 
--spec apply_theme(theme(), themed_text() | string() | atom() | binary()) -> string().
+-spec apply_theme(theme(), themed_text()) -> string().
 apply_theme(Theme, {themed, ThemeCxt, Text}) ->
     case maps:get(ThemeCxt, Theme, none) of
         none -> Text;

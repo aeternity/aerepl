@@ -225,7 +225,9 @@ load_modules(Modules, S0) ->
 reload_modules([], S0 = #repl_state{loaded_files = LdFiles}) ->
     reload_modules(maps:keys(LdFiles), S0);
 reload_modules(Modules, S0) ->
-    add_modules(Modules, S0). %% Worst case it will work when someone expects it to fail. Not worth checking if the modules are loaded.
+    %% Worst case it will work when someone expects it to fail.
+    %% Not worth checking if the modules are loaded.
+    add_modules(Modules, S0).
 
 add_modules([], S0) ->
     S0; %% Can happen
@@ -245,7 +247,7 @@ add_modules(Modules, S0 = #repl_state{loaded_files = LdFiles}) ->
     OkFiles =
         [ begin
               Ast0 = aeso_parser:string(binary:bin_to_list(File)),
-              aere_sophia:typecheck(aere_mock:ast_check_contract(Ast0)),
+              aere_sophia:typecheck(aere_mock:ast_fillup_contract(Ast0)),
               File
           end
           || {ok, File} <- Files
