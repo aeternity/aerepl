@@ -108,31 +108,31 @@ make_themed(ThemeCxt, Text) when is_list(Text) ->
     {themed, ThemeCxt, Text}.
 
 -spec prompt(string()) -> themed_text().
-prompt(Text)     -> make_themed(prompt, Text).
+prompt(Text) -> make_themed(prompt, Text).
 
 -spec banner(string()) -> themed_text().
-banner(Text)     -> make_themed(banner, Text).
+banner(Text) -> make_themed(banner, Text).
 
 -spec banner_sub(string()) -> themed_text().
 banner_sub(Text) -> make_themed(banner_sub, Text).
 
 -spec output(string()) -> themed_text().
-output(Text)     -> make_themed(output, Text).
+output(Text) -> make_themed(output, Text).
 
 -spec error(string()) -> themed_text().
-error(Text)      -> make_themed(error, Text).
+error(Text) -> make_themed(error, Text).
 
 -spec command(string()) -> themed_text().
-command(Text)    -> make_themed(command, Text).
+command(Text) -> make_themed(command, Text).
 
 -spec setting(string()) -> themed_text().
-setting(Text)    -> make_themed(setting, Text).
+setting(Text) -> make_themed(setting, Text).
 
 -spec file(string()) -> themed_text().
-file(Text)       -> make_themed(file, Text).
+file(Text) -> make_themed(file, Text).
 
 -spec info(string()) -> themed_text().
-info(Text)       -> make_themed(info, Text).
+info(Text) -> make_themed(info, Text).
 
 %% Like render/2, but with the empty theme
 -spec render(renderable()) -> string().
