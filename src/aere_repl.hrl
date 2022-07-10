@@ -24,7 +24,7 @@
 -type repl_state() :: #repl_state{}.
 
 -record(repl_response,
-        { output :: string()
+        { output :: aere_theme:renderable()
         , warnings :: [string()]
         , status :: {ok, repl_state()}
                   | error

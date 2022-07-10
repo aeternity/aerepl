@@ -142,9 +142,10 @@ render(ThemedTxts) ->
 %% Render a given renderable as an ANSI escaped string in the provided theme
 -spec render(theme(), renderable()) -> string().
 render(Theme, ThemedTxt = {themed, _, _}) ->
-    apply_theme(Theme, ThemedTxt);
+    render(Theme, [ThemedTxt]);
 render(Theme, ThemedTxts) when is_list(ThemedTxts) ->
-    lists:flatten(lists:map(fun(T) -> apply_theme(Theme, T) end, ThemedTxts)).
+    AnsiStr = lists:flatten(lists:map(fun(T) -> apply_theme(Theme, T) end, ThemedTxts)),
+    string:trim(AnsiStr, both, unicode_util:whitespace()).
 
 -spec apply_theme(theme(), themed_text()) -> string().
 apply_theme(Theme, {themed, ThemeCxt, Text}) ->

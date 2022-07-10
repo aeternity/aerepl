@@ -44,8 +44,8 @@ init([]) ->
 handle_call({input, Input}, _From, State) ->
     {Output, State1} = process_input(Input, State),
     {reply, Output, State1};
-handle_call(banner, _From, State) ->
-    {reply, aere_repl:banner(State), State}.
+handle_call(banner, _From, State = #repl_state{options = #repl_options{theme = Theme}}) ->
+    {reply, aere_theme:render(Theme, aere_msg:banner()), State}.
 
 handle_cast(reset, _) ->
     {noreply, new_state()};
@@ -73,13 +73,14 @@ reset() ->
 new_state() ->
     aere_repl:init_state().
 
-process_input(Input, State) ->
+process_input(Input, State = #repl_state{options = #repl_options{theme = Theme}}) ->
     #repl_response{
        output = Output,
        status = Status
       } = aere_repl:process_input(State, Input),
-    {RetStatus, NewState} = case Status of
-                 {Status1, State1 = #repl_state{}} -> {Status1, State1};
-                 Status1 -> {Status1, State}
-             end,
-    {{RetStatus, Output}, NewState}.
+    {RetStatus, NewState} =
+        case Status of
+            {Status1, State1 = #repl_state{}} -> {Status1, State1};
+            Status1                           -> {Status1, State}
+        end,
+    {{RetStatus, aere_theme:render(Theme, Output)}, NewState}.

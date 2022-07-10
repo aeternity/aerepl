@@ -7,7 +7,6 @@
 
 -export([ init_state/0
         , process_input/2
-        , banner/1
         ]).
 
 -include("aere_repl.hrl").
@@ -37,31 +36,6 @@ init_state() ->
        loaded_files     = default_loaded_files()
       }.
 
--spec banner(repl_state()) -> string().
-banner(State) ->
-    Sophia =
-        "    ____\n"
-        "   / __ | ,             _     _\n"
-        "  / / |_|  )           | |   (_)\n"
-        " ( (_____,-` ___  _ __ | |__  _  __ _\n"
-        "  \\______ \\ / _ \\| '_ \\| '_ \\| |/ _` |\n"
-        "  ,-`    ) ) (_) ) |_) ) | | | | (_| |\n"
-        " (  ____/ / \\___/| .__/|_| |_|_|\\__,_|\n"
-        "  `(_____/       | |\n"
-        "                 |_|",
-    Interactive = "interactive",
-
-    SophiaC = aere_theme:banner(Sophia),
-    InteractiveC = aere_theme:banner_sub(Interactive),
-
-    render_msg(State, [SophiaC, aere_theme:output("  "), InteractiveC]).
-
-%% Renders text by applying theming and trimming whitespaces
--spec render_msg(repl_state(), aere_theme:renderable()) -> string().
-render_msg(#repl_state{options = #repl_options{theme = Theme}}, Msg) ->
-    Render = aere_theme:render(Theme, Msg),
-    string:trim(Render, both, unicode_util:whitespace()).
-
 %% Process an input string in the current state of the repl and respond accordingly
 %% This is supposed to be called after each input to the repl
 -spec process_input(repl_state(), binary() | string()) -> repl_response().
@@ -74,67 +48,68 @@ process_input(State, String) ->
             try apply_command(bump_nonce(State), Command, Args) of
                 {Out, State1 = #repl_state{}} ->
                     #repl_response
-                        { output = render_msg(State1, Out)
+                        { output = Out
                         , warnings = []
                         , status = {ok, State1}
                         };
                 State1 = #repl_state{} ->
                     #repl_response
-                        { output = ""
+                        { output = []
                         , warnings = []
                         , status = {ok, State1}
                         };
                 finish ->
                     #repl_response
-                        { output = "bye!"
+                        { output = aere_msg:bye()
                         , warnings = []
                         , status = finish
                         }
             catch error:E:Stacktrace ->
-                    Msg = render_msg(State, aere_error:internal(E, Stacktrace)),
                     #repl_response
-                        { output = Msg
+                        { output = aere_msg:internal(E, Stacktrace)
                         , warnings = []
                         , status = internal_error
                         };
                   exit:E ->
-                    Msg = render_msg(State, aere_error:internal(E)),
                     #repl_response
-                        { output = Msg
+                        { output = aere_msg:internal(E)
                         , warnings = []
                         , status = internal_error
                         };
                   {error, E} ->
                     #repl_response
-                        { output = render_msg(State, E)
+                        { output = aere_msg:error(E)
+                        , warnings = []
+                        , status = error
+                        };
+                  {repl_error, E} ->
+                    #repl_response
+                        { output = E
                         , warnings = []
                         , status = error
                         };
                   {aefa_fate, revert, ErrMsg, _} ->
-                    Msg = [aere_theme:error("ABORT: "), aere_theme:info(ErrMsg)],
                     #repl_response
-                        { output = render_msg(State, Msg)
+                        { output = aere_msg:abort(ErrMsg)
                         , warnings = []
                         , status = error
                         };
                   {aefa_fate, FateErr, _} ->
-                    Msg = aere_theme:error(FateErr),
                     #repl_response
-                        { output = render_msg(State, Msg)
+                        { output = aere_msg:error(FateErr)
                         , warnings = []
                         , status = internal_error
                         }
             end;
         {error, {no_such_command, Command}} ->
-            Msg = aere_error:no_such_command(Command),
             #repl_response
-                { output = render_msg(State, Msg)
+                { output = aere_msg:no_such_command(Command)
                 , warnings = []
                 , status = error
                 };
         skip ->
             #repl_response
-                { output = ""
+                { output = []
                 , warnings = []
                 , status = skip
                 }
@@ -159,7 +134,7 @@ apply_command(State, type, I) ->
     {_, Type} = aere_sophia:type_of(TAst, ?USER_INPUT),
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
     TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER ++ "[0-9]*\\.", "", [global, {return, list}]),
-    {aere_theme:output(TypeStrClean), State};
+    {aere_msg:output(TypeStrClean), State};
 apply_command(State, eval, I) ->
     Parse = aere_sophia:parse_top(I),
     case Parse of
@@ -186,25 +161,24 @@ apply_command(State, module, Modules) ->
 apply_command(State = #repl_state{blockchain_state = BS}, continue, _) ->
     case BS of
         {ready, _} ->
-            {aere_theme:error("Not at breakpoint!"), State};
+            {aere_msg:error("Not at breakpoint!"), State};
         {breakpoint, ES} ->
             Stack = aefa_engine_state:accumulator_stack(ES),
             StackS = io_lib:format("~p", [Stack]),
             {StackS, State}
-    end;
-apply_command(_, _, _) ->
-    throw(aere_error:undefined_command()).
+    end.
 
 -spec eval_expr([aeso_syntax:stmt()], repl_state()) -> command_res().
 eval_expr(Body, S0) ->
     Ast = aere_mock:eval_contract(Body, S0),
     {Res, UsedGas, S1} = compile_and_run_contract(Ast, S0),
     ResStr = io_lib:format("~p", [Res]),
-    GasStr = case (S0#repl_state.options)#repl_options.display_gas of
-                 false -> "";
-                 true -> io_lib:format("\nUSED GAS: ~p", [UsedGas])
-             end,
-    {[aere_theme:output(ResStr), aere_theme:info(GasStr)], S1}.
+    Output =
+        case (S0#repl_state.options)#repl_options.display_gas of
+            true  -> aere_msg:output_with_gas(ResStr, UsedGas);
+            false -> aere_msg:output(ResStr)
+        end,
+    {Output, S1}.
 
 load_modules(Modules, S0) ->
     S1 = S0#repl_state{loaded_files = default_loaded_files()},
@@ -222,14 +196,9 @@ add_modules([], S0) ->
 add_modules(Modules, S0 = #repl_state{loaded_files = LdFiles}) ->
     Files = [ file:read_file(M) || M <- Modules],
 
-    case [{File, Err} || {File, {error, Err}} <- lists:zip(Modules, Files)] of
-        [] -> ok;
-        L ->
-            Msg =
-                [ aere_theme:error("Could not load files:\n")
-                ,  [[aere_theme:file(File), ": ", file:format_error(Err)] || {File, Err} <- L]
-                ],
-            throw({error, Msg})
+    case [ {File, file:format_error(Err)} || {File, {error, Err}} <- lists:zip(Modules, Files) ] of
+        []     -> ok;
+        Failed -> throw({repl_error, aere_msg:files_load_error(Failed)})
     end,
 
     OkFiles =
@@ -253,7 +222,7 @@ register_include(Include, S0) when is_binary(Include) ->
 register_include(Include, S0 = #repl_state{included_files = IncFiles, included_code = IncCode, loaded_files = LdFiles}) ->
     case maps:get(Include, LdFiles, not_loaded) of
         not_loaded ->
-            throw({error, ["File not loaded: ", Include]});
+            throw({repl_error, aere_msg:file_not_loaded(Include)});
         File ->
             S1 = case lists:member(Include, IncFiles) of
                      true -> S0;
