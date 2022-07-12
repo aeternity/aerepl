@@ -15,6 +15,7 @@
         , type_unfold_contract/1
         , type_unfold_contract/2
         , ast_fillup_contract/1
+        , pat_as_decl/1
         , ann/0
         ]).
 
@@ -50,7 +51,7 @@ letfun_contract(FName, Args, FBody, State) ->
 -spec letval_contract(pat(), [string()], expr(), repl_state()) -> ast().
 letval_contract(Pattern, Vars, Expr, State) ->
     Let = {letval, ann(), Pattern, Expr},
-    Ret = {tuple, ann(), [{string, ann(), ?LETVAL_INDICATOR}] ++ [{id, ann(), Var} || Var <- Vars]},
+    Ret = {tuple, ann(), [{id, ann(), Var} || Var <- Vars]},
     Body = {block, ann(), [Let, Ret]},
     mock_contract(State, [function_e([entrypoint, payable, stateful], ?USER_INPUT, args(State), Body)]).
 
@@ -83,6 +84,10 @@ type_unfold_contract(Types, State) ->
 ast_fillup_contract(Ast) ->
     Ast ++ [contract(?MOCK_CONTRACT, [function_e(?USER_INPUT, [], {tuple, ann(), []})])].
 
+%% Puts a pattern as the value of a function. Used in collection of free variables
+%% TODO This is a hack because used_ids requires decl; should be a feature of aesophia
+pat_as_decl(Pat) ->
+    function_e([], "_", [], Pat).
 
 %%% --- Entities extracted from REPL state
 

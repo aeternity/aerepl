@@ -240,16 +240,22 @@ register_include(Include, S0 = #repl_state{included_files = IncFiles, included_c
 register_letval(Pat, Expr, S0 = #repl_state{funs = Funs}) ->
     NewVars = lists:filter(
                 fun(Var) -> Var /= "_" end,
-                aeso_syntax_utils:used_ids([{letfun, [], {id, [], "x"}, [], {id, [], "_"}, [{guarded, [], [], Pat}]}])), % hack: used_ids require decl and then expr
+                aeso_syntax_utils:used_ids([aere_mock:pat_as_decl(Pat)])),
     Ast = aere_mock:letval_contract(Pat, NewVars, Expr, S0),
     TypedAst = aere_sophia:typecheck(Ast, []),
     ByteCode = aere_sophia:compile_contract(TypedAst),
 
-    {_, {tuple_t, _, [_|Types]}} = aere_sophia:type_of(TypedAst, ?USER_INPUT),
-
-    {{tuple,ValsPack}, _, S1} = run_contract(ByteCode, S0),
-    [ <<?LETVAL_INDICATOR>>|Vals] = tuple_to_list(ValsPack),
-
+    {Vals, Types, S1} =
+        case NewVars of
+            [_] ->
+                {_, T} = aere_sophia:type_of(TypedAst, ?USER_INPUT),
+                {V, _, S} = run_contract(ByteCode, S0),
+                {[V], [T], S};
+            _ ->
+                {_, {tuple_t, _, Ts}} = aere_sophia:type_of(TypedAst, ?USER_INPUT),
+                {{tuple, Vs}, _, S} = run_contract(ByteCode, S0),
+                {tuple_to_list(Vs), Ts, S}
+        end,
     NameMap = build_fresh_name_map(ByteCode),
     Vals1 = replace_function_name(Vals, NameMap),
 
