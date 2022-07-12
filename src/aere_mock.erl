@@ -41,9 +41,9 @@ eval_contract(Body, State) ->
     mock_contract(State, [CallFun]).
 
 %% Mock to validate and get bytecode of a function
--spec letfun_contract(string() | id(), [pat()], [guarded_expr()], repl_state()) -> ast().
+-spec letfun_contract(id(), [pat()], [guarded_expr()], repl_state()) -> ast().
 letfun_contract(FName, Args, FBody, State) ->
-    FunDef = function(FName, [{tuple, ann(), args(State)}|Args], FBody),
+    FunDef = function([entrypoint, payable, stateful], FName, Args, FBody),
     CallFun = function_e([entrypoint, payable, stateful], ?USER_INPUT, [], FName),
     mock_contract(State, [FunDef, CallFun]).
 

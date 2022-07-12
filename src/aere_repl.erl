@@ -257,14 +257,37 @@ register_letval(Pat, Expr, S0 = #repl_state{funs = Funs}) ->
                 {tuple_to_list(Vs), Ts, S}
         end,
     NameMap = build_fresh_name_map(ByteCode),
-    Vals1 = replace_function_name(Vals, NameMap),
 
+    Vals1 = replace_function_name(Vals, NameMap),
     Vars1 = lists:zip3(NewVars, Types, Vals1),
     Funs1 = generated_functions(ByteCode, NameMap),
 
     S2 = register_vars(Vars1, S1),
 
     S2#repl_state{funs = maps:merge(Funs, Funs1)}.
+
+-spec register_letfun(aeso_syntax:id(), [aeso_syntax:pat()], [aeso_syntax:guarded_expr()], repl_state()) -> command_res().
+register_letfun(Id = {id, _, Name}, Args, Body, S0 = #repl_state{funs = Funs}) ->
+    Ast = aere_mock:letfun_contract(Id, Args, Body, S0),
+    TypedAst = aere_sophia:typecheck(Ast, []),
+    ByteCode = aere_sophia:compile_contract(TypedAst),
+
+    {_, Type} = aere_sophia:type_of(TypedAst, ?USER_INPUT),
+
+    NameMap = build_fresh_name_map(ByteCode),
+
+    Funs1 = generated_functions(ByteCode, NameMap),
+
+    FunNewName = maps:get(aeb_fate_code:symbol_identifier(binary:list_to_bin(Name)), NameMap),
+    FunVal = {tuple, {FunNewName, {tuple, {}}}},
+
+    S1 = register_vars([{Name, Type, FunVal}], S0),
+
+    S1#repl_state{funs = maps:merge(Funs, Funs1)}.
+
+register_vars(NewVars, S = #repl_state{vars = OldVars}) ->
+    Filtered = [V || V = {Id, _, _} <- OldVars, [] =:= proplists:lookup_all(Id, NewVars)],
+    S#repl_state{vars = NewVars ++ Filtered}.
 
 build_fresh_name_map(ByteCode) ->
     Symbols = aeb_fate_code:symbols(ByteCode),
@@ -295,36 +318,6 @@ replace_function_name(M, NameMap) when is_map(M) ->
     maps:from_list(replace_function_name(maps:to_list(M), NameMap));
 replace_function_name(E, _) ->
     E.
-
--spec register_letfun(aeso_syntax:id(), [aeso_syntax:pat()], [aeso_syntax:guarded_expr()], repl_state()) -> command_res().
-register_letfun(Name = {id, _, SName}, Args, Body, S0 = #repl_state{vars = Vars, funs = Funs}) ->
-    Ast = aere_mock:letfun_contract(Name, Args, Body, S0),
-    TypedAst = aere_sophia:typecheck(Ast, []),
-    ByteCode = aere_sophia:compile_contract(TypedAst),
-
-    {_, {fun_t, Ann, [], ArgsT0, RetT}} = aere_sophia:type_of(TypedAst, ?USER_INPUT),
-    Type = {fun_t, Ann, [], tl(ArgsT0), RetT}, % Remove closure
-
-    NameMap = build_fresh_name_map(ByteCode),
-
-    Funs1 = generated_functions(ByteCode, NameMap),
-
-    FunClosure = make_closure(Vars),
-    FunNewName = maps:get(aeb_fate_code:symbol_identifier(binary:list_to_bin(SName)), NameMap),
-    FunVal = {tuple, {FunNewName, FunClosure}},
-
-    S1 = register_vars([{SName, Type, FunVal}], S0),
-
-    S1#repl_state{funs = maps:merge(Funs, Funs1)}.
-
-register_vars(NewVars, S = #repl_state{vars = OldVars}) ->
-    Filtered = [V || V = {Name, _, _} <- OldVars, [] =:= proplists:lookup_all(Name, NewVars)],
-    S#repl_state{vars = NewVars ++ Filtered}.
-
-make_closure([{_, _, V}]) ->
-    V;
-make_closure(Vars) ->
-    {tuple, list_to_tuple([V || {_, _, V} <- Vars])}.
 
 -spec register_typedef(aeso_syntax:id(), [aeso_syntax:tvar()], aeso_syntax:typedef(), repl_state()) -> command_res().
 register_typedef({id, _, Name}, Args, Def, S0 = #repl_state{query_nonce = Nonce, typedefs = TypeDefs, type_scope = TypeScope}) ->
