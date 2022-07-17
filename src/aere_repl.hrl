@@ -1,7 +1,11 @@
 -record(repl_options,
         { theme :: aere_theme:theme()
         , display_gas = true :: boolean()
+        , gas_price = 1 :: non_neg_integer()
         , call_gas = 1000000000000000000 :: pos_integer()
+        , call_value :: non_neg_integer()
+        , print_format :: sophia | fate
+        , print_unit :: boolean()
         }).
 -type repl_options() :: #repl_options{}.
 

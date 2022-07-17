@@ -30,10 +30,12 @@ typecheck(Ast, Opts) ->
     end.
 
 compile_contract(TypedAst) ->
-    {_, FCode} = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, [])
-                 catch {error, Ec} -> process_err(Ec) end,
-    Fate       = try aeso_fcode_to_fate:compile(FCode, [])
-                 catch {error, Ef} -> process_err(Ef) end,
+    {#{child_con_env := ChildConEnv}, FCode}
+        = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, [])
+          catch {error, Ec} -> process_err(Ec) end,
+    Fate
+        = try aeso_fcode_to_fate:compile(ChildConEnv, FCode, [])
+          catch {error, Ef} -> process_err(Ef) end,
     ByteCode = aeb_fate_code:serialize(Fate, []),
     #{byte_code => ByteCode,
       contract_source => "REPL INPUT",

@@ -10,10 +10,13 @@
         , no_such_command/1
         , file_not_loaded/1
         , files_load_error/1
+        , set_nothing/0
         , bye/0
         ]).
 
--spec banner() -> aere_theme:renderable().
+-type msg() :: aere_theme:renderable().
+
+-spec banner() -> msg().
 banner() ->
     Sophia =
         "    ____\n"
@@ -32,21 +35,21 @@ banner() ->
 
     [SophiaThemed, aere_theme:output("  "), InteractiveThemed].
 
--spec output(string()) -> aere_theme:renderable().
+-spec output(string()) -> msg().
 output(Msg) -> aere_theme:output(Msg).
 
--spec output_with_gas(string(), integer()) -> aere_theme:renderable().
+-spec output_with_gas(string(), integer()) -> msg().
 output_with_gas(Msg, UsedGas) ->
     GasMsg = io_lib:format("\nUSED GAS: ~p", [UsedGas]),
     [aere_theme:output(Msg), aere_theme:info(GasMsg)].
 
--spec error(string()) -> aere_theme:renderable().
+-spec error(string()) -> msg().
 error(Msg) -> aere_theme:error(Msg).
 
--spec abort(string()) -> aere_theme:renderable().
+-spec abort(string()) -> msg().
 abort(Msg) -> [aere_theme:error("ABORT: "), aere_theme:info(Msg)].
 
--spec internal(term(), erlang:stacktrace()) -> aere_theme:renderable().
+-spec internal(term(), erlang:stacktrace()) -> msg().
 internal(Error, Stacktrace) ->
     [ aere_theme:output("Command failed:\n")
     , aere_theme:error(lists:flatten(io_lib:format("~p", [Error])))
@@ -57,23 +60,23 @@ internal(Error, Stacktrace) ->
       end
     ].
 
--spec internal(term()) -> aere_theme:renderable().
+-spec internal(term()) -> msg().
 internal(Error) ->
     internal(Error, []).
 
--spec no_such_command(aere_repl:command()) -> aere_theme:renderable().
+-spec no_such_command(aere_repl:command()) -> msg().
 no_such_command(Command) ->
     [ aere_theme:output("No such command ")
     , aere_theme:command(io_lib:format("~p", [Command]))
     , aere_theme:output("\n")
     ].
 
--spec file_not_loaded(FileName) -> aere_theme:renderable() when
+-spec file_not_loaded(FileName) -> msg() when
       FileName :: string().
 file_not_loaded(File) ->
     [aere_theme:error("File not loaded: "), aere_theme:file(File)].
 
--spec files_load_error([{FileName, Reason}]) -> aere_theme:renderable() when
+-spec files_load_error([{FileName, Reason}]) -> msg() when
       FileName :: string(),
       Reason :: string().
 files_load_error(Failed) ->
@@ -84,5 +87,9 @@ files_load_error(Failed) ->
     FlatList = lists:flatten(lists:join(aere_theme:output("\n"), FilesAndReasons)),
     [aere_theme:error("Could not load files:\n") | FlatList].
 
--spec bye() -> aere_theme:renderable().
+-spec set_nothing() -> msg().
+set_nothing() ->
+    [aere_theme:error("Please specify what to set")].
+
+-spec bye() -> msg().
 bye() -> aere_theme:output("bye!").

@@ -5,11 +5,10 @@
 
 -export([new_account/2, default_tx_env/1, update_balance/3]).
 
-new_account(Balance, State) ->
+new_account(Balance, Trees1) ->
     {PubKey, PrivKey} = new_key_pair(),
-    State1            = insert_key_pair(PubKey, PrivKey, State),
-    State2            = set_account(aec_accounts:new(PubKey, Balance), State1),
-    {PubKey, State2}.
+    Trees2            = set_account(aec_accounts:new(PubKey, Balance), Trees1),
+    {PubKey, Trees2}.
 
 update_balance(NewBalance, PubKey, State) ->
     Trees = trees(State),
@@ -29,10 +28,9 @@ insert_key_pair(Pub, Priv, S) ->
     S#{key_pairs => Old#{Pub => Priv}}.
 key_pairs(S) -> maps:get(key_pairs, S, #{}).
 
-set_account(Account, State) ->
-    Trees   = trees(State),
+set_account(Account, Trees) ->
     AccTree = aec_accounts_trees:enter(Account, aec_trees:accounts(Trees)),
-    State#{trees => aec_trees:set_accounts(Trees, AccTree)}.
+    aec_trees:set_accounts(Trees, AccTree).
 
 trees(#{} = S) ->
     maps:get(trees, S, aec_trees:new()).

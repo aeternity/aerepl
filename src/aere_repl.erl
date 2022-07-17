@@ -20,7 +20,8 @@ init_options() ->
 
 -spec init_state() -> repl_state().
 init_state() ->
-    {PK, Trees} = aere_chain:new_account(100000000000000000000000000000, #{}),
+    Trees0 = aec_trees:new(),
+    {PK, Trees} = aere_chain:new_account(100000000000000000000000000000, Trees0),
     ChainState = aefa_chain_api:new(
                    #{ gas_price => 1,
                       fee       => 0,
@@ -151,13 +152,20 @@ apply_command(State, eval, I) ->
         _ -> error(too_many_shit)
     end;
 apply_command(State, load, Modules) ->
-    load_modules(string:lexemes(Modules, unicode_util:whitespace()), State);
+    load_modules(aere_parse:words(Modules), State);
 apply_command(State, reload, Modules) ->
-    reload_modules(string:lexemes(Modules, unicode_util:whitespace()), State);
+    reload_modules(aere_parse:words(Modules), State);
 apply_command(State, add, Modules) ->
-    add_modules(string:lexemes(Modules, unicode_util:whitespace()), State);
+    add_modules(aere_parse:words(Modules), State);
 apply_command(State, module, Modules) ->
     register_include(Modules, State);
+apply_command(State, set, Value) ->
+    Values = aere_parse:words(Value),
+    case Values of
+        [] -> throw({repl_error, aere_msg:set_nothing()});
+        [Option|Args] ->
+            set_option(Option, Args, State)
+    end;
 apply_command(State = #repl_state{blockchain_state = BS}, continue, _) ->
     case BS of
         {ready, _} ->
@@ -351,6 +359,7 @@ compile_and_run_contract(Ast, S) ->
     run_contract(ByteCode, S).
 
 run_contract(ByteCode, S) ->
+    io:format("~p\n\n", [ByteCode]),
     ES0 = setup_fate_state(ByteCode, S),
     eval_state(ES0, S).
 
@@ -422,3 +431,7 @@ default_loaded_files() ->
             filename:extension(File) =:= ".aes"
         ],
     maps:from_list([{File, element(2, file:read_file(filename:join(StdlibDir, File)))} || File <- Files]).
+
+set_option(Option, Args, #repl_state{options = Opts}) ->
+    case Option of
+        end.

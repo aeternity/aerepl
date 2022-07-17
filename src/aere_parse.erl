@@ -1,6 +1,6 @@
 -module(aere_parse).
 
--export([ parse/1, get_input/0 ]).
+-export([ parse/1, get_input/0, words/1 ]).
 
 -type parse_result() :: {ok, {aere_repl:command(), string()}}
                       | {error, {no_such_command, string()}}
@@ -8,7 +8,7 @@
 
 -spec commands() -> list(aere_repl:command()).
 commands() ->
-    [ quit, type, eval, include, load, reload, add ].
+    [ quit, type, eval, include, load, reload, add, set ].
 
 %% Parse an input string. This function is called on strings entered by the user in the repl
 -spec parse(string()) -> parse_result().
@@ -57,3 +57,6 @@ multiline_input(CodeBlock) ->
         ":}" -> lists:flatten(lists:reverse(CodeBlock));
         _    -> multiline_input([Line|CodeBlock])
     end.
+
+words(String) ->
+    string:lexemes(String, unicode_util:whitespace()).
