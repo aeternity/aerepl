@@ -18,8 +18,8 @@ clean:
 	./rebar3 clean
 
 nuke:
-	rm _build -rf
-	rm rebar.lock -f
+	rm -rf _build
+	rm -f rebar.lock
 
 nuke-all: nuke
-	rm node -rf
+	rm -rf node
