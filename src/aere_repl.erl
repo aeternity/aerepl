@@ -464,7 +464,6 @@ parse_option(Option, Args) ->
     end.
 
 parse_option_args(Scheme, Args) ->
-    io:format("PARSING ~p ON ~p\n", [Scheme, Args]),
     case {Scheme, Args} of
         {{valid, Scheme1, Valid, _}, _} ->
             case parse_option_args(Scheme1, Args) of
