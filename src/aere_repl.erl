@@ -452,7 +452,7 @@ option_parse_rules() ->
     [ {display_gas, boolean}
     , {call_gas, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
     , {call_value, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
-    , {print_format, {valid, atom, fun(A) -> lists:member(A, [sophia, fate]) end, "sophia|fate"}}
+    , {print_format, {atom, [sophia,fate]}}
     , {print_unit, boolean}
     ].
 
@@ -481,8 +481,13 @@ parse_option_args(Scheme, Args) ->
             try list_to_integer(string:trim(A))
             catch error:badarg -> error
             end;
-        {atom, [A]} ->
-            try list_to_existing_atom(string:trim(A))
+        {{atom, Ats}, [A]} ->
+            %% Valid atoms should have been created while defining rules
+            try list_to_existing_atom(string:trim(A)) of
+                At -> case lists:member(At, Ats) of
+                          true -> At;
+                          _ -> error
+                      end
             catch error:badarg -> error
             end;
         _ ->

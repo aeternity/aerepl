@@ -107,7 +107,7 @@ option_usage(Option, Rules) ->
 
 format_option_scheme(integer) -> "INTEGER";
 format_option_scheme(boolean) -> "BOOLEAN";
-format_option_scheme(atom) -> "VALUE";
+format_option_scheme({atom, Ats}) -> string:join(lists:map(fun atom_to_list/1, Ats), "|");
 format_option_scheme({valid, Kind, _, Expl}) ->
     format_option_scheme(Kind) ++ "(" ++ Expl ++ ")".
 
