@@ -51,7 +51,10 @@ letfun_contract(FName, Args, FBody, State) ->
 -spec letval_contract(pat(), [string()], expr(), repl_state()) -> ast().
 letval_contract(Pattern, Vars, Expr, State) ->
     Let = {letval, ann(), Pattern, Expr},
-    Ret = {tuple, ann(), [{id, ann(), Var} || Var <- Vars]},
+    Ret = case Vars of
+              [V] -> {id, ann(), V};
+              _ -> {tuple, ann(), [{id, ann(), Var} || Var <- Vars]}
+          end,
     Body = {block, ann(), [Let, Ret]},
     mock_contract(State, [function_e([entrypoint, payable, stateful], ?USER_INPUT, args(State), Body)]).
 

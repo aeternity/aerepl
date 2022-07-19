@@ -418,7 +418,7 @@ setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, 
           #{caller => Owner}, % Spec
           aefa_stores:put_contract_store(Contract, Store, aefa_stores:new()),
           ChainApi,
-          #{}, % Code cache
+          #{Contract => {ByteCode, aere_version:vm_version()}}, % Code cache
           aere_version:vm_version()
          ),
     ES1 = aefa_engine_state:update_for_remote_call(Contract, ByteCode, aere_version:vm_version(), Caller, ES0),
