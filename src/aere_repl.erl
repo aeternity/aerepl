@@ -368,7 +368,7 @@ eval_state(ES0, S) ->
 
     Res       = aefa_engine_state:accumulator(ES1),
     ChainApi  = aefa_engine_state:chain_api(ES1),
-    UsedGas   = (S#repl_state.options)#repl_options.call_gas - aefa_engine_state:gas(ES1),
+    UsedGas   = (S#repl_state.options)#repl_options.call_gas - aefa_engine_state:gas(ES1) - 10, %% RETURN(R) costs 10
 
     {Res, UsedGas, S#repl_state{blockchain_state = {ready, ChainApi}}}.
 
@@ -401,7 +401,6 @@ setup_fate_state(
 setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, Store, Functions0, ChainApi) ->
 
     Functions = maps:merge(Functions0, aeb_fate_code:functions(ByteCode)),
-
     ES0 =
         aefa_engine_state:new(
           Gas,
@@ -434,4 +433,5 @@ default_loaded_files() ->
 
 set_option(Option, Args, #repl_state{options = Opts}) ->
     case Option of
-        end.
+        _ -> ok
+    end.

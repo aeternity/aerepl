@@ -11,26 +11,30 @@
 -include("aere_repl.hrl").
 
 load_deps() ->
-    code:add_pathz("node/_build/dev1/lib/aechannel/ebin/"),
-    code:add_pathz("node/_build/dev1/lib/aecontract/ebin/"),
-    code:add_pathz("node/_build/dev1/lib/aecore/ebin/"),
-    code:add_pathz("node/_build/dev1/lib/aefate/ebin/"),
-    code:add_pathz("node/_build/dev1/lib/aens/ebin/"),
-    code:add_pathz("node/_build/dev1/lib/aeoracle/ebin/"),
-    code:add_pathz("node/_build/dev1/lib/aeprimop/ebin/"),
-    code:add_pathz("node/_build/dev1/lib/aetx/ebin/"),
-    code:add_pathz("node/_build/dev1/lib/aeutils/ebin/"),
-    code:add_pathz("node/_build/dev1/lib/setup/ebin/"),
-    application:load(aechannel),
-    application:load(aecontract),
-    application:load(aecore),
-    application:load(aefate),
-    application:load(aens),
-    application:load(aeoracle),
-    application:load(aeprimop),
-    application:load(aetx),
-    application:load(aeutils),
-    application:load(setup).
+    case
+        code:add_pathz("node/_build/dev1/lib/aechannel/ebin/") andalso
+        code:add_pathz("node/_build/dev1/lib/aecontract/ebin/") andalso
+        code:add_pathz("node/_build/dev1/lib/aecore/ebin/") andalso
+        code:add_pathz("node/_build/dev1/lib/aefate/ebin/") andalso
+        code:add_pathz("node/_build/dev1/lib/aens/ebin/") andalso
+        code:add_pathz("node/_build/dev1/lib/aeoracle/ebin/") andalso
+        code:add_pathz("node/_build/dev1/lib/aeprimop/ebin/") andalso
+        code:add_pathz("node/_build/dev1/lib/aetx/ebin/") andalso
+        code:add_pathz("node/_build/dev1/lib/aeutils/ebin/") andalso
+        code:add_pathz("node/_build/dev1/lib/setup/ebin/") of
+        true -> ok;
+        Err -> throw(Err)
+    end,
+    ok = application:load(aechannel),
+    ok = application:load(aecontract),
+    ok = application:load(aecore),
+    ok = application:load(aefate),
+    ok = application:load(aens),
+    ok = application:load(aeoracle),
+    ok = application:load(aeprimop),
+    ok = application:load(aetx),
+    ok = application:load(aeutils),
+    ok = application:load(setup).
 
 %%% --- GEN SERVER ---
 
