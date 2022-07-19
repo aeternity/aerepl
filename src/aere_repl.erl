@@ -14,8 +14,12 @@
 
 -spec init_options() -> repl_options().
 init_options() ->
-    #repl_options{
-        theme = aere_theme:default_theme()
+    #{ theme => aere_theme:default_theme()
+    , display_gas => false
+    , call_gas => 100000000000000000
+    , call_value => 0
+    , print_format => sophia
+    , print_unit => false
     }.
 
 -spec init_state() -> repl_state().
@@ -164,7 +168,7 @@ apply_command(State, set, Value) ->
     case Values of
         [] -> throw({repl_error, aere_msg:set_nothing()});
         [Option|Args] ->
-            set_option(Option, Args, State)
+            set_option(list_to_existing_atom(Option), Args, State)
     end;
 apply_command(State = #repl_state{blockchain_state = BS}, continue, _) ->
     case BS of
@@ -177,12 +181,18 @@ apply_command(State = #repl_state{blockchain_state = BS}, continue, _) ->
     end.
 
 -spec eval_expr([aeso_syntax:stmt()], repl_state()) -> command_res().
-eval_expr(Body, S0) ->
+eval_expr(Body, S0 = #repl_state{options = #{display_gas  := DisplayGas,
+                                             print_unit   := PrintUnit,
+                                             print_format := _PrintFormat
+                                           }}) ->
     Ast = aere_mock:eval_contract(Body, S0),
     {Res, UsedGas, S1} = compile_and_run_contract(Ast, S0),
-    ResStr = io_lib:format("~p", [Res]),
+    ResStr = case {PrintUnit, Res} of
+                 {false, {tuple, {}}} -> "";
+                 _ -> io_lib:format("~p", [Res])
+             end,
     Output =
-        case (S0#repl_state.options)#repl_options.display_gas of
+        case DisplayGas of
             true  -> aere_msg:output_with_gas(ResStr, UsedGas);
             false -> aere_msg:output(ResStr)
         end,
@@ -368,7 +378,7 @@ eval_state(ES0, S) ->
 
     Res       = aefa_engine_state:accumulator(ES1),
     ChainApi  = aefa_engine_state:chain_api(ES1),
-    UsedGas   = (S#repl_state.options)#repl_options.call_gas - aefa_engine_state:gas(ES1) - 10, %% RETURN(R) costs 10
+    UsedGas   = maps:get(call_gas, S#repl_state.options) - aefa_engine_state:gas(ES1) - 10, %% RETURN(R) costs 10
 
     {Res, UsedGas, S#repl_state{blockchain_state = {ready, ChainApi}}}.
 
@@ -388,7 +398,7 @@ setup_fate_state(
      blockchain_state = {ready, ChainApi},
      vars = Vars,
      funs = Funs,
-     options = #repl_options{call_gas = Gas}
+     options = #{call_gas := Gas}
     }) ->
 
     Store = aect_contracts_store:new(),
@@ -431,7 +441,51 @@ default_loaded_files() ->
         ],
     maps:from_list([{File, element(2, file:read_file(filename:join(StdlibDir, File)))} || File <- Files]).
 
-set_option(Option, Args, #repl_state{options = Opts}) ->
-    case Option of
-        _ -> ok
+set_option(Option, Args, S = #repl_state{options = Opts}) ->
+    case parse_option(Option, Args) of
+        error ->
+            {aere_msg:option_usage(Option, option_parse_rules()), S};
+        Val -> S#repl_state{options = Opts#{Option => Val}}
+    end.
+
+option_parse_rules() ->
+    [ {display_gas, boolean}
+    , {call_gas, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
+    , {call_value, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
+    , {print_format, {valid, atom, fun(A) -> lists:member(A, [sophia, fate]) end, "sophia|fate"}}
+    , {print_unit, boolean}
+    ].
+
+parse_option(Option, Args) ->
+    case proplists:get_value(Option, option_parse_rules(), unknown) of
+        unknown ->
+            error;
+        Scheme -> parse_option_args(Scheme, Args)
+    end.
+
+parse_option_args(Scheme, Args) ->
+    io:format("PARSING ~p ON ~p\n", [Scheme, Args]),
+    case {Scheme, Args} of
+        {{valid, Scheme1, Valid, _}, _} ->
+            case parse_option_args(Scheme1, Args) of
+                error -> error;
+                X -> case Valid(X) of
+                         true -> X;
+                         false -> error
+                     end
+            end;
+        {boolean, ["true"]} ->
+            true;
+        {boolean, ["false"]} ->
+            false;
+        {integer, [A]} ->
+            try list_to_integer(string:trim(A))
+            catch error:badarg -> error
+            end;
+        {atom, [A]} ->
+            try list_to_existing_atom(string:trim(A))
+            catch error:badarg -> error
+            end;
+        _ ->
+            error
     end.

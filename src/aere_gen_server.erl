@@ -48,7 +48,7 @@ init([]) ->
 handle_call({input, Input}, _From, State) ->
     {Output, State1} = process_input(Input, State),
     {reply, Output, State1};
-handle_call(banner, _From, State = #repl_state{options = #repl_options{theme = Theme}}) ->
+handle_call(banner, _From, State = #repl_state{options = #{theme := Theme}}) ->
     {reply, aere_theme:render(Theme, aere_msg:banner()), State}.
 
 handle_cast(reset, _) ->
@@ -77,7 +77,7 @@ reset() ->
 new_state() ->
     aere_repl:init_state().
 
-process_input(Input, State = #repl_state{options = #repl_options{theme = Theme}}) ->
+process_input(Input, State = #repl_state{options = #{theme := Theme}}) ->
     #repl_response{
        output = Output,
        status = Status

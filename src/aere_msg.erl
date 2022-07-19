@@ -11,6 +11,7 @@
         , file_not_loaded/1
         , files_load_error/1
         , set_nothing/0
+        , option_usage/2
         , bye/0
         ]).
 
@@ -90,6 +91,25 @@ files_load_error(Failed) ->
 -spec set_nothing() -> msg().
 set_nothing() ->
     [aere_theme:error("Please specify what to set")].
+
+-spec option_usage(atom, [{atom, term()}]) -> msg().
+option_usage(Option, Rules) ->
+    case proplists:get_value(Option, Rules, unknown) of
+        unknown ->
+            [aere_theme:error("Unknown setting: "), aere_theme:setting(atom_to_list(Option))];
+        Scheme ->
+            [ aere_theme:error("Bad setting format\n")
+            , aere_theme:output("USAGE: ")
+            , aere_theme:setting(atom_to_list(Option) ++ " ")
+            , aere_theme:setting_arg(format_option_scheme(Scheme))
+            ]
+    end.
+
+format_option_scheme(integer) -> "INTEGER";
+format_option_scheme(boolean) -> "BOOLEAN";
+format_option_scheme(atom) -> "VALUE";
+format_option_scheme({valid, Kind, _, Expl}) ->
+    format_option_scheme(Kind) ++ "(" ++ Expl ++ ")".
 
 -spec bye() -> msg().
 bye() -> aere_theme:output("bye!").
