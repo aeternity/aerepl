@@ -34,12 +34,13 @@ init_state() ->
                       tx_env    => aere_chain:default_tx_env(1)
                    }
                   ),
-    #repl_state{
+    S0 = #repl_state{
        blockchain_state = {ready, ChainState},
        repl_account     = PK,
-       options          = init_options(),
-       loaded_files     = default_loaded_files()
-      }.
+       options          = init_options()
+      },
+    S1 = add_modules(default_loaded_files(), S0),
+    S1.
 
 %% Process an input string in the current state of the repl and respond accordingly
 %% This is supposed to be called after each input to the repl
@@ -199,22 +200,39 @@ eval_expr(Body, S0 = #repl_state{options = #{display_gas  := DisplayGas,
     {Output, S1}.
 
 load_modules(Modules, S0) ->
-    S1 = S0#repl_state{loaded_files = default_loaded_files()},
-    add_modules(Modules, S1).
+    S1 = S0#repl_state{loaded_files = #{}},
+    S2 = add_modules(default_loaded_files() ++ Modules, S1),
+    register_include(lists:last(Modules), S2).
 
 reload_modules([], S0 = #repl_state{loaded_files = LdFiles}) ->
     reload_modules(maps:keys(LdFiles), S0);
-reload_modules(Modules, S0) ->
-    %% Worst case it will work when someone expects it to fail.
-    %% Not worth checking if the modules are loaded.
-    add_modules(Modules, S0).
+reload_modules(Modules, S0 = #repl_state{included_files = IncFiles}) ->
+    io:format("Loading modules: ~p\n", [Modules]),
+    S1 = add_modules(Modules -- default_loaded_files(), S0),
+    S2 = lists:foldl(fun register_include/2, S1, IncFiles),
+    S2.
 
 add_modules([], S0) ->
     S0; %% Can happen
 add_modules(Modules, S0 = #repl_state{loaded_files = LdFiles}) ->
-    Files = [ file:read_file(M) || M <- Modules],
+    Files = read_modules(Modules),
 
-    case [ {File, file:format_error(Err)} || {File, {error, Err}} <- lists:zip(Modules, Files) ] of
+    S1 = clear_context(S0),
+    S2 = S1#repl_state{loaded_files = maps:merge(LdFiles, maps:from_list(lists:zip(Modules, Files)))},
+    S2.
+
+% Reads files either from working dir or stdlib
+read_file(Filename) ->
+    case file:read_file(Filename) of
+        {error, enoent} ->
+            file:read_file(filename:join(aeso_stdlib:stdlib_include_path(), Filename));
+        Res -> Res
+    end.
+
+read_modules(Modules) ->
+    Files = [read_file(M) || M <- Modules],
+
+    case [{File, file:format_error(Err)} || {File, {error, Err}} <- lists:zip(Modules, Files)] of
         []     -> ok;
         Failed -> throw({repl_error, aere_msg:files_load_error(Failed)})
     end,
@@ -228,16 +246,27 @@ add_modules(Modules, S0 = #repl_state{loaded_files = LdFiles}) ->
           || {ok, File} <- Files
         ],
 
-    S1 = clear_context(S0),
-    S2 = S1#repl_state{loaded_files = maps:merge(LdFiles, maps:from_list(lists:zip(Modules, OkFiles)))},
-    register_include(lists:last(Modules), S2).
+    OkFiles.
 
-clear_context(State) ->
-    State#repl_state{vars = [], funs = #{}, typedefs = [], type_scope = [], included_files = [], included_code = []}.
+%% Removes all variables, functions, types and contracts
+clear_context(S0 = #repl_state{vars = Vars}) ->
+    Contracts = [PK || {_Name, _Type, {contract, PK}} <- Vars],
+    Chain0 = get_ready_chain(S0),
+    Chain1 = lists:foldl(fun aefa_chain_api:remove_contract/2, Chain0, Contracts),
+    put(contract_code_cache, undefined),
+    S0#repl_state{
+      vars = [],
+      funs = #{},
+      typedefs = [],
+      type_scope = [],
+      included_files = [],
+      included_code = [],
+      blockchain_state = {ready, Chain1}}.
 
 register_include(Include, S0) when is_binary(Include) ->
     register_include(binary:bin_to_list(Include), S0);
 register_include(Include, S0 = #repl_state{included_files = IncFiles, included_code = IncCode, loaded_files = LdFiles}) ->
+    io:format("REGISTERING INCL: ~p\n", [Include]),
     case maps:get(Include, LdFiles, not_loaded) of
         not_loaded ->
             throw({repl_error, aere_msg:file_not_loaded(Include)});
@@ -432,14 +461,18 @@ bump_nonce(S = #repl_state{query_nonce = N}) ->
     S#repl_state{query_nonce = N + 1}.
 
 default_loaded_files() ->
-    AesoDir = filename:dirname(filename:dirname(code:which(aeso_compiler))),
-    StdlibDir = filename:absname(filename:join([AesoDir, "priv", "stdlib"])),
+    StdlibDir = aeso_stdlib:stdlib_include_path(),
     Files =
         [ File ||
             File <- element(2, file:list_dir(StdlibDir)),
             filename:extension(File) =:= ".aes"
         ],
-    maps:from_list([{File, element(2, file:read_file(filename:join(StdlibDir, File)))} || File <- Files]).
+    Files.
+
+get_ready_chain(#repl_state{blockchain_state = {ready, Chain}}) ->
+    Chain;
+get_ready_chain(_) ->
+    throw({error, aere_msg:chain_not_ready()}).
 
 set_option(Option, Args, S = #repl_state{options = Opts}) ->
     case parse_option(Option, Args) of

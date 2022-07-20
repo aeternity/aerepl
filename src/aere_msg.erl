@@ -10,6 +10,7 @@
         , no_such_command/1
         , file_not_loaded/1
         , files_load_error/1
+        , chain_not_ready/0
         , set_nothing/0
         , option_usage/2
         , bye/0
@@ -110,6 +111,10 @@ format_option_scheme(boolean) -> "BOOLEAN";
 format_option_scheme({atom, Ats}) -> string:join(lists:map(fun atom_to_list/1, Ats), "|");
 format_option_scheme({valid, Kind, _, Expl}) ->
     format_option_scheme(Kind) ++ "(" ++ Expl ++ ")".
+
+-spec chain_not_ready() -> msg().
+chain_not_ready() ->
+    [aere_theme:error("This operation runs only in chain-ready state.")].
 
 -spec bye() -> msg().
 bye() -> aere_theme:output("bye!").
