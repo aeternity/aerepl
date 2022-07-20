@@ -13,10 +13,13 @@
 -type chain_state() :: {ready, aefa_chain_api:state()}
                      | {breakpoint, aefa_engine_state:state()}.
 
+-type contract_state() :: {aeso_syntax:type(), aeso_syntax:expr(), aeb_fate_data:fate_type()}.
+
 -record(repl_state,
         { blockchain_state     :: chain_state()
         , repl_account         :: binary()
         , options              :: repl_options()
+        , contract_state       :: contract_state()
         , vars        = []     :: [{string(), aeso_syntax:type(), term()}]
         , funs        = #{}    :: #{binary() => term()}
         , typedefs    = []     :: [{string(), string(), [aeso_syntax:tvar()], aeso_syntax:typedef()}]

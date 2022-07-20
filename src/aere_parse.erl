@@ -8,7 +8,7 @@
 
 -spec commands() -> list(aere_repl:command()).
 commands() ->
-    [ quit, type, eval, include, load, reload, add, set ].
+    [ quit, type, eval, include, load, reload, add, set, state ].
 
 -spec aliases() -> list({atom, aere_repl:command()}).
 aliases() ->

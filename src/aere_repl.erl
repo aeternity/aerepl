@@ -37,7 +37,8 @@ init_state() ->
     S0 = #repl_state{
        blockchain_state = {ready, ChainState},
        repl_account     = PK,
-       options          = init_options()
+       options          = init_options(),
+       contract_state   = {{tuple_t, aere_mock:ann(), []}, {tuple, aere_mock:ann(), []}, {tuple, {}}}
       },
     S1 = add_modules(default_loaded_files(), S0),
     S1.
@@ -141,6 +142,32 @@ apply_command(State, type, I) ->
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
     TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER ++ "[0-9]*\\.", "", [global, {return, list}]),
     {aere_msg:output(TypeStrClean), State};
+apply_command(State = #repl_state{contract_state = {_, OldType, _}}, state, I) ->
+    [Expr] = aere_sophia:parse_body(I),
+    Contract = aere_mock:eval_contract([Expr], State),
+    TAst = aere_sophia:typecheck(Contract, [dont_unfold]),
+    {_, Type} = aere_sophia:type_of(TAst, ?USER_INPUT),
+    {StateVal, _, _} = compile_and_run_contract(Contract, State),
+
+    %% No need for the annotations from the mock contract
+    NewType = aeso_syntax:set_ann(aere_mock:ann(), Type),
+    NewValue = aeso_syntax:set_ann(aere_mock:ann(), Expr),
+
+    NewState0 =
+        case OldType =:= NewType of
+            false -> State;
+            true  -> clear_context(State)
+        end,
+    NewState1 = NewState0#repl_state{contract_state = {NewType, NewValue, StateVal}},
+    {_, UsedGas, NewState2} = compile_and_run_contract(Contract, NewState1),
+
+    ResStr = io_lib:format("~p", [StateVal]),
+    Output =
+        case maps:get(display_gas, NewState2#repl_state.options, false) of
+            true  -> aere_msg:output_with_gas(ResStr, UsedGas);
+            false -> aere_msg:output(ResStr)
+        end,
+    {Output, NewState2};
 apply_command(State, eval, I) ->
     Parse = aere_sophia:parse_top(I),
     case Parse of
@@ -213,8 +240,8 @@ reload_modules(Modules, S0 = #repl_state{included_files = IncFiles}) ->
 
 add_modules([], S0) ->
     S0; %% Can happen
-add_modules(Modules, S0 = #repl_state{loaded_files = LdFiles}) ->
-    Files = read_modules(Modules),
+add_modules(Modules, S0 = #repl_state{loaded_files = LdFiles, contract_state = ContractState}) ->
+    Files = read_modules(Modules, ContractState),
 
     S1 = clear_context(S0),
     S2 = S1#repl_state{loaded_files = maps:merge(LdFiles, maps:from_list(lists:zip(Modules, Files)))},
@@ -228,7 +255,7 @@ read_file(Filename) ->
         Res -> Res
     end.
 
-read_modules(Modules) ->
+read_modules(Modules, ContractState) ->
     Files = [read_file(M) || M <- Modules],
 
     case [{File, file:format_error(Err)} || {File, {error, Err}} <- lists:zip(Modules, Files)] of
@@ -239,7 +266,7 @@ read_modules(Modules) ->
     OkFiles =
         [ begin
               Ast0 = aeso_parser:string(binary:bin_to_list(File)),
-              aere_sophia:typecheck(aere_mock:ast_fillup_contract(Ast0)),
+              aere_sophia:typecheck(aere_mock:ast_fillup_contract(ContractState, Ast0)),
               File
           end
           || {ok, File} <- Files
@@ -396,10 +423,11 @@ compile_and_run_contract(Ast, S) ->
     ByteCode = aere_sophia:compile_contract(TypedAst),
     run_contract(ByteCode, S).
 
-run_contract(ByteCode, S) ->
+run_contract(ByteCode, S = #repl_state{contract_state = {_, _, StateVal}}) ->
     io:format("~p\n\n", [ByteCode]),
     ES0 = setup_fate_state(ByteCode, S),
-    eval_state(ES0, S).
+    ES1 = aefa_fate:store_var({var, -1}, StateVal, ES0),
+    eval_state(ES1, S).
 
 eval_state(ES0, S) ->
     ES1 = aefa_fate:execute(ES0),
@@ -423,18 +451,30 @@ setup_fate_state(
   ByteCode,
   #repl_state{
      repl_account = Owner,
-     blockchain_state = {ready, ChainApi},
+     query_nonce = Nonce,
+     blockchain_state = {ready, ChainApi0},
      vars = Vars,
      funs = Funs,
      options = #{call_gas := Gas}
     }) ->
 
-    Store = aect_contracts_store:new(),
+    Store = aefa_stores:initial_contract_store(),
+    Version = #{ vm => aere_version:vm_version(), abi => aere_version:abi_version() },
+    Binary = aeb_fate_code:serialize(ByteCode, []),
+    Code = #{byte_code => Binary,
+            compiler_version => aere_version:sophia_version(),
+            source_hash => <<>>,%crypto:hash(sha256, OriginalSourceCode ++ [0] ++ C),
+            type_info => [],
+            abi_version => aeb_fate_abi:abi_version(),
+            payable => false %maps:get(payable, FCode)
+        },
+    Contract = aect_contracts:new(Owner, Nonce, Version, aeser_contract_code:serialize(Code), 0),
+    ChainApi = aefa_chain_api:put_contract(Contract, ChainApi0),
     Function = aeb_fate_code:symbol_identifier(<<?USER_INPUT>>),
 
     Caller = aeb_fate_data:make_address(Owner),
 
-    setup_fate_state(Owner, ByteCode, Owner, Caller, Function, Vars, Gas, _Value = 0, Store, Funs, ChainApi).
+    setup_fate_state(aect_contracts:pubkey(Contract), ByteCode, Owner, Caller, Function, Vars, Gas, _Value = 0, Store, Funs, ChainApi).
 
 setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, Store, Functions0, ChainApi) ->
 
