@@ -19,9 +19,9 @@ typecheck(Ast) ->
     typecheck(Ast, []).
 typecheck(Ast, Opts) ->
     try aeso_ast_infer_types:infer(Ast, Opts) of
-        {TypedAst, _, _} ->
+        {_, TypedAst, _} ->
             TypedAst;
-        {TEnv, TypedAst, _, _} ->
+        {TEnv, _, TypedAst, _} ->
             {TEnv, TypedAst}
     catch _:{error, Errs} ->
               throw({error, process_err(Errs)})

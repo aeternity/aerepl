@@ -207,7 +207,6 @@ load_modules(Modules, S0) ->
 reload_modules([], S0 = #repl_state{loaded_files = LdFiles}) ->
     reload_modules(maps:keys(LdFiles), S0);
 reload_modules(Modules, S0 = #repl_state{included_files = IncFiles}) ->
-    io:format("Loading modules: ~p\n", [Modules]),
     S1 = add_modules(Modules -- default_loaded_files(), S0),
     S2 = lists:foldl(fun register_include/2, S1, IncFiles),
     S2.
