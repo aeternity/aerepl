@@ -15,6 +15,7 @@
         , error/1
         , command/1
         , setting/1
+        , setting_arg/1
         , file/1
         , info/1
         ]).
@@ -33,7 +34,7 @@
 -type style() :: normal | bold | faint | italic | underline | blink.
 
 -type theme_context() :: prompt | banner | banner_sub | output | error
-                       | command | setting | file | info.
+                       | command | setting | setting_arg | file | info.
 
 -type theme() :: #{theme_context() => {[style()], color()}}.
 
@@ -92,7 +93,8 @@ default_theme() ->
        output     => {[bold], white_i},
        error      => {[bold], red},
        command    => {[normal], blue_i},
-       setting    => {[normal], yellow},
+       setting    => {[normal], yellow_i},
+       setting_arg => {[italic], white},
        file       => {[normal], yellow_i},
        info       => {[italic, faint], white_i}
     }.
@@ -127,6 +129,9 @@ command(Text) -> make_themed(command, Text).
 
 -spec setting(string()) -> themed_text().
 setting(Text) -> make_themed(setting, Text).
+
+-spec setting_arg(string()) -> themed_text().
+setting_arg(Text) -> make_themed(setting_arg, Text).
 
 -spec file(string()) -> themed_text().
 file(Text) -> make_themed(file, Text).

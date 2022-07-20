@@ -3,39 +3,28 @@
 -include("../node/apps/aecontract/include/aecontract.hrl").
 -include("../node/apps/aecore/include/blocks.hrl").
 
--export([new_account/2, default_tx_env/1, update_balance/3]).
+-export([init_trees/0, new_account/2, update_balance/3, default_tx_env/1]).
 
-new_account(Balance, State) ->
-    {PubKey, PrivKey} = new_key_pair(),
-    State1            = insert_key_pair(PubKey, PrivKey, State),
-    State2            = set_account(aec_accounts:new(PubKey, Balance), State1),
-    {PubKey, State2}.
 
-update_balance(NewBalance, PubKey, State) ->
-    Trees = trees(State),
+init_trees() ->
+    aec_trees:new().
+
+new_account(Balance, Trees) ->
+    #{public := PubKey} = enacl:sign_keypair(),
+    Trees1      = set_account(aec_accounts:new(PubKey, Balance), Trees),
+    {PubKey, Trees1}.
+
+update_balance(NewBalance, PubKey, Trees) ->
     Account = aec_accounts_trees:get(PubKey, aec_trees:accounts(Trees)),
     OldBalance = aec_accounts:balance(Account),
     Nonce = aec_accounts:nonce(Account),
     {ok, Account1} = aec_accounts:spend(Account, OldBalance, Nonce + 1),
     {ok, Account2} = aec_accounts:earn(Account1, NewBalance),
-    set_account(Account2, State).
+    set_account(Account2, Trees).
 
-new_key_pair() ->
-    #{ public := PubKey, secret := PrivKey } = enacl:sign_keypair(),
-    {PubKey, PrivKey}.
-
-insert_key_pair(Pub, Priv, S) ->
-    Old = key_pairs(S),
-    S#{key_pairs => Old#{Pub => Priv}}.
-key_pairs(S) -> maps:get(key_pairs, S, #{}).
-
-set_account(Account, State) ->
-    Trees   = trees(State),
+set_account(Account, Trees) ->
     AccTree = aec_accounts_trees:enter(Account, aec_trees:accounts(Trees)),
-    State#{trees => aec_trees:set_accounts(Trees, AccTree)}.
-
-trees(#{} = S) ->
-    maps:get(trees, S, aec_trees:new()).
+    aec_trees:set_accounts(Trees, AccTree).
 
 -define(BENEFICIARY_PUBKEY, <<12345:?BENEFICIARY_PUB_BYTES/unit:8>>).
 default_tx_env(Height) ->

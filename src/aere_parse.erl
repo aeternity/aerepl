@@ -1,6 +1,6 @@
 -module(aere_parse).
 
--export([ parse/1, get_input/0 ]).
+-export([ parse/1, get_input/0, words/1 ]).
 
 -type parse_result() :: {ok, {aere_repl:command(), string()}}
                       | {error, {no_such_command, string()}}
@@ -8,7 +8,21 @@
 
 -spec commands() -> list(aere_repl:command()).
 commands() ->
-    [ quit, type, eval, include, load, reload, add ].
+    [ quit, type, eval, include, load, reload, add, set ].
+
+-spec aliases() -> list({atom, aere_repl:command()}).
+aliases() ->
+    [ {t, type}
+    , {l, load}
+    , {a, add}
+    , {r, reload}
+    , {q, quit}
+    , {s, set}
+    ].
+
+command_search_list() ->
+    [{atom_to_list(C), C} || C <- commands()] ++
+    [{atom_to_list(A), C} || {A, C} <- aliases()].
 
 %% Parse an input string. This function is called on strings entered by the user in the repl
 -spec parse(string()) -> parse_result().
@@ -17,17 +31,19 @@ parse(Input) ->
         []  -> skip;
         ":" -> skip;
         [$:|CommandAndArg] ->
-            [Command | _] = string:tokens(CommandAndArg, unicode_util:whitespace()),
-            Arg = string:trim(CommandAndArg -- Command, leading, unicode_util:whitespace()),
-            KnownCommands = [atom_to_list(C) || C <- commands()],
-            case lists:member(Command, KnownCommands) of
-                true  -> {ok, {list_to_existing_atom(Command), Arg}};
-                false -> {error, {no_such_command, Command}}
+            [CommandStr | _] = string:tokens(CommandAndArg, unicode_util:whitespace()),
+            Arg = string:trim(CommandAndArg -- CommandStr, leading, unicode_util:whitespace()),
+            case resolve_command(CommandStr) of
+                false -> {error, {no_such_command, CommandStr}};
+                Cmd  -> {ok, {Cmd, Arg}}
             end;
         _ ->
             %% Eval is the default command (i.e. 1 + 1 is just :eval 1 + 1)
             {ok, {eval, Input}}
     end.
+
+resolve_command(CommandStr) ->
+    proplists:get_value(CommandStr, command_search_list(), false).
 
 %% Get single line or multiline input from the user and return it as a single string
 -spec get_input() -> string().
@@ -57,3 +73,6 @@ multiline_input(CodeBlock) ->
         ":}" -> lists:flatten(lists:reverse(CodeBlock));
         _    -> multiline_input([Line|CodeBlock])
     end.
+
+words(String) ->
+    string:lexemes(String, unicode_util:whitespace()).
