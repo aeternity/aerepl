@@ -451,7 +451,6 @@ setup_fate_state(
   ByteCode,
   #repl_state{
      repl_account = Owner,
-     query_nonce = Nonce,
      blockchain_state = {ready, ChainApi0},
      vars = Vars,
      funs = Funs,
@@ -468,7 +467,7 @@ setup_fate_state(
             abi_version => aeb_fate_abi:abi_version(),
             payable => false %maps:get(payable, FCode)
         },
-    Contract = aect_contracts:new(Owner, Nonce, Version, aeser_contract_code:serialize(Code), 0),
+    Contract = aect_contracts:new(Owner, 0, Version, aeser_contract_code:serialize(Code), 0),
     ChainApi = aefa_chain_api:put_contract(Contract, ChainApi0),
     Function = aeb_fate_code:symbol_identifier(<<?USER_INPUT>>),
 
