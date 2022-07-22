@@ -139,9 +139,10 @@ mock_contract(State = #repl_state{contract_state = ContractState}, Decls) ->
 ann() ->
     [{origin, system}].
 
--spec init(expr()) -> letfun().
-init(Value) ->
-    function_e([entrypoint], "init", [], Value).
+-spec init() -> letfun().
+init() ->
+    Abort = {app, ann(), {id, ann(), "abort"}, [{string, ann(), "INIT NOT CALLABLE"}]},
+    function_e([entrypoint], "init", [], [Abort]).
 
 -spec state_typedef(type()) -> typedef().
 state_typedef(Type) ->
@@ -154,8 +155,8 @@ contract(Name, ContractState, Body) ->
 -spec contract(contract_main | contract_interface, contract_state(), string() | con(), list(decl())) -> decl().
 contract(ContractType, ContractState, Name, Body) when is_list(Name) ->
     contract(ContractType, ContractState, {con, ann(), Name}, Body);
-contract(ContractType, {CSType, CSValue, _}, Con, Body) ->
-    {ContractType, [payable, ann()], Con, [], [state_typedef(CSType), init(CSValue) | Body]}.
+contract(ContractType, {CSType, _}, Con, Body) ->
+    {ContractType, [payable, ann()], Con, [], [state_typedef(CSType), init() | Body]}.
 
 -spec namespace(string() | con(), list(decl())) -> decl().
 namespace(Name, Body) when is_list(Name) ->

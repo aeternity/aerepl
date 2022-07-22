@@ -13,7 +13,7 @@
 -type chain_state() :: {ready, aefa_chain_api:state()}
                      | {breakpoint, aefa_engine_state:state()}.
 
--type contract_state() :: {aeso_syntax:type(), aeso_syntax:expr(), aeb_fate_data:fate_type()}.
+-type contract_state() :: {aeso_syntax:type(), aeb_fate_data:fate_type()}.
 
 -record(repl_state,
         { blockchain_state     :: chain_state()

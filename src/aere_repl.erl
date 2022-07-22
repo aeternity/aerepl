@@ -38,7 +38,7 @@ init_state() ->
        blockchain_state = {ready, ChainState},
        repl_account     = PK,
        options          = init_options(),
-       contract_state   = {{tuple_t, aere_mock:ann(), []}, {tuple, aere_mock:ann(), []}, {tuple, {}}}
+       contract_state   = {{tuple_t, aere_mock:ann(), []}, {tuple, {}}}
       },
     S1 = add_modules(default_loaded_files(), S0),
     S1.
@@ -142,7 +142,7 @@ apply_command(State, type, I) ->
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
     TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER ++ "[0-9]*\\.", "", [global, {return, list}]),
     {aere_msg:output(TypeStrClean), State};
-apply_command(State = #repl_state{contract_state = {_, OldType, _}}, state, I) ->
+apply_command(State = #repl_state{contract_state = {OldType, _}}, state, I) ->
     [Expr] = aere_sophia:parse_body(I),
     Contract = aere_mock:eval_contract([Expr], State),
     TAst = aere_sophia:typecheck(Contract, [dont_unfold]),
@@ -151,14 +151,13 @@ apply_command(State = #repl_state{contract_state = {_, OldType, _}}, state, I) -
 
     %% No need for the annotations from the mock contract
     NewType = aeso_syntax:set_ann(aere_mock:ann(), Type),
-    NewValue = aeso_syntax:set_ann(aere_mock:ann(), Expr),
 
     NewState0 =
         case OldType =:= NewType of
             false -> State;
             true  -> clear_context(State)
         end,
-    NewState1 = NewState0#repl_state{contract_state = {NewType, NewValue, StateVal}},
+    NewState1 = NewState0#repl_state{contract_state = {NewType, StateVal}},
     {_, UsedGas, NewState2} = compile_and_run_contract(Contract, NewState1),
 
     ResStr = io_lib:format("~p", [StateVal]),
@@ -423,7 +422,7 @@ compile_and_run_contract(Ast, S) ->
     ByteCode = aere_sophia:compile_contract(TypedAst),
     run_contract(ByteCode, S).
 
-run_contract(ByteCode, S = #repl_state{contract_state = {_, _, StateVal}}) ->
+run_contract(ByteCode, S = #repl_state{contract_state = {_, StateVal}}) ->
     io:format("~p\n\n", [ByteCode]),
     ES0 = setup_fate_state(ByteCode, S),
     ES1 = aefa_fate:store_var({var, -1}, StateVal, ES0),
