@@ -7,7 +7,7 @@
                       | skip.
 
 commands() ->
-    [ reset, quit, type, eval, include, load, reload, add, set ].
+    [ reset, quit, type, eval, include, load, reload, add, set, state ].
 
 aliases() ->
     [ {t, type}

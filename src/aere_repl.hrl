@@ -12,14 +12,25 @@
 -type chain_state() :: {ready, aefa_chain_api:state()}
                      | {breakpoint, aefa_engine_state:state()}.
 
+-type contract_state() :: {aeso_syntax:type(), aeb_fate_data:fate_type()}.
+
+-type var() :: {string(), aeso_syntax:type(), term()}.
+
+-type type_def() :: {string(), string(), [aeso_syntax:tvar()], aeso_syntax:typedef()}.
+
+-type type_scope() :: {string(), {string(), non_neg_integer()}}.
+
+-define(DEFAULT_CONTRACT_STATE, {{tuple_t, aere_mock:ann(), []}, {tuple, {}}}).
+
 -record(repl_state,
         { blockchain_state     :: chain_state()
         , repl_account         :: binary()
         , options              :: repl_options()
-        , vars        = []     :: [{string(), aeso_syntax:type(), term()}]
+        , contract_state       :: contract_state()
+        , vars        = []     :: [var()]
         , funs        = #{}    :: #{binary() => term()}
-        , typedefs    = []     :: [{string(), string(), [aeso_syntax:tvar()], aeso_syntax:typedef()}]
-        , type_scope  = []     :: [{string(), {string(), non_neg_integer()}}]
+        , typedefs    = []     :: [type_def()]
+        , type_scope  = []     :: [type_scope()]
         , loaded_files = #{}   :: #{string() => binary()} % Loaded files ready to be included
         , included_files = []  :: [string()] % Files included in the context
         , included_code = []   :: aeso_syntax:ast() % Cached AST of the included files

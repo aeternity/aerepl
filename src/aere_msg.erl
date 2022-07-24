@@ -3,6 +3,7 @@
 -export([ banner/0
         , output/1
         , output_with_gas/2
+        , output_with_optional_gas/3
         , error/1
         , abort/1
         , internal/1
@@ -44,6 +45,13 @@ output(Msg) -> aere_theme:output(Msg).
 output_with_gas(Msg, UsedGas) ->
     GasMsg = io_lib:format("\nUSED GAS: ~p", [UsedGas]),
     [aere_theme:output(Msg), aere_theme:info(GasMsg)].
+
+-spec output_with_optional_gas(boolean(), string(), integer()) -> msg().
+output_with_optional_gas(DisplayGas, Msg, UsedGas) ->
+    case DisplayGas of
+        true  -> aere_msg:output_with_gas(Msg, UsedGas);
+        false -> aere_msg:output(Msg)
+    end.
 
 -spec error(string()) -> msg().
 error(Msg) -> aere_theme:error(Msg).
