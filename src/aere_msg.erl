@@ -41,17 +41,15 @@ banner() ->
 
 version_info() ->
     REPL = aere_version:repl_version(),
-    Sophia = case aeso_compiler:version() of
-                 {ok, Vsn} ->
-                     binary:bin_to_list(Vsn);
-                 _ -> "???"
-             end,
+    Sophia = aere_version:compiler_version(),
     Protocol = integer_to_list(aere_version:protocol_version()),
+    Node = aere_version:node_version(),
 
     aere_theme:info(
       string:join(
         [ "REPL version:     " ++ REPL
         , "Sophia version:   " ++ Sophia
+        , "Node version:     " ++ Node
         , "Protocol version: " ++ Protocol
         ], "\n")
      ).
