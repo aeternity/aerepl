@@ -415,14 +415,17 @@ run_contract(ByteCode, S) ->
     ES = setup_fate_state(ByteCode, S),
     eval_state(ES, S).
 
-eval_state(ES0, S) ->
+eval_state(ES0, S = #repl_state{contract_state = {StateType, _}}) ->
     ES1 = aefa_fate:execute(ES0),
+    {StateVal, ES2} = aefa_fate:lookup_var({var, -1}, ES1),
 
-    Res       = aefa_engine_state:accumulator(ES1),
-    ChainApi  = aefa_engine_state:chain_api(ES1),
-    UsedGas   = maps:get(call_gas, S#repl_state.options) - aefa_engine_state:gas(ES1) - 10, %% RETURN(R) costs 10
+    Res       = aefa_engine_state:accumulator(ES2),
+    ChainApi  = aefa_engine_state:chain_api(ES2),
+    UsedGas   = maps:get(call_gas, S#repl_state.options) - aefa_engine_state:gas(ES2) - 10, %% RETURN(R) costs 10
 
-    {Res, UsedGas, S#repl_state{blockchain_state = {ready, ChainApi}}}.
+    {Res, UsedGas, S#repl_state{blockchain_state = {ready, ChainApi},
+                                contract_state = {StateType, StateVal}
+                               }}.
 
     %% NOTE: the following code is used to experiment with breakpoints, but was
     %%       commented to please dialyzer
