@@ -144,7 +144,7 @@ init() ->
     Abort = {app, ann(), {id, ann(), "abort"}, [{string, ann(), "INIT NOT CALLABLE"}]},
     function_e([entrypoint], "init", [], [Abort]).
 
--spec state_typedef(type()) -> typedef().
+-spec state_typedef(type()) -> decl().
 state_typedef(Type) ->
     type_def("state", [], {alias_t, Type}).
 
