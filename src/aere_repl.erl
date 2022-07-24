@@ -142,28 +142,8 @@ apply_command(State, type, I) ->
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
     TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER ++ "[0-9]*\\.", "", [global, {return, list}]),
     {aere_msg:output(TypeStrClean), State};
-apply_command(State = #repl_state{contract_state = {OldType, _}}, state, I) ->
-    Stmts = aere_sophia:parse_body(I),
-    Contract = aere_mock:eval_contract(Stmts, State),
-    TAst = aere_sophia:typecheck(Contract, [dont_unfold]),
-    {_, Type} = aere_sophia:type_of(TAst, ?USER_INPUT),
-    {StateVal, _, _} = compile_and_run_contract(Contract, State),
-
-    %% No need for the annotations from the mock contract
-    NewType = aeso_syntax:set_ann(aere_mock:ann(), Type),
-
-    NewState0 =
-        case OldType =:= NewType of
-            false -> State;
-            true  -> clear_context(State)
-        end,
-    NewState1 = NewState0#repl_state{contract_state = {NewType, StateVal}},
-    {_, UsedGas, NewState2} = compile_and_run_contract(Contract, NewState1),
-
-    ResStr = io_lib:format("~p", [StateVal]),
-    DisplayGas = maps:get(display_gas, NewState2#repl_state.options, false),
-    Output = aere_msg:output_with_optional_gas(DisplayGas, ResStr, UsedGas),
-    {Output, NewState2};
+apply_command(State, state, I) ->
+    set_state(aere_sophia:parse_body(I), State);
 apply_command(State, eval, I) ->
     Parse = aere_sophia:parse_top(I),
     case Parse of
@@ -203,6 +183,22 @@ apply_command(State = #repl_state{blockchain_state = BS}, continue, _) ->
             StackS = io_lib:format("~p", [Stack]),
             {StackS, State}
     end.
+
+-spec set_state([aeso_syntax:stmt()], repl_state()) -> command_res().
+set_state(Body, State0) ->
+    Contract = aere_mock:eval_contract(Body, State0),
+    TAst = aere_sophia:typecheck(Contract, [dont_unfold]),
+    {_, Type} = aere_sophia:type_of(TAst, ?USER_INPUT),
+    {StateVal, _, _} = compile_and_run_contract(Contract, State0),
+
+    State1 = clear_context(State0),
+    State2 = State1#repl_state{contract_state = {Type, StateVal}},
+    {_, UsedGas, State3} = compile_and_run_contract(Contract, State2),
+
+    ResStr = io_lib:format("~p", [StateVal]),
+    DisplayGas = maps:get(display_gas, State3#repl_state.options, false),
+    Output = aere_msg:output_with_optional_gas(DisplayGas, ResStr, UsedGas),
+    {Output, State3}.
 
 -spec eval_expr([aeso_syntax:stmt()], repl_state()) -> command_res().
 eval_expr(Body, S0 = #repl_state{options = #{display_gas  := DisplayGas,
