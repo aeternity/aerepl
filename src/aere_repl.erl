@@ -185,20 +185,18 @@ apply_command(State = #repl_state{blockchain_state = BS}, continue, _) ->
     end.
 
 -spec set_state([aeso_syntax:stmt()], repl_state()) -> command_res().
-set_state(Body, State0) ->
-    Contract = aere_mock:eval_contract(Body, State0),
-    TAst = aere_sophia:typecheck(Contract, [dont_unfold]),
-    {_, Type} = aere_sophia:type_of(TAst, ?USER_INPUT),
-    {StateVal, _, _} = compile_and_run_contract(Contract, State0),
+set_state(Body, S0) ->
+    Contract = aere_mock:eval_contract(Body, S0),
+    {TEnv, TAst} = aere_sophia:typecheck(Contract),
+    Type = aere_sophia:type_of_user_input(TEnv),
+    ByteCode = aere_sophia:compile_contract(TAst),
+    {StateVal, _, S1} = run_contract(ByteCode, S0),
 
-    State1 = clear_context(State0),
-    State2 = State1#repl_state{contract_state = {Type, StateVal}},
-    {_, UsedGas, State3} = compile_and_run_contract(Contract, State2),
-
-    ResStr = io_lib:format("~p", [StateVal]),
-    DisplayGas = maps:get(display_gas, State3#repl_state.options, false),
-    Output = aere_msg:output_with_optional_gas(DisplayGas, ResStr, UsedGas),
-    {Output, State3}.
+    S2 = S1#repl_state{contract_state = {Type, StateVal},
+                       vars = [],
+                       funs = #{}
+                      },
+    S2.
 
 -spec eval_expr([aeso_syntax:stmt()], repl_state()) -> command_res().
 eval_expr(Body, S0 = #repl_state{options = #{display_gas  := DisplayGas,
@@ -413,10 +411,9 @@ unfold_types_in_type(T, S0) ->
     T1 = aeso_ast_infer_types:unfold_types_in_type(TEnv1, T),
     T1.
 
-run_contract(ByteCode, S = #repl_state{contract_state = {_, StateVal}}) ->
-    ES0 = setup_fate_state(ByteCode, S),
-    ES1 = aefa_fate:store_var({var, -1}, StateVal, ES0),
-    eval_state(ES1, S).
+run_contract(ByteCode, S) ->
+    ES = setup_fate_state(ByteCode, S),
+    eval_state(ES, S).
 
 eval_state(ES0, S) ->
     ES1 = aefa_fate:execute(ES0),
@@ -443,10 +440,10 @@ setup_fate_state(
      blockchain_state = {ready, ChainApi0},
      vars = Vars,
      funs = Funs,
-     options = #{call_gas := Gas}
+     options = #{call_gas := Gas},
+     contract_state = {_, StateVal}
     }) ->
 
-    Store = aefa_stores:initial_contract_store(),
     Version = #{ vm => aere_version:vm_version(), abi => aere_version:abi_version() },
     Binary = aeb_fate_code:serialize(ByteCode, []),
     Code = #{byte_code => Binary,
@@ -462,10 +459,10 @@ setup_fate_state(
 
     Caller = aeb_fate_data:make_address(Owner),
 
-    setup_fate_state(aect_contracts:pubkey(Contract), ByteCode, Owner, Caller, Function, Vars, Gas, _Value = 0, Store, Funs, ChainApi).
+    setup_fate_state(aect_contracts:pubkey(Contract), ByteCode, Owner, Caller, Function, Vars, Gas, _Value = 0, StateVal, Funs, ChainApi).
 
-setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, Store, Functions0, ChainApi) ->
-
+setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, StateVal, Functions0, ChainApi) ->
+    Store = aefa_stores:initial_contract_store(),
     Functions = maps:merge(Functions0, aeb_fate_code:functions(ByteCode)),
     ES0 =
         aefa_engine_state:new(
@@ -481,8 +478,9 @@ setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, 
     ES2 = aefa_fate:set_local_function(Function, false, ES1),
     ES3 = aefa_fate:bind_args([Arg || {_, _, Arg} <- Vars], ES2),
     ES4 = aefa_engine_state:set_functions(Functions, ES3),
+    ES5 = aefa_fate:store_var({var, -1}, StateVal, ES4),
 
-    ES4.
+    ES5.
 
 bump_nonce(S = #repl_state{query_nonce = N}) ->
     S#repl_state{query_nonce = N + 1}.

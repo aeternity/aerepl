@@ -133,6 +133,31 @@ clean
 - Deployed contracts
 - In-REPL state
 
+# In-REPL state
+
+æREPL maintains its own Sophia state which can be accessed using standard
+operations `put` and `state`, as well as stateful functions. By default, the
+state is set to `() : unit`. In order to change it to some other type, `:state`
+command should be used:
+
+```
+AESO> :set print_unit true
+AESO> state
+()
+AESO> :state 1000
+AESO> state + 1
+1001
+AESO> put(state / 2)
+()
+AESO> state
+500
+```
+
+Note that `:state` is parameterized by value, not by type. The value has to have
+a fully instantiated, non-functional type. Changing the state using the `:state`
+commands clears out all user-defined variables as functions --- if that is not
+desired, `put` should be used.
+
 # Configuration
 
 æREPL can be configured interactively using the `:set` command. The syntax for
