@@ -31,12 +31,31 @@ banner() ->
         " (  ____/ / \\___/| .__/|_| |_|_|\\__,_|\n"
         "  `(_____/       | |\n"
         "                 |_|",
-    Interactive = "interactive",
+    Interactive = "  interactive\n\n",
 
     SophiaThemed = aere_theme:banner(Sophia),
     InteractiveThemed = aere_theme:banner_sub(Interactive),
+    VersionInfo = version_info(),
 
-    [SophiaThemed, aere_theme:output("  "), InteractiveThemed].
+    [SophiaThemed, InteractiveThemed, VersionInfo].
+
+version_info() ->
+    REPL = aere_version:repl_version(),
+    Sophia = case aeso_compiler:version() of
+                 {ok, Vsn} ->
+                     binary:bin_to_list(Vsn);
+                 _ -> "???"
+             end,
+    Protocol = integer_to_list(aere_version:protocol_version()),
+
+    aere_theme:info(
+      string:join(
+        [ "REPL version:     " ++ REPL
+        , "Sophia version:   " ++ Sophia
+        , "Protocol version: " ++ Protocol
+        ], "\n")
+     ).
+
 
 -spec output(string()) -> msg().
 output(Msg) -> aere_theme:output(Msg).
