@@ -143,8 +143,8 @@ apply_command(State, type, I) ->
     TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER ++ "[0-9]*\\.", "", [global, {return, list}]),
     {aere_msg:output(TypeStrClean), State};
 apply_command(State = #repl_state{contract_state = {OldType, _}}, state, I) ->
-    [Expr] = aere_sophia:parse_body(I),
-    Contract = aere_mock:eval_contract([Expr], State),
+    Stmts = aere_sophia:parse_body(I),
+    Contract = aere_mock:eval_contract(Stmts, State),
     TAst = aere_sophia:typecheck(Contract, [dont_unfold]),
     {_, Type} = aere_sophia:type_of(TAst, ?USER_INPUT),
     {StateVal, _, _} = compile_and_run_contract(Contract, State),
