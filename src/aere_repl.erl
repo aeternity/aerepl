@@ -38,7 +38,7 @@ init_state() ->
        blockchain_state = {ready, ChainState},
        repl_account     = PK,
        options          = init_options(),
-       contract_state   = {{tuple_t, aere_mock:ann(), []}, {tuple, {}}}
+       contract_state   = ?DEFAULT_CONTRACT_STATE
       },
     S1 = add_modules(default_loaded_files(), S0),
     S1.
@@ -239,8 +239,8 @@ reload_modules(Modules, S0 = #repl_state{included_files = IncFiles}) ->
 
 add_modules([], S0) ->
     S0; %% Can happen
-add_modules(Modules, S0 = #repl_state{loaded_files = LdFiles, contract_state = ContractState}) ->
-    Files = read_modules(Modules, ContractState),
+add_modules(Modules, S0 = #repl_state{loaded_files = LdFiles}) ->
+    Files = read_modules(Modules),
 
     S1 = clear_context(S0),
     S2 = S1#repl_state{loaded_files = maps:merge(LdFiles, maps:from_list(lists:zip(Modules, Files)))},
@@ -254,7 +254,7 @@ read_file(Filename) ->
         Res -> Res
     end.
 
-read_modules(Modules, ContractState) ->
+read_modules(Modules) ->
     Files = [read_file(M) || M <- Modules],
 
     case [{File, file:format_error(Err)} || {File, {error, Err}} <- lists:zip(Modules, Files)] of
@@ -265,7 +265,7 @@ read_modules(Modules, ContractState) ->
     OkFiles =
         [ begin
               Ast0 = aeso_parser:string(binary:bin_to_list(File)),
-              aere_sophia:typecheck(aere_mock:ast_fillup_contract(ContractState, Ast0)),
+              aere_sophia:typecheck(aere_mock:ast_fillup_contract(Ast0)),
               File
           end
           || {ok, File} <- Files

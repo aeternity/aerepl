@@ -14,7 +14,7 @@
         , typedef_contract/4
         , type_unfold_contract/1
         , type_unfold_contract/2
-        , ast_fillup_contract/2
+        , ast_fillup_contract/1
         , pat_as_decl/1
         , ann/0
         ]).
@@ -84,9 +84,9 @@ type_unfold_contract(Types, State) ->
     mock_contract(State, Aliases).
 
 %% Mock that just adds a sample main contract to the given AST
--spec ast_fillup_contract(contract_state(), ast()) -> ast().
-ast_fillup_contract(ContractState, Ast) ->
-    Ast ++ [contract(?MOCK_CONTRACT, ContractState, [function_e(?USER_INPUT, [], {tuple, ann(), []})])].
+-spec ast_fillup_contract(ast()) -> ast().
+ast_fillup_contract(Ast) ->
+    Ast ++ [contract(?MOCK_CONTRACT, ?DEFAULT_CONTRACT_STATE, [function_e(?USER_INPUT, [], {tuple, ann(), []})])].
 
 %% Puts a pattern as the value of a function. Used in collection of free variables
 %% TODO This is a hack because used_ids requires decl; should be a feature of aesophia
