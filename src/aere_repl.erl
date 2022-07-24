@@ -161,11 +161,8 @@ apply_command(State = #repl_state{contract_state = {OldType, _}}, state, I) ->
     {_, UsedGas, NewState2} = compile_and_run_contract(Contract, NewState1),
 
     ResStr = io_lib:format("~p", [StateVal]),
-    Output =
-        case maps:get(display_gas, NewState2#repl_state.options, false) of
-            true  -> aere_msg:output_with_gas(ResStr, UsedGas);
-            false -> aere_msg:output(ResStr)
-        end,
+    DisplayGas = maps:get(display_gas, NewState2#repl_state.options, false),
+    Output = aere_msg:output_with_optional_gas(DisplayGas, ResStr, UsedGas),
     {Output, NewState2};
 apply_command(State, eval, I) ->
     Parse = aere_sophia:parse_top(I),
@@ -218,11 +215,7 @@ eval_expr(Body, S0 = #repl_state{options = #{display_gas  := DisplayGas,
                  {false, {tuple, {}}} -> "";
                  _ -> io_lib:format("~p", [Res])
              end,
-    Output =
-        case DisplayGas of
-            true  -> aere_msg:output_with_gas(ResStr, UsedGas);
-            false -> aere_msg:output(ResStr)
-        end,
+    Output = aere_msg:output_with_optional_gas(DisplayGas, ResStr, UsedGas),
     {Output, S1}.
 
 load_modules(Modules, S0) ->
