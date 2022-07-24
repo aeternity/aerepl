@@ -93,14 +93,13 @@ files_load_error(Failed) ->
 set_nothing() ->
     [aere_theme:error("Please specify what to set")].
 
--spec option_usage(atom, [{atom, term()}]) -> msg().
+-spec option_usage(atom(), [{atom(), term()}]) -> msg().
 option_usage(Option, Rules) ->
     case proplists:get_value(Option, Rules, unknown) of
         unknown ->
             [aere_theme:error("Unknown setting: "), aere_theme:setting(atom_to_list(Option))];
         Scheme ->
             [ aere_theme:error("Bad setting format\n")
-            , aere_theme:output("USAGE: ")
             , aere_theme:setting(atom_to_list(Option) ++ " ")
             , aere_theme:setting_arg(format_option_scheme(Scheme))
             ]

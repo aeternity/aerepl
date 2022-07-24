@@ -187,10 +187,6 @@ function_e(Attrs, Id, Args, Body) ->
     function(Attrs, Id, Args, [{guarded, ann(), [], Body}]).
 
 %% Function constructor with guarded body
--spec function(string() | id(), [string() | pat()], [guarded_expr()]) -> decl().
-function(Name, Args, Body) ->
-    function(ann(), Name, Args, Body).
-
 -spec function(ann(), string() | id(), [string() | pat()], [guarded_expr()]) -> decl().
 function(Attrs, Name, Args, Body) when is_list(Name) ->
     function(Attrs, {id, ann(), Name}, Args, Body);

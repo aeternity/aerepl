@@ -136,8 +136,8 @@ apply_command(_, reset, _) ->
 apply_command(State, type, I) ->
     Stmts = aere_sophia:parse_body(I),
     Contract = aere_mock:eval_contract(Stmts, State),
-    TAst = aere_sophia:typecheck(Contract, [dont_unfold]),
-    {_, Type} = aere_sophia:type_of(TAst, ?USER_INPUT),
+    {TEnv, _} = aere_sophia:typecheck(Contract, [dont_unfold]),
+    Type = aere_sophia:type_of_user_input(TEnv),
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
     TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER ++ "[0-9]*\\.", "", [global, {return, list}]),
     {aere_msg:output(TypeStrClean), State};
@@ -169,7 +169,7 @@ apply_command(State, set, Value) ->
     case Values of
         [] -> throw({repl_error, aere_msg:set_nothing()});
         [Option|Args] ->
-            set_option(list_to_existing_atom(Option), Args, State)
+            set_option(list_to_atom(Option), Args, State)
     end;
 apply_command(State = #repl_state{blockchain_state = BS}, continue, _) ->
     case BS of
@@ -184,13 +184,17 @@ apply_command(State = #repl_state{blockchain_state = BS}, continue, _) ->
 -spec eval_expr([aeso_syntax:stmt()], repl_state()) -> command_res().
 eval_expr(Body, S0 = #repl_state{options = #{display_gas  := DisplayGas,
                                              print_unit   := PrintUnit,
-                                             print_format := _PrintFormat
+                                             print_format := PrintFormat
                                            }}) ->
     Ast = aere_mock:eval_contract(Body, S0),
-    {Res, UsedGas, S1} = compile_and_run_contract(Ast, S0),
+    {TEnv, TAst} = aere_sophia:typecheck(Ast),
+    ByteCode = aere_sophia:compile_contract(TAst),
+    {Res, UsedGas, S1} = run_contract(ByteCode, S0),
     ResStr = case {PrintUnit, Res} of
                  {false, {tuple, {}}} -> "";
-                 _ -> io_lib:format("~p", [Res])
+                 _ ->
+                     Type = aere_sophia:type_of_user_input(TEnv),
+                     format_value(PrintFormat, TEnv, Type, Res)
              end,
     Output =
         case DisplayGas of
@@ -198,6 +202,11 @@ eval_expr(Body, S0 = #repl_state{options = #{display_gas  := DisplayGas,
             false -> aere_msg:output(ResStr)
         end,
     {Output, S1}.
+
+format_value(fate, _, _, Val) ->
+    io_lib:format("~p", [Val]);
+format_value(sophia, TEnv, Type, Val) ->
+    aere_sophia:format_value(TEnv, Type, Val).
 
 load_modules(Modules, S0) ->
     S1 = S0#repl_state{loaded_files = #{}},
@@ -265,7 +274,6 @@ clear_context(S0 = #repl_state{vars = Vars}) ->
 register_include(Include, S0) when is_binary(Include) ->
     register_include(binary:bin_to_list(Include), S0);
 register_include(Include, S0 = #repl_state{included_files = IncFiles, included_code = IncCode, loaded_files = LdFiles}) ->
-    io:format("REGISTERING INCL: ~p\n", [Include]),
     case maps:get(Include, LdFiles, not_loaded) of
         not_loaded ->
             throw({repl_error, aere_msg:file_not_loaded(Include)});
@@ -288,17 +296,17 @@ register_letval(Pat, Expr, S0 = #repl_state{funs = Funs}) ->
                 fun(Var) -> Var /= "_" end,
                 aeso_syntax_utils:used_ids([aere_mock:pat_as_decl(Pat)])),
     Ast = aere_mock:letval_contract(Pat, NewVars, Expr, S0),
-    TypedAst = aere_sophia:typecheck(Ast, []),
+    {TEnv, TypedAst} = aere_sophia:typecheck(Ast),
     ByteCode = aere_sophia:compile_contract(TypedAst),
 
     {Vals, Types, S1} =
         case NewVars of
             [_] ->
-                {_, T} = aere_sophia:type_of(TypedAst, ?USER_INPUT),
+                T = aere_sophia:type_of_user_input(TEnv),
                 {V, _, S} = run_contract(ByteCode, S0),
                 {[V], [T], S};
             _ ->
-                {_, {tuple_t, _, Ts}} = aere_sophia:type_of(TypedAst, ?USER_INPUT),
+                {tuple_t, _, Ts} = aere_sophia:type_of_user_input(TEnv),
                 {{tuple, Vs}, _, S} = run_contract(ByteCode, S0),
                 {tuple_to_list(Vs), Ts, S}
         end,
@@ -315,10 +323,10 @@ register_letval(Pat, Expr, S0 = #repl_state{funs = Funs}) ->
 -spec register_letfun(aeso_syntax:id(), [aeso_syntax:pat()], [aeso_syntax:guarded_expr()], repl_state()) -> command_res().
 register_letfun(Id = {id, _, Name}, Args, Body, S0 = #repl_state{funs = Funs}) ->
     Ast = aere_mock:letfun_contract(Id, Args, Body, S0),
-    TypedAst = aere_sophia:typecheck(Ast, []),
+    {TEnv, TypedAst} = aere_sophia:typecheck(Ast),
     ByteCode = aere_sophia:compile_contract(TypedAst),
 
-    {_, Type} = aere_sophia:type_of(TypedAst, ?USER_INPUT),
+    Type = aere_sophia:type_of_user_input(TEnv),
 
     NameMap = build_fresh_name_map(ByteCode),
 
@@ -385,19 +393,12 @@ register_typedef({id, _, Name}, Args, Def, S0 = #repl_state{query_nonce = Nonce,
 
 unfold_types_in_type(T, S0) ->
     Ast = aere_mock:type_unfold_contract(S0),
-    {TEnv, _} = aere_sophia:typecheck(Ast, [return_env, dont_unfold]),
+    {TEnv, _} = aere_sophia:typecheck(Ast, [dont_unfold]),
     TEnv1 = aeso_ast_infer_types:switch_scope([?MOCK_CONTRACT], TEnv),
     T1 = aeso_ast_infer_types:unfold_types_in_type(TEnv1, T),
     T1.
 
--spec compile_and_run_contract(aeso_syntax:ast(), repl_state()) -> {term(), integer(), repl_state()}.
-compile_and_run_contract(Ast, S) ->
-    TypedAst = aere_sophia:typecheck(Ast),
-    ByteCode = aere_sophia:compile_contract(TypedAst),
-    run_contract(ByteCode, S).
-
 run_contract(ByteCode, S) ->
-    io:format("~p\n\n", [ByteCode]),
     ES0 = setup_fate_state(ByteCode, S),
     eval_state(ES0, S).
 

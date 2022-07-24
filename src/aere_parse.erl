@@ -2,15 +2,13 @@
 
 -export([ parse/1, get_input/0, words/1 ]).
 
--type parse_result() :: {ok, {aere_repl:command(), string()}}
+-type parse_result() :: {ok, {atom(), string()}}
                       | {error, {no_such_command, string()}}
                       | skip.
 
--spec commands() -> list(aere_repl:command()).
 commands() ->
-    [ quit, type, eval, include, load, reload, add, set ].
+    [ reset, quit, type, eval, include, load, reload, add, set ].
 
--spec aliases() -> list({atom, aere_repl:command()}).
 aliases() ->
     [ {t, type}
     , {l, load}

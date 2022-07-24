@@ -3,7 +3,6 @@
 -type repl_options() ::
         #{ theme       := aere_theme:theme()
         , display_gas  := boolean()
-        , gas_price    := non_neg_integer()
         , call_gas     := pos_integer()
         , call_value   := non_neg_integer()
         , print_format := print_format()
