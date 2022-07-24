@@ -86,7 +86,7 @@ type_unfold_contract(Types, State) ->
 %% Mock that just adds a sample main contract to the given AST
 -spec ast_fillup_contract(ast()) -> ast().
 ast_fillup_contract(Ast) ->
-    Ast ++ [contract(?MOCK_CONTRACT, ?DEFAULT_CONTRACT_STATE, [function_e(?USER_INPUT, [], {tuple, ann(), []})])].
+    Ast ++ [contract(?MOCK_CONTRACT, ?DEFAULT_CONTRACT_STATE_T, [function_e(?USER_INPUT, [], {tuple, ann(), []})])].
 
 %% Puts a pattern as the value of a function. Used in collection of free variables
 %% TODO This is a hack because used_ids requires decl; should be a feature of aesophia
@@ -127,10 +127,10 @@ with_state_ast(State, Ast) ->
     Inc ++ Ns ++ Ast.
 
 -spec mock_contract(repl_state(), [decl()]) -> ast().
-mock_contract(State = #repl_state{contract_state = ContractState}, Decls) ->
+mock_contract(State = #repl_state{contract_state = {StateT, _}}, Decls) ->
     with_state_ast(
       State,
-      [contract(?MOCK_CONTRACT, ContractState, with_state_decls(State, Decls))]).
+      [contract(?MOCK_CONTRACT, StateT, with_state_decls(State, Decls))]).
 
 %%% --- Sophia construction helpers --- %%%
 
@@ -148,15 +148,15 @@ init() ->
 state_typedef(Type) ->
     type_def("state", [], {alias_t, Type}).
 
--spec contract(string() | con(), contract_state(), list(decl())) -> decl().
+-spec contract(string() | con(), type(), list(decl())) -> decl().
 contract(Name, ContractState, Body) ->
     contract(contract_main, ContractState, Name, Body).
 
--spec contract(contract_main | contract_interface, contract_state(), string() | con(), list(decl())) -> decl().
-contract(ContractType, ContractState, Name, Body) when is_list(Name) ->
-    contract(ContractType, ContractState, {con, ann(), Name}, Body);
-contract(ContractType, {CSType, _}, Con, Body) ->
-    {ContractType, [payable, ann()], Con, [], [state_typedef(CSType), init() | Body]}.
+-spec contract(contract_main | contract_interface, type(), string() | con(), list(decl())) -> decl().
+contract(ContractType, StateT, Name, Body) when is_list(Name) ->
+    contract(ContractType, StateT, {con, ann(), Name}, Body);
+contract(ContractType, StateT, Con, Body) ->
+    {ContractType, [payable, ann()], Con, [], [state_typedef(StateT), init() | Body]}.
 
 -spec namespace(string() | con(), list(decl())) -> decl().
 namespace(Name, Body) when is_list(Name) ->
@@ -164,7 +164,7 @@ namespace(Name, Body) when is_list(Name) ->
 namespace(Con, Body) ->
     {namespace, ann(), Con, Body}.
 
--spec type_def(string() | id(), [tvar()], typedef()) -> decl().
+-spec type_def(string() | id(), list(tvar()), typedef()) -> decl().
 type_def(Name, Args, Def) when is_list(Name) ->
     type_def({id, ann(), Name}, Args, Def);
 type_def(Id, Args, Def) ->

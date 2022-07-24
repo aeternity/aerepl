@@ -20,7 +20,8 @@
 
 -type type_scope() :: {string(), {string(), non_neg_integer()}}.
 
--define(DEFAULT_CONTRACT_STATE, {{tuple_t, aere_mock:ann(), []}, {tuple, {}}}).
+-define(DEFAULT_CONTRACT_STATE_T, {tuple_t, aere_mock:ann(), []}).
+-define(DEFAULT_CONTRACT_STATE, {?DEFAULT_CONTRACT_STATE_T, {tuple, {}}}).
 
 -record(repl_state,
         { blockchain_state     :: chain_state()
