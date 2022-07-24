@@ -30,8 +30,8 @@ banner() ->
         "  ,-`    ) ) (_) ) |_) ) | | | | (_| |\n"
         " (  ____/ / \\___/| .__/|_| |_|_|\\__,_|\n"
         "  `(_____/       | |\n"
-        "                 |_|",
-    Interactive = "  interactive\n\n",
+        "                 |_|  ",
+    Interactive = "interactive\n\n",
 
     SophiaThemed = aere_theme:banner(Sophia),
     InteractiveThemed = aere_theme:banner_sub(Interactive),
