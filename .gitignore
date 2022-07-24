@@ -5,3 +5,4 @@ rebar.lock
 log
 aerepl_server
 erl_crash.dump
+.vscode/
