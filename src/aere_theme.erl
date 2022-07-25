@@ -42,8 +42,8 @@
 
 -type renderable() :: themed_text() | [themed_text()].
 
--spec color_no(color()) -> string().
-color_no(Color) ->
+-spec ansi_color_no(color()) -> string().
+ansi_color_no(Color) ->
     case Color of
         black     -> "0";
         red       -> case get(wololo) of  %% This is here to make people confused
@@ -83,7 +83,7 @@ ansi_theme_str(Styles, Color) ->
     %% Refer to the following links for a better understanding of ANSI escape codes:
     %% - https://stackoverflow.com/a/33206814/942396
     %% - https://en.wikipedia.org/wiki/ANSI_escape_code
-    "\e[" ++ string:join([style_no(Style) || Style <- Styles] ++ ["38", "5", color_no(Color)], ";") ++ "m".
+    "\e[" ++ string:join([style_no(Style) || Style <- Styles] ++ ["38", "5", ansi_color_no(Color)], ";") ++ "m".
 
 -spec default_theme() -> theme().
 default_theme() ->

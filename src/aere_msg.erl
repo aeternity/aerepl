@@ -54,14 +54,17 @@ version_info() ->
         ], "\n")
      ).
 
+-spec trim(string()) -> string().
+trim(S) ->
+    string:trim(S, both).
 
 -spec output(string()) -> msg().
-output(Msg) -> aere_theme:output(Msg).
+output(Msg) -> aere_theme:output(trim(Msg)).
 
 -spec output_with_gas(string(), integer()) -> msg().
 output_with_gas(Msg, UsedGas) ->
     GasMsg = io_lib:format("\nUSED GAS: ~p", [UsedGas]),
-    [aere_theme:output(Msg), aere_theme:info(GasMsg)].
+    [aere_theme:output(trim(Msg)), aere_theme:info(GasMsg)].
 
 -spec output_with_optional_gas(boolean(), string(), integer()) -> msg().
 output_with_optional_gas(DisplayGas, Msg, UsedGas) ->
@@ -71,10 +74,10 @@ output_with_optional_gas(DisplayGas, Msg, UsedGas) ->
     end.
 
 -spec error(string()) -> msg().
-error(Msg) -> aere_theme:error(Msg).
+error(Msg) -> aere_theme:error(trim(Msg)).
 
 -spec abort(string()) -> msg().
-abort(Msg) -> [aere_theme:error("ABORT: "), aere_theme:info(Msg)].
+abort(Msg) -> [aere_theme:error("ABORT: "), aere_theme:info(trim(Msg))].
 
 -spec internal(term(), erlang:stacktrace()) -> msg().
 internal(Error, Stacktrace) ->
@@ -95,7 +98,6 @@ internal(Error) ->
 no_such_command(Command) ->
     [ aere_theme:output("No such command ")
     , aere_theme:command(io_lib:format("~p", [Command]))
-    , aere_theme:output("\n")
     ].
 
 -spec file_not_loaded(FileName) -> msg() when
