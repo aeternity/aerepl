@@ -31,19 +31,8 @@ compile_contract(TypedAst) ->
     {#{child_con_env := ChildConEnv}, FCode}
         = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, [])
           catch {error, Ec} -> process_err(Ec) end,
-    Fate
-        = try aeso_fcode_to_fate:compile(ChildConEnv, FCode, [])
-          catch {error, Ef} -> process_err(Ef) end,
-    ByteCode = aeb_fate_code:serialize(Fate, []),
-    #{byte_code => ByteCode,
-      contract_source => "REPL INPUT",
-      type_info => [],
-      fate_code => Fate,
-      compiler_version => aere_version:sophia_version(),
-      abi_version => aere_version:abi_version(),
-      payable => maps:get(payable, FCode)
-     },
-    Fate.
+    try aeso_fcode_to_fate:compile(ChildConEnv, FCode, [])
+    catch {error, Ef} -> process_err(Ef) end.
 
 type_of_user_input(TEnv) ->
     {_, {_, {type_sig, _, _, _, _, Type}}} = aeso_ast_infer_types:lookup_env1(TEnv, term, [], [?MOCK_CONTRACT, ?USER_INPUT]),
