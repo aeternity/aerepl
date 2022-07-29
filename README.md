@@ -155,8 +155,8 @@ AESO> state
 
 Note that `:state` is parameterized by value, not by type. The value has to have
 a fully instantiated, non-functional type. Changing the state using the `:state`
-commands clears out all user-defined variables as functions --- if that is not
-desired, `put` should be used.
+commands clears out all user-defined variables and functions --- if that is not
+desired, `put` should be used to modify the state if possible.
 
 # Configuration
 
@@ -181,6 +181,35 @@ Currently the supported options are:
 |                |               | If set to `fate` it will use the representation compatible with FATE. |
 |----------------|---------------|:----------------------------------------------------------------------|
 | `print_unit`   | `true/false`  | Whether to display unit (`()`).                                       |
+
+# Output format
+
+By default, the REPL shall display values preserving compatibility with Sophia
+syntax. An exception from that rule are values containing functions which
+in FATE are represented as pairs of function name and closure. In that case,
+the output will take a form of `"<fun $FUNHASH>" : $TYPE` where `$TYPE` is
+the type of the function (according to the Sophia code, not FATE bytecode), and 
+`$FUNHASH` is a hex-encoded shortcut of the original function's name hashed with
+BLAKE2B (as it is stored in the bytecode). For example
+
+```
+AESO> () => ()
+"<fun E3472E14>" : () => unit
+```
+
+If `print_format` is set to `fate`, the value shall be displayed as an Erlang
+term that describes the exact representation of the value in the runtime.
+
+```
+AESO> :set print_format fate
+AESO> record r = {x : int, y : int}
+AESO> {y = 100, x = 7}
+{tuple,{7,100}}
+AESO> Some(1)
+{variant,[0,1],1,{1}}
+AESO> () => ()
+{tuple,{<<227,71,46,20>>,{tuple,{}}}}
+```
 
 # Multiline input
 
