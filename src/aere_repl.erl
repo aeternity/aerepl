@@ -137,7 +137,7 @@ apply_command(_, reset, _) ->
 apply_command(State, type, I) ->
     Stmts = aere_sophia:parse_body(I),
     Contract = aere_mock:eval_contract(Stmts, State),
-    {TEnv, _} = aere_sophia:typecheck(Contract, [dont_unfold]),
+    {TEnv, _} = aere_sophia:typecheck(Contract, [dont_unfold, allow_higher_order_entrypoints]),
     Type = aere_sophia:type_of_user_input(TEnv),
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
     TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER ++ "[0-9]*\\.", "", [global, {return, list}]),
@@ -207,14 +207,15 @@ eval_expr(Body, S0 = #repl_state{options = #{display_gas  := DisplayGas,
     {TEnv, TAst} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
     ByteCode = aere_sophia:compile_contract(TAst),
     {Res, UsedGas, S1} = run_contract(ByteCode, S0),
-    ResStr = case {PrintUnit, Res} of
-                 {false, {tuple, {}}} -> "";
-                 _ ->
-                     Type = aere_sophia:type_of_user_input(TEnv),
-                     format_value(PrintFormat, TEnv, Type, Res)
-             end,
-    Output = aere_msg:output_with_optional_gas(DisplayGas, ResStr, UsedGas),
-    {Output, S1}.
+    case {PrintUnit, Res, DisplayGas} of
+        {false, {tuple, {}}, false} -> S1;
+        {false, {tuple, {}}, true} -> {aere_msg:used_gas(UsedGas), S1};
+        _ ->
+            Type = aere_sophia:type_of_user_input(TEnv),
+            ResStr = aere_msg:output(format_value(PrintFormat, TEnv, Type, Res)),
+	    GasStr = [aere_msg:used_gas(UsedGas) || DisplayGas],
+            {[ResStr|GasStr], S1}
+    end.
 
 format_value(fate, _, _, Val) ->
     io_lib:format("~p", [Val]);
@@ -443,7 +444,7 @@ setup_fate_state(
      blockchain_state = {ready, ChainApi0},
      vars = Vars,
      funs = Funs,
-     options = #{call_gas := Gas},
+     options = #{call_gas := Gas, call_value := Value},
      contract_state = {_, StateVal}
     }) ->
 
@@ -462,7 +463,7 @@ setup_fate_state(
 
     Caller = aeb_fate_data:make_address(Owner),
 
-    setup_fate_state(aect_contracts:pubkey(Contract), ByteCode, Owner, Caller, Function, Vars, Gas, _Value = 0, StateVal, Funs, ChainApi).
+    setup_fate_state(aect_contracts:pubkey(Contract), ByteCode, Owner, Caller, Function, Vars, Gas, Value, StateVal, Funs, ChainApi).
 
 setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, StateVal, Functions0, ChainApi) ->
     Store = aefa_stores:initial_contract_store(),
