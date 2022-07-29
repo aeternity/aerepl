@@ -20,4 +20,4 @@ clean:
 nuke:
 	rm -rf _build
 	rm -f rebar.lock
-	cd node; ./rebar3 clean; rm -rf node/_build
+	cd node; ./rebar3 clean; rm -rf _build
