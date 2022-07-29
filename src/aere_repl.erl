@@ -204,7 +204,7 @@ eval_expr(Body, S0 = #repl_state{options = #{display_gas  := DisplayGas,
                                              print_format := PrintFormat
                                            }}) ->
     Ast = aere_mock:eval_contract(Body, S0),
-    {TEnv, TAst} = aere_sophia:typecheck(Ast),
+    {TEnv, TAst} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
     ByteCode = aere_sophia:compile_contract(TAst),
     {Res, UsedGas, S1} = run_contract(ByteCode, S0),
     ResStr = case {PrintUnit, Res} of
@@ -309,7 +309,7 @@ register_letval(Pat, Expr, S0 = #repl_state{funs = Funs}) ->
                 fun(Var) -> Var /= "_" end,
                 aeso_syntax_utils:used_ids([aere_mock:pat_as_decl(Pat)])),
     Ast = aere_mock:letval_contract(Pat, NewVars, Expr, S0),
-    {TEnv, TypedAst} = aere_sophia:typecheck(Ast),
+    {TEnv, TypedAst} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
     ByteCode = aere_sophia:compile_contract(TypedAst),
 
     {Vals, Types, S1} =

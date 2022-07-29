@@ -128,6 +128,8 @@ fate_to_sophia(Subst, TEnv, {record_t, FieldsT}, ?FATE_TUPLE(Tuple)) ->
     ElemsP = [{field, [], [{proj, [], FId}], fate_to_sophia(Subst, TEnv, FT, E)}
               || {{field_t, _, FId, FT}, E} <- Elems],
     {record, [], ElemsP};
+fate_to_sophia(Subst, TEnv, Type = {fun_t, _, _, _, _}, ?FATE_TUPLE({FName, _Closure})) ->
+    {typed, [], {string, [], FName}, Type};
 fate_to_sophia(Subst, TEnv, Id, Val = ?FATE_TUPLE(_)) -> % Record ID
     Name = aeso_ast_infer_types:qname(Id),
     {_, {_, {_, Record = {record_t, _}}}} = aeso_ast_infer_types:lookup_env1(TEnv, type, [], Name),
