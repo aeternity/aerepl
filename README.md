@@ -66,6 +66,8 @@ AESO> get_x({x = 100, y = 42})
 100
 ```
 
+*NOTE*: in-REPL functions cannot use in-REPL variables and other functions yet.
+
 # Typechecking
 
 A common query is to ask about the type of an expression. This is done using the
