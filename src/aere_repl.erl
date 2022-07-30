@@ -339,7 +339,7 @@ register_letval(Pat, Expr, S0 = #repl_state{funs = Funs}) ->
 -spec register_letfun(aeso_syntax:id(), [aeso_syntax:pat()], [aeso_syntax:guarded_expr()], repl_state()) -> command_res().
 register_letfun(Id = {id, _, Name}, Args, Body, S0 = #repl_state{funs = Funs}) ->
     Ast = aere_mock:letfun_contract(Id, Args, Body, S0),
-    {TEnv, TypedAst} = aere_sophia:typecheck(Ast),
+    {TEnv, TypedAst} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
     ByteCode = aere_sophia:compile_contract(TypedAst),
 
     Type = aere_sophia:type_of_user_input(TEnv),
