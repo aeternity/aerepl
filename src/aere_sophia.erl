@@ -20,7 +20,7 @@ process_err(E) -> %% idk, rethrow
 typecheck(Ast) ->
     typecheck(Ast, []).
 typecheck(Ast, Opts) ->
-    try aeso_ast_infer_types:infer(Ast, [return_env | Opts]) of
+    try aeso_ast_infer_types:infer(Ast, [debug_mode, return_env | Opts]) of
         {TEnv, _TAstFolded, TAstUnfolded, _Warns} ->
             {TEnv, TAstUnfolded}
     catch _:{error, Errs} ->
