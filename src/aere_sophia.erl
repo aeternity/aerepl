@@ -97,6 +97,10 @@ fate_to_sophia(_, _, _, ?FATE_TRUE) ->
     {bool, [], true};
 fate_to_sophia(_, _, _, ?FATE_FALSE) ->
     {bool, [], false};
+fate_to_sophia(_, _, {app_t, _, {id, _, "option"}, [_]}, ?FATE_VARIANT(_, 0, {})) ->
+    {con, [], "None"};
+fate_to_sophia(Subst, TEnv, {app_t, _, {id, _, "option"}, [ElT]}, ?FATE_VARIANT(_, 1, {Val})) ->
+    {app, [], {con, [], "Some"}, [fate_to_sophia(Subst, TEnv, ElT, Val)]};
 fate_to_sophia(Subst, TEnv, {app_t, _, {id, _, "list"}, [ElT]}, L) when ?IS_FATE_LIST(L) ->
     Lp = [fate_to_sophia(Subst, TEnv, ElT, E) || E <- L],
     {list, [], Lp};
@@ -108,8 +112,7 @@ fate_to_sophia(Subst, TEnv, {app_t, _, {id, _, "map"}, [KeyT, ValT]}, M) when ?I
     {map, [], Mp};
 fate_to_sophia(Subst, TEnv, {app_t, _, Id, Args}, Val) ->
     Name = aeso_ast_infer_types:qname(Id),
-    E = {_, {_, {TArgs, _}}} = aeso_ast_infer_types:lookup_env1(TEnv, type, [], Name),
-    io:format("AAAA ~p\n\n", [E]),
+    {_, {_, {TArgs, _}}} = aeso_ast_infer_types:lookup_env1(TEnv, type, [], Name),
     Inst = lists:zip([T || {tvar, _, T} <- TArgs], Args),
     Subst1 = maps:merge(maps:from_list(Inst), Subst),
     fate_to_sophia(Subst1, TEnv, Id, Val);
@@ -142,12 +145,19 @@ fate_to_sophia(Subst, TEnv, Id, Val = ?FATE_TUPLE(_)) -> % Record ID
     Name = aeso_ast_infer_types:qname(Id),
     {_, {_, {_, Record = {record_t, _}}}} = aeso_ast_infer_types:lookup_env1(TEnv, type, [], Name),
     fate_to_sophia(Subst, TEnv, Record, Val);
-fate_to_sophia(Subst, TEnv, Id, ?FATE_VARIANT(_Arities, Tag, Values)) ->
+fate_to_sophia(Subst, TEnv, Id, Expr = ?FATE_VARIANT(_Arities, Tag, Values)) ->
     Name = aeso_ast_infer_types:qname(Id),
-    {_, {_, {_, {variant_t, Constrs}}}} = aeso_ast_infer_types:lookup_env1(TEnv, type, [], Name),
-    {constr_t, _, Con, TArgs} = lists:nth(Tag + 1, Constrs),
-    PValues = [fate_to_sophia(Subst, TEnv, T, V) || {T, V} <- lists:zip(TArgs, tuple_to_list(Values))],
-    {app, [], Con, PValues};
+    {_, {_, Def}} = aeso_ast_infer_types:lookup_env1(TEnv, type, [], Name),
+    case Def of
+        {_, {variant_t, Constrs}} ->
+            {constr_t, _, Con, TArgs} = lists:nth(Tag + 1, Constrs),
+            PValues = [fate_to_sophia(Subst, TEnv, T, V) || {T, V} <- lists:zip(TArgs, tuple_to_list(Values))],
+            {app, [], Con, PValues};
+        {builtin, 0} ->
+            % Since arity is 0, there is no need to expand the
+            % type args with respect to TEnv and Subst
+            aeso_vm_decode:from_fate(Id, Expr)
+    end;
 fate_to_sophia(_, _, _, S) when ?IS_FATE_STRING(S) ->
     {string, [], S}.
 
