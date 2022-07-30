@@ -151,7 +151,7 @@ fate_to_sophia(Subst, TEnv, Id, ?FATE_VARIANT(_Arities, Tag, Values)) ->
 fate_to_sophia(_, _, _, S) when ?IS_FATE_STRING(S) ->
     {string, [], S}.
 
-drop_typed({typed, _, Expr, T}) ->
+drop_typed({typed, _, Expr, _}) ->
     drop_typed(Expr);
 drop_typed(L) when is_list(L) ->
     lists:map(fun drop_typed/1, L);
