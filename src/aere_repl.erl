@@ -220,7 +220,9 @@ eval_expr(Body, S0 = #repl_state{options = #{display_gas  := DisplayGas,
 format_value(fate, _, _, Val) ->
     io_lib:format("~p", [Val]);
 format_value(sophia, TEnv, Type, Val) ->
-    aere_sophia:format_value(TEnv, Type, Val).
+    aere_sophia:format_value(sophia, TEnv, Type, Val);
+format_value(json, TEnv, Type, Val) ->
+    aere_sophia:format_value(json, TEnv, Type, Val).
 
 load_modules(Modules, S0) ->
     S1 = S0#repl_state{loaded_files = #{}},
@@ -514,7 +516,7 @@ option_parse_rules() ->
     [ {display_gas, boolean}
     , {call_gas, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
     , {call_value, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
-    , {print_format, {atom, [sophia,fate]}}
+    , {print_format, {atom, [sophia,json,fate]}}
     , {print_unit, boolean}
     ].
 

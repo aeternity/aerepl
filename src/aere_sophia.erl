@@ -3,7 +3,7 @@
 -export([ typecheck/2, typecheck/1, parse_file/2, parse_file/3, compile_contract/1
         , parse_body/1, parse_top/2
         , parse_decl/1, parse_top/1, parse_type/1, type_of_user_input/1
-        , process_err/1, format_value/3
+        , process_err/1, format_value/4
         ]).
 
 -include("../_build/default/lib/aesophia/src/aeso_parse_lib.hrl").
@@ -79,9 +79,12 @@ parse_file(I, Includes, Opts) when is_binary(I) ->
 parse_file(I, Includes, Opts) ->
     ?with_error_handle(aeso_parser:string(I, Includes, Opts)).
 
-format_value(TEnv, Type, Val) ->
+format_value(sophia, TEnv, Type, Val) ->
     Sophia = fate_to_sophia(#{}, TEnv, Type, Val),
-    prettypr:format(aeso_pretty:expr(Sophia)).
+    prettypr:format(aeso_pretty:expr(Sophia));
+format_value(json, TEnv, Type, Val) ->
+    Sophia = fate_to_sophia(#{}, TEnv, Type, Val),
+    jsx:encode(aeso_aci:json_encode_expr(Sophia)).
 
 -spec fate_to_sophia(#{string() => aeso_syntax:type()}, term(), aeso_syntax:type() | aeso_syntax:typedef(), term()) -> aeso_syntax:expr().
 fate_to_sophia(Subst, TEnv, {tvar, _, TV}, Val) ->
