@@ -84,7 +84,9 @@ format_value(sophia, TEnv, Type, Val) ->
     prettypr:format(aeso_pretty:expr(Sophia));
 format_value(json, TEnv, Type, Val) ->
     Sophia = fate_to_sophia(#{}, TEnv, Type, Val),
-    jsx:encode(aeso_aci:json_encode_expr(Sophia)).
+    JSON = jsx:encode(aeso_aci:json_encode_expr(drop_typed(Sophia))),
+    binary:bin_to_list(jsx:prettify(JSON)).
+
 
 -spec fate_to_sophia(#{string() => aeso_syntax:type()}, term(), aeso_syntax:type() | aeso_syntax:typedef(), term()) -> aeso_syntax:expr().
 fate_to_sophia(Subst, TEnv, {tvar, _, TV}, Val) ->
@@ -106,7 +108,8 @@ fate_to_sophia(Subst, TEnv, {app_t, _, {id, _, "map"}, [KeyT, ValT]}, M) when ?I
     {map, [], Mp};
 fate_to_sophia(Subst, TEnv, {app_t, _, Id, Args}, Val) ->
     Name = aeso_ast_infer_types:qname(Id),
-    {_, {_, {TArgs, _}}} = aeso_ast_infer_types:lookup_env1(TEnv, type, [], Name),
+    E = {_, {_, {TArgs, _}}} = aeso_ast_infer_types:lookup_env1(TEnv, type, [], Name),
+    io:format("AAAA ~p\n\n", [E]),
     Inst = lists:zip([T || {tvar, _, T} <- TArgs], Args),
     Subst1 = maps:merge(maps:from_list(Inst), Subst),
     fate_to_sophia(Subst1, TEnv, Id, Val);
@@ -147,3 +150,14 @@ fate_to_sophia(Subst, TEnv, Id, ?FATE_VARIANT(_Arities, Tag, Values)) ->
     {app, [], Con, PValues};
 fate_to_sophia(_, _, _, S) when ?IS_FATE_STRING(S) ->
     {string, [], S}.
+
+drop_typed({typed, _, Expr, T}) ->
+    drop_typed(Expr);
+drop_typed(L) when is_list(L) ->
+    lists:map(fun drop_typed/1, L);
+drop_typed(T) when is_tuple(T) ->
+    list_to_tuple(drop_typed(tuple_to_list(T)));
+drop_typed(M) when is_map(M) ->
+    maps:from_list(drop_typed(maps:to_list(M)));
+drop_typed(Expr) ->
+    Expr.

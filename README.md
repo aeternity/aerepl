@@ -169,18 +169,17 @@ AESO> :set print_unit true
 
 Currently the supported options are:
 
-| Option         | Arguments     | Description                                                           |
-|----------------|---------------|:----------------------------------------------------------------------|
-| `display_gas`  | `true/false`  | If `true`, REPL will print gas used for evaluating each expression.   |
-|----------------|---------------|:----------------------------------------------------------------------|
-| `call_gas`     | non-neg int   | Determines the amount of gas to be supplied to each query.            |
-|----------------|---------------|:----------------------------------------------------------------------|
-| `call_value`   | non-neg int   | Sets the `value`, the amount of tokens supplied with the query.       |
-|----------------|---------------|:----------------------------------------------------------------------|
-| `print_format` | `sophia/fate` | If set to `sophia`, will make REPL print values using Sophia syntax.  |
-|                |               | If set to `fate` it will use the representation compatible with FATE. |
-|----------------|---------------|:----------------------------------------------------------------------|
-| `print_unit`   | `true/false`  | Whether to display unit (`()`).                                       |
+| Option         | Arguments          | Description                                                         |
+|----------------|--------------------|:--------------------------------------------------------------------|
+| `display_gas`  | `true/false`       | If `true`, REPL will print gas used for evaluating each expression. |
+|----------------|--------------------|:--------------------------------------------------------------------|
+| `call_gas`     | non-neg int        | Determines the amount of gas to be supplied to each query.          |
+|----------------|--------------------|:--------------------------------------------------------------------|
+| `call_value`   | non-neg int        | Sets the `value`, the amount of tokens supplied with the query.     |
+|----------------|--------------------|:--------------------------------------------------------------------|
+| `print_format` | `sophia/fate/json` | Determines the syntax used to display values.                       |
+|----------------|--------------------|:--------------------------------------------------------------------|
+| `print_unit`   | `true/false`       | Whether to display unit (`()`).                                     |
 
 # Output format
 
@@ -209,6 +208,23 @@ AESO> Some(1)
 {variant,[0,1],1,{1}}
 AESO> () => ()
 {tuple,{<<227,71,46,20>>,{tuple,{}}}}
+```
+
+If set to `json`, the values will be encoded in JSON format. Information about
+record fields and `datatype` constructor names shall not be dropped. Function
+values are represented as strings in the same manner as in the `sophia` format.
+
+```
+AESO> :set print_format json
+AESO> record r = {x: int, y : int}
+AESO> ({x = 3, y = 4}, "STRING")
+[
+  {
+    "x": 3,
+    "y": 4
+  },
+  "STRING"
+]
 ```
 
 # Multiline input
