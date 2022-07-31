@@ -1,13 +1,13 @@
 -module(aere_parse).
 
--export([ parse/1, get_input/0, words/1 ]).
+-export([ parse/1, get_input/0, words/1, commands/0 ]).
 
 -type parse_result() :: {ok, {atom(), string()}}
                       | {error, {no_such_command, string()}}
                       | skip.
 
 commands() ->
-    [ reset, quit, type, eval, include, load, reload, add, set, state, print ].
+    [ reset, quit, type, eval, load, reload, add, set, state, print, help ].
 
 aliases() ->
     [ {t, type}
@@ -16,6 +16,7 @@ aliases() ->
     , {r, reload}
     , {q, quit}
     , {s, set}
+    , {h, help}
     ].
 
 command_search_list() ->

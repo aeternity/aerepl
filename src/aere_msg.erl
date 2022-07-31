@@ -12,7 +12,7 @@
         , files_load_error/1
         , chain_not_ready/0
         , set_nothing/0
-        , option_usage/2
+        , option_usage/1
         , list_vars/1
         , list_types/1
         , list_options/1
@@ -20,6 +20,7 @@
         , list_includes/1
         , list_unknown/1
         , invalid_print/0
+        , help/0, help/1
         , bye/0
         ]).
 
@@ -121,9 +122,9 @@ files_load_error(Failed) ->
 set_nothing() ->
     [aere_theme:error("Please specify what to set")].
 
--spec option_usage(atom(), [{atom(), term()}]) -> msg().
-option_usage(Option, Rules) ->
-    case proplists:get_value(Option, Rules, unknown) of
+-spec option_usage(atom()) -> msg().
+option_usage(Option) ->
+    case proplists:get_value(Option, aere_options:option_parse_rules(), unknown) of
         unknown ->
             [aere_theme:error("Unknown setting: "), aere_theme:setting(atom_to_list(Option))];
         Scheme ->
@@ -182,3 +183,96 @@ invalid_print() ->
 
 -spec bye() -> msg().
 bye() -> aere_theme:output("bye!").
+
+-spec help() -> msg().
+help() ->
+    aere_theme:info(string:join(h(general), "\n")).
+
+-spec help(any()) -> msg().
+help(What) ->
+    aere_theme:info(string:join(h(What), "\n")).
+
+%%% HELP STRINGS %%%
+
+h("reset") ->
+    [ "ARGS: none"
+    , ""
+    , "Restarts the REPL"
+    ];
+h("quit") ->
+    [ "ARGS: none"
+    , "ALIASES: :q"
+    , ""
+    , "Quits the REPL"
+    ];
+h("type") ->
+    [ "ARGS: Sophia expression"
+    , "ALIASES: :t"
+    , ""
+    , "Typechecks a Sophia expression"
+    ];
+h("eval") ->
+    [ "ARGS: Sophia expression"
+    , ""
+    , "Evaluates a Sophia expression and prints according to the print_format setting."
+    ];
+h("load") ->
+    [ "ARGS: [FILENAME]"
+    , ""
+    , "Loads files into the REPL. Adds the last file to the scope."
+    , "Cleans user variables and functions. Unloads previously loaded files."
+    ];
+h("reload") ->
+    [ "ARGS: [FILENAME]"
+    , ""
+    , "Reloads given files preserving the included scope."
+    , "Cleans user variables and functions."
+    ];
+h("add") ->
+    [ "ARGS: [FILENAME]"
+    , ""
+    , "Loads files into the REPL without unloading previously loaded files."
+    , "Cleans user variables and functions."
+    ];
+h("set") ->
+    Opts =
+        [ "- :set " ++ atom_to_list(Opt) ++ " " ++ format_option_scheme(Scheme)
+         || {Opt, Scheme} <- aere_options:option_parse_rules()
+        ],
+    [ "ARGS: SETTING [SETTING_ARGS]"
+    , ""
+    , "Configures REPL environment and behavior. "
+    , "Possible usages:"
+    ] ++ Opts;
+h("state") ->
+    [ "ARGS: Sophia expression"
+    , ""
+    , "Changes the in-REPL state value. Expects Sophia expression, not type."
+    , "This is used when the new value is of a different type and therefore"
+    , "cannot be adjusted using the put function."
+    , "Cleans user variables and functions."
+    ];
+h("print") ->
+    [ "ARGS: WHAT"
+    , ""
+    , "Prints REPL state. The argument determines what component is to be printed."
+    , "Possible componens:"
+    , "- vars: displays user-defined variables"
+    , "- types: displays user-defined types"
+    , "- options: displays the current configuration"
+    , "- files: displays loaded files"
+    , "- includes: displays files included in the scope"
+    ];
+h("help") ->
+    [ "ARGS: COMMAND|none"
+    , ""
+    , "Displays help about the command if the command is defined."
+    , "Otherwise displays general help."
+    ];
+h(_) ->
+    [ "Type a Sophia expression to evaluate it. Commands supported by the REPL:"
+    ] ++
+    [ "- " ++ atom_to_list(Command)
+     || Command <- aere_parse:commands()
+    ] ++
+    ["Type `:help COMMAND` to learn about the given command"].
