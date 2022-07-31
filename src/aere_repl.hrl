@@ -1,4 +1,4 @@
--type print_format() :: sophia | fate.
+-type print_format() :: sophia | fate | json.
 
 -type repl_options() ::
         #{ theme       := aere_theme:theme()

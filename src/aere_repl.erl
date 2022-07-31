@@ -174,6 +174,11 @@ apply_command(State, set, Value) ->
         [Option|Args] ->
             set_option(list_to_atom(Option), Args, State)
     end;
+apply_command(State, print, Value) ->
+    case aere_parse:words(Value) of
+        [What] -> {print_state(State, What), State};
+        _ -> throw({repl_error, aere_msg:invalid_print()})
+    end;
 apply_command(State = #repl_state{blockchain_state = BS}, continue, _) ->
     case BS of
         {ready, _} ->
@@ -503,7 +508,7 @@ default_loaded_files() ->
 get_ready_chain(#repl_state{blockchain_state = {ready, Chain}}) ->
     Chain;
 get_ready_chain(_) ->
-    throw({error, aere_msg:chain_not_ready()}).
+    throw({repl_error, aere_msg:chain_not_ready()}).
 
 set_option(Option, Args, S = #repl_state{options = Opts}) ->
     case parse_option(Option, Args) of
@@ -556,4 +561,26 @@ parse_option_args(Scheme, Args) ->
             end;
         _ ->
             error
+    end.
+
+print_state(#repl_state{
+               vars = Vars,
+               %% funs = Funs,
+               typedefs = Types,
+               options = Opts,
+               loaded_files = Files,
+               included_files = Incs
+            }, What) ->
+    PrintFuns =
+        #{ "vars" => {fun aere_msg:list_vars/1, Vars},
+           %% "funs" => {fun aere_msg:list_funs/1, Funs},
+           "types" => {fun aere_msg:list_types/1, Types},
+           "options" => {fun aere_msg:list_options/1, Opts},
+           "files" => {fun aere_msg:list_loaded_files/1, Files},
+           "includes" => {fun aere_msg:list_includes/1, Incs}
+        },
+    case maps:get(What, PrintFuns, unknown) of
+        unknown ->
+            throw({repl_error, aere_msg:list_unknown(maps:keys(PrintFuns))});
+        {Print, Payload} -> Print(Payload)
     end.

@@ -13,8 +13,17 @@
         , chain_not_ready/0
         , set_nothing/0
         , option_usage/2
+        , list_vars/1
+        , list_types/1
+        , list_options/1
+        , list_loaded_files/1
+        , list_includes/1
+        , list_unknown/1
+        , invalid_print/0
         , bye/0
         ]).
+
+-include("aere_repl.hrl").
 
 -type msg() :: aere_theme:renderable().
 
@@ -133,6 +142,43 @@ format_option_scheme({valid, Kind, _, Expl}) ->
 -spec chain_not_ready() -> msg().
 chain_not_ready() ->
     [aere_theme:error("This operation runs only in chain-ready state.")].
+
+-spec list_vars([string()]) -> msg().
+list_vars(Vars) ->
+    VarsS = [Var ++ " : " ++ aeso_ast_infer_types:pp_type("", Type)
+             || {Var, Type, _} <- Vars],
+    aere_theme:output(string:join(VarsS, "\n")).
+
+-spec list_types([type_def()]) -> msg().
+list_types(Types) ->
+    TypesS = [ TName || {_, TName, _, _} <- Types],
+    aere_theme:output(string:join(TypesS, "\n")).
+
+-spec list_options(repl_options()) -> msg().
+list_options(Opts) ->
+    ExclOpts = [theme],
+    OptsS =
+        [ atom_to_list(Opt) ++ " = " ++ lists:flatten(io_lib:format("~p", [Val]))
+         || {Opt, Val} <- maps:to_list(Opts),
+            not lists:member(Opt, ExclOpts)
+        ],
+    aere_theme:output(string:join(OptsS, "\n")).
+
+-spec list_loaded_files(#{string() => any()}) -> msg().
+list_loaded_files(Files) ->
+    aere_theme:output(string:join(maps:keys(Files), "\n")).
+
+-spec list_includes([string()]) -> msg().
+list_includes(Incs) ->
+    aere_theme:output(string:join(Incs, "\n")).
+
+-spec list_unknown([string()]) -> msg().
+list_unknown(ToList) ->
+    aere_theme:error("Possible items to print: " ++ string:join(ToList, ", ")).
+
+-spec invalid_print() -> msg().
+invalid_print() ->
+    aere_theme:error("Argument error").
 
 -spec bye() -> msg().
 bye() -> aere_theme:output("bye!").
