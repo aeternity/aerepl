@@ -272,7 +272,7 @@ h("help") ->
 h(_) ->
     [ "Type a Sophia expression to evaluate it. Commands supported by the REPL:"
     ] ++
-    [ "- " ++ atom_to_list(Command)
+    [ "- :" ++ atom_to_list(Command)
      || Command <- aere_parse:commands()
     ] ++
     ["Type `:help COMMAND` to learn about the given command"].
