@@ -1,77 +1,137 @@
 -module(aere_parse).
 
--export([ parse/1, get_input/0, words/1, commands/0 ]).
+-export([ parse/1, words/1, commands/0, resolve_command/1 ]).
 
 -type parse_result() :: {ok, {atom(), string()}}
                       | {error, {no_such_command, string()}}
                       | skip.
 
 commands() ->
-    [ reset, quit, type, eval, load, reload, add, set, state, print, help ].
-
-aliases() ->
-    [ {t, type}
-    , {l, load}
-    , {a, add}
-    , {r, reload}
-    , {q, quit}
-    , {s, set}
-    , {h, help}
+    [ {"reset",
+       {[], none, "",
+        ["Resets the REPL to the initial state."]
+       }}
+    , {"quit",
+       {["q"], none, "",
+        ["Terminates the REPL"]
+       }}
+    , {"type",
+       {["t"], consume, "SOPHIA_EXPR",
+        ["Typechecks a Sophia expression"]
+       }}
+    , {"eval",
+       {[], consume, "SOPHIA_EXPR|SOPHIA_DECL",
+        [ "Evaluates a Sophia expression and prints according to the print_format setting."
+        , "Consumes Sophia declarations and extends REPL context accordingly."]
+       }}
+    , {"load",
+       {["l"], {min_args, 1}, "FILENAMES",
+        [ "Loads files into the REPL. Adds the last file to the scope."
+        , "Cleans user variables and functions. Unloads previously loaded files."]
+       }}
+    , {"reload",
+       {["r"], many_args, "[FILENAMES]",
+        [ "Reloads given files preserving the included scope."
+        , "Cleans user variables and functions."]
+       }}
+    , {"add",
+       {["a"], {min_args, 1}, "FILENAMES",
+        [ "Loads files into the REPL without unloading previously loaded files."
+        , "Cleans user variables and functions."]
+       }}
+    , {"set",
+       {["s"], {min_args, 1}, "SETTING [SETTING_ARGS]",
+        [ "Configures REPL environment and behavior. "
+        , "Possible usages:"] ++
+            [ "- :set " ++ atom_to_list(Opt) ++ " " ++ aere_options:format_option_scheme(Scheme)
+              || {Opt, Scheme} <- aere_options:option_parse_rules()
+            ]
+       }}
+    , {"state",
+       {["st"], consume, "SOPHIA_EXPR",
+        [ "Changes the in-REPL state value. Expects Sophia expression, not type."
+        , "This is used when the new value is of a different type and therefore"
+        , "cannot be adjusted using the put function."
+        , "Cleans user variables and functions."]
+       }}
+    , {"print",
+       {["p"], {n_args, 1}, "WHAT",
+        [ "Prints REPL state. The argument determines what component is to be printed."
+        , "Possible componens:"
+        , "- vars: displays user-defined variables"
+        , "- types: displays user-defined types"
+        , "- options: displays the current configuration"
+        , "- files: displays loaded files"
+        , "- includes: displays files included in the scope"]
+       }}
+    , {"help",
+       {["h"], {max_args, 1}, "[COMMAND]",
+        [ "Displays help about the command if the command is defined."
+        , "Otherwise displays general help."]
+       }}
     ].
 
-command_search_list() ->
-    [{atom_to_list(C), C} || C <- commands()] ++
-    [{atom_to_list(A), C} || {A, C} <- aliases()].
+resolve_command(Cmd) ->
+    case lists:search(
+           fun({C, {Aliases, _, _, _}}) -> (Cmd == C) orelse lists:member(Cmd, Aliases) end,
+           commands()) of
+        {value, {C, V}} -> {list_to_atom(C), V};
+        false -> undefined
+    end.
 
 %% Parse an input string. This function is called on strings entered by the user in the repl
 -spec parse(string()) -> parse_result().
 parse(Input) ->
-    case Input of
+    case string:trim(Input) of
         []  -> skip;
         ":" -> skip;
-        [$:|CommandAndArg] ->
-            [CommandStr | _] = string:tokens(CommandAndArg, unicode_util:whitespace()),
-            Arg = string:trim(CommandAndArg -- CommandStr, leading, unicode_util:whitespace()),
+        [$:|CommandAndArgs] ->
+            {CommandStr, ArgStr} = split_first_word(CommandAndArgs),
             case resolve_command(CommandStr) of
-                false -> {error, {no_such_command, CommandStr}};
-                Cmd  -> {ok, {Cmd, Arg}}
+                undefined -> throw({repl_error, aere_msg:no_such_command(CommandStr)});
+                {Command, {_Aliases, ArgScheme, ArgDoc, _Doc}} ->
+                    case parse_args(ArgScheme, ArgStr) of
+                        {ok, Args} -> {Command, Args};
+                        error -> throw({repl_error, aere_msg:bad_command_args(CommandStr, ArgDoc)})
+                    end
             end;
         _ ->
             %% Eval is the default command (i.e. 1 + 1 is just :eval 1 + 1)
-            {ok, {eval, Input}}
+            {eval, Input}
     end.
 
-resolve_command(CommandStr) ->
-    proplists:get_value(CommandStr, command_search_list(), false).
-
-%% Get single line or multiline input from the user and return it as a single string
--spec get_input() -> string().
-get_input() ->
-    Line =
-        case io:get_line("AESO> ") of
-            eof          -> ":quit"; % that's dirty
-            {error, Err} -> exit(Err);
-            Data         -> Data
-        end,
-    Input =
-        case string:trim(Line, both, unicode_util:whitespace()) of
-            ":{" -> multiline_input();
-            ""   -> "";
-            _    -> lists:flatten(string:replace(Line, ";", "\n", all))
-        end,
-    string:trim(Input, both, unicode_util:whitespace()).
-
--spec multiline_input() -> string().
-multiline_input() -> multiline_input([]).
-
-%% Keep reading input lines until :} is found. Return the code between :{ and :} as a single string
--spec multiline_input([string()]) -> string().
-multiline_input(CodeBlock) ->
-    Line = io:get_line("| "),
-    case string:trim(Line, both, unicode_util:whitespace()) of
-        ":}" -> lists:flatten(lists:reverse(CodeBlock));
-        _    -> multiline_input([Line|CodeBlock])
+parse_args(consume, Str) ->
+    {ok, Str};
+parse_args(none, Str) ->
+    case string:trim(Str) of
+        "" -> {ok, []};
+        _ -> error
+    end;
+parse_args(many_args, Str) ->
+    {ok, words(Str)};
+parse_args({n_args, N}, Str) ->
+    Words = words(Str),
+    case length(Words) == N of
+        true -> {ok, Words};
+        _ -> error
+    end;
+parse_args({min_args, N}, Str) ->
+    Words = words(Str),
+    case length(Words) >= N of
+        true -> {ok, Words};
+        _ -> error
+    end;
+parse_args({max_args, N}, Str) ->
+    Words = words(Str),
+    case length(Words) =< N of
+        true -> {ok, Words};
+        _ -> error
     end.
 
 words(String) ->
     string:lexemes(String, unicode_util:whitespace()).
+
+split_first_word(String) ->
+    Word = string:nth_lexeme(String, 1, unicode_util:whitespace()),
+    Rest = lists:nthtail(length(Word), String),
+    {Word, Rest}.
