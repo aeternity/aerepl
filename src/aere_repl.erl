@@ -332,7 +332,7 @@ register_letfun(Id = {id, _, Name}, Args, Body, S0 = #repl_state{funs = Funs}) -
     Funs1 = generated_functions(ByteCode, NameMap),
 
     FunNewName = maps:get(aeb_fate_code:symbol_identifier(binary:list_to_bin(Name)), NameMap),
-    FunVal = {tuple, {FunNewName, {tuple, {}}}},
+    FunVal = {tuple, {FunNewName, {tuple, {}}}}, %% TODO this is broken
 
     S1 = register_vars([{Name, Type, FunVal}], S0),
 
