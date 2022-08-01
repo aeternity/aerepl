@@ -1,8 +1,6 @@
 _build
 _checkouts
 rebar3.crashdump
-rebar.lock
 log
-aerepl_server
 erl_crash.dump
 .vscode/

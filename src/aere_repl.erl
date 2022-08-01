@@ -95,7 +95,7 @@ process_input(State, String) ->
                 , warnings = []
                 , status = error
                 };
-          {aefa_fate, FateErr, X} ->
+          {aefa_fate, FateErr, _} ->
             #repl_response
                 { output = aere_msg:error("FATE error: " ++ FateErr)
                 , warnings = []
