@@ -1,6 +1,24 @@
 _build
 _checkouts
-rebar3.crashdump
 log
+.eunit
+*.o
+*.beam
+*.plt
 erl_crash.dump
-.vscode/
+.concrete/DEV_MODE
+
+# editors
+*~
+lib/tools/emacs/*.elc
+TAGS
+.*.sw[a-z]
+.vscode
+.idea
+erlang_ls.config
+
+# rebar 3
+.rebar3
+_build/
+_checkouts/
+rebar3.crashdump
