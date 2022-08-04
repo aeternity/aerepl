@@ -336,7 +336,7 @@ register_letfun(Id = {id, _, Name}, Args, Body, S0 = #repl_state{funs = Funs}) -
 
     S1 = register_vars([{Name, Type, FunVal}], S0),
 
-    S1#repl_state{funs = maps:merge(Funs, Funs1)}.
+    {aere_theme:error("Warning: defining functions in REPL is WIP and may be unstable."), S1#repl_state{funs = maps:merge(Funs, Funs1)}}.
 
 register_vars(NewVars, S = #repl_state{vars = OldVars}) ->
     Filtered = [V || V = {Id, _, _} <- OldVars, [] =:= proplists:lookup_all(Id, NewVars)],
