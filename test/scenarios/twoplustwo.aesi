@@ -1,2 +1,15 @@
+:set display_gas true
+//
+
 2 + 2
 // 4
+// USED GAS: 41
+
+:set display_gas false
+//
+
+2 + 1 + 1
+// 4
+
+:b 121
+// No such command "b"
