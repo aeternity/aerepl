@@ -50,75 +50,56 @@ process_input(State, String) when is_binary(String) ->
     process_input(State, binary_to_list(String));
 process_input(State, String) ->
     check_wololo(String),
-    case aere_parse:parse(String) of
-        {ok, {Command, Args}} ->
-            try apply_command(bump_nonce(State), Command, Args) of
-                {Out, State1 = #repl_state{}} ->
-                    #repl_response
-                        { output = Out
-                        , warnings = []
-                        , status = {ok, State1}
-                        };
-                State1 = #repl_state{} ->
-                    #repl_response
-                        { output = []
-                        , warnings = []
-                        , status = {ok, State1}
-                        };
-                finish ->
-                    #repl_response
-                        { output = aere_msg:bye()
-                        , warnings = []
-                        , status = finish
-                        }
-            catch error:E:Stacktrace ->
-                    #repl_response
-                        { output = aere_msg:internal(E, Stacktrace)
-                        , warnings = []
-                        , status = internal_error
-                        };
-                  exit:E ->
-                    #repl_response
-                        { output = aere_msg:internal(E)
-                        , warnings = []
-                        , status = internal_error
-                        };
-                  {error, E} ->
-                    #repl_response
-                        { output = aere_msg:error(E)
-                        , warnings = []
-                        , status = error
-                        };
-                  {repl_error, E} ->
-                    #repl_response
-                        { output = E
-                        , warnings = []
-                        , status = error
-                        };
-                  {aefa_fate, revert, ErrMsg, _} ->
-                    #repl_response
-                        { output = aere_msg:abort(ErrMsg)
-                        , warnings = []
-                        , status = error
-                        };
-                  {aefa_fate, FateErr, _} ->
-                    #repl_response
-                        { output = aere_msg:error(FateErr)
-                        , warnings = []
-                        , status = internal_error
-                        }
-            end;
-        {error, {no_such_command, Command}} ->
+    try {Command, Args} = aere_parse:parse(String),
+         apply_command(Command, Args, bump_nonce(State))
+    of
+        {Out, State1 = #repl_state{}} ->
             #repl_response
-                { output = aere_msg:no_such_command(Command)
+                { output = Out
                 , warnings = []
-                , status = error
+                , status = {ok, State1}
+                };
+        State1 = #repl_state{} ->
+            #repl_response
+                { output = []
+                , warnings = []
+                , status = {ok, State1}
+                };
+        finish ->
+            #repl_response
+                { output = aere_msg:bye()
+                , warnings = []
+                , status = finish
                 };
         skip ->
             #repl_response
                 { output = []
                 , warnings = []
                 , status = skip
+                }
+    catch error:E:Stacktrace ->
+            #repl_response
+                { output = aere_msg:internal(E, Stacktrace)
+                , warnings = []
+                , status = internal_error
+                };
+          {repl_error, E} ->
+            #repl_response
+                { output = E
+                , warnings = []
+                , status = error
+                };
+          {revert, Err} ->
+            #repl_response
+                { output = aere_msg:abort(Err)
+                , warnings = []
+                , status = error
+                };
+          {aefa_fate, FateErr, _} ->
+            #repl_response
+                { output = aere_msg:error("FATE error: " ++ FateErr)
+                , warnings = []
+                , status = error
                 }
     end.
 
@@ -129,12 +110,12 @@ check_wololo(String) ->
     ok.
 
 %% Return the result of applying a repl command to the given argument
--spec apply_command(repl_state(), aere_parse:command(), string()) -> command_res().
-apply_command(_, quit, _) ->
+-spec apply_command(aere_parse:command(), string() | [string()], repl_state()) -> command_res().
+apply_command(quit, [], _) ->
     finish;
-apply_command(_, reset, _) ->
+apply_command(reset, [], _) ->
     init_state();
-apply_command(State, type, I) ->
+apply_command(type, I, State) ->
     Stmts = aere_sophia:parse_body(I),
     Contract = aere_mock:eval_contract(Stmts, State),
     {TEnv, _} = aere_sophia:typecheck(Contract, [dont_unfold, allow_higher_order_entrypoints]),
@@ -142,9 +123,9 @@ apply_command(State, type, I) ->
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
     TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER ++ "[0-9]*\\.", "", [global, {return, list}]),
     {aere_msg:output(TypeStrClean), State};
-apply_command(State, state, I) ->
+apply_command(state, I, State) ->
     set_state(aere_sophia:parse_body(I), State);
-apply_command(State, eval, I) ->
+apply_command(eval, I, State) ->
     Parse = aere_sophia:parse_top(I),
     case Parse of
         {body, Body} ->
@@ -159,32 +140,24 @@ apply_command(State, eval, I) ->
             register_typedef(Name, Args, Body, State);
         _ -> error(too_many_shit)
     end;
-apply_command(State, load, Modules) ->
-    load_modules(aere_parse:words(Modules), State);
-apply_command(State, reload, Modules) ->
-    reload_modules(aere_parse:words(Modules), State);
-apply_command(State, add, Modules) ->
-    add_modules(aere_parse:words(Modules), State);
-apply_command(State, module, Modules) ->
+apply_command(load, Modules, State) ->
+    load_modules(Modules, State);
+apply_command(reload, Modules, State) ->
+    reload_modules(Modules, State);
+apply_command(add, Modules, State) ->
+    add_modules(Modules, State);
+apply_command(module, Modules, State) ->
     register_include(Modules, State);
-apply_command(State, set, Value) ->
-    Values = aere_parse:words(Value),
-    case Values of
-        [] -> throw({repl_error, aere_msg:set_nothing()});
-        [Option|Args] ->
-            set_option(list_to_atom(Option), Args, State)
-    end;
-apply_command(State, help, Args) ->
-    case aere_parse:words(Args) of
+apply_command(set, [Option|Args], State) ->
+    set_option(list_to_atom(Option), Args, State);
+apply_command(help, Arg, State) ->
+    case Arg of
         [On] -> {aere_msg:help(On), State};
         _ -> {aere_msg:help(), State}
     end;
-apply_command(State, print, Value) ->
-    case aere_parse:words(Value) of
-        [What] -> {print_state(State, What), State};
-        _ -> throw({repl_error, aere_msg:invalid_print()})
-    end;
-apply_command(State = #repl_state{blockchain_state = BS}, continue, _) ->
+apply_command(print, [What], State) ->
+    {print_state(State, What), State};
+apply_command(continue, _, State = #repl_state{blockchain_state = BS}) ->
     case BS of
         {ready, _} ->
             {aere_msg:error("Not at breakpoint!"), State};
@@ -359,7 +332,7 @@ register_letfun(Id = {id, _, Name}, Args, Body, S0 = #repl_state{funs = Funs}) -
     Funs1 = generated_functions(ByteCode, NameMap),
 
     FunNewName = maps:get(aeb_fate_code:symbol_identifier(binary:list_to_bin(Name)), NameMap),
-    FunVal = {tuple, {FunNewName, {tuple, {}}}},
+    FunVal = {tuple, {FunNewName, {tuple, {}}}}, %% TODO this is broken
 
     S1 = register_vars([{Name, Type, FunVal}], S0),
 
@@ -429,25 +402,19 @@ run_contract(ByteCode, S) ->
     eval_state(ES, S).
 
 eval_state(ES0, S = #repl_state{contract_state = {StateType, _}}) ->
-    ES1 = aefa_fate:execute(ES0),
-    {StateVal, ES2} = aefa_fate:lookup_var({var, -1}, ES1),
+    try ES1 = aefa_fate:execute(ES0),
+         {StateVal, ES2} = aefa_fate:lookup_var({var, -1}, ES1),
 
-    Res       = aefa_engine_state:accumulator(ES2),
-    ChainApi  = aefa_engine_state:chain_api(ES2),
-    UsedGas   = maps:get(call_gas, S#repl_state.options) - aefa_engine_state:gas(ES2) - 10, %% RETURN(R) costs 10
+         Res       = aefa_engine_state:accumulator(ES2),
+         ChainApi  = aefa_engine_state:chain_api(ES2),
+         UsedGas   = maps:get(call_gas, S#repl_state.options) - aefa_engine_state:gas(ES2) - 10, %% RETURN(R) costs 10
 
-    {Res, UsedGas, S#repl_state{blockchain_state = {ready, ChainApi},
-                                contract_state = {StateType, StateVal}
-                               }}.
-
-    %% NOTE: the following code is used to experiment with breakpoints, but was
-    %%       commented to please dialyzer
-    %Break     = aefa_engine_state:at_breakpoint(ES1),
-
-    %case Break of
-    %    true -> {"BREAK", UsedGas, S#repl_state{blockchain_state = {breakpoint, ES1}}};
-    %    false -> {Res, UsedGas, S#repl_state{blockchain_state = {ready, ChainApi}}}
-    %end.
+         {Res, UsedGas, S#repl_state{blockchain_state = {ready, ChainApi},
+                                     contract_state = {StateType, StateVal}
+                                    }}
+    catch {aefa_fate, revert, ErrMsg, _} ->
+            throw({revert, ErrMsg})
+    end.
 
 setup_fate_state(
   ByteCode,

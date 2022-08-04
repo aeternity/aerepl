@@ -8,10 +8,10 @@
         , internal/1
         , internal/2
         , no_such_command/1
+        , bad_command_args/2
         , file_not_loaded/1
         , files_load_error/1
         , chain_not_ready/0
-        , set_nothing/0
         , option_usage/1
         , list_vars/1
         , list_types/1
@@ -19,7 +19,6 @@
         , list_loaded_files/1
         , list_includes/1
         , list_unknown/1
-        , invalid_print/0
         , help/0, help/1
         , bye/0
         ]).
@@ -96,11 +95,25 @@ internal(Error, Stacktrace) ->
 internal(Error) ->
     internal(Error, []).
 
--spec no_such_command(aere_repl:command()) -> msg().
+-spec no_such_command(string()) -> msg().
 no_such_command(Command) ->
     [ aere_theme:output("No such command ")
     , aere_theme:command(io_lib:format("~p", [Command]))
     ].
+
+-spec command_usage(string() | atom(), string()) -> msg().
+command_usage(Command, Doc) when is_atom(Command) ->
+    command_usage(atom_to_list(Command), Doc);
+command_usage(Command, Doc) ->
+    [ aere_theme:info("USAGE: ")
+    , aere_theme:command(":" ++ Command ++ " ")
+    , aere_theme:output(Doc)
+    ].
+
+-spec bad_command_args(string(), string()) -> msg().
+bad_command_args(Command, Doc) ->
+    [ aere_theme:error("Invalid parameters.\n")
+    ] ++ command_usage(Command, Doc).
 
 -spec file_not_loaded(FileName) -> msg() when
       FileName :: string().
@@ -118,10 +131,6 @@ files_load_error(Failed) ->
     FlatList = lists:flatten(lists:join(aere_theme:output("\n"), FilesAndReasons)),
     [aere_theme:error("Could not load files:\n") | FlatList].
 
--spec set_nothing() -> msg().
-set_nothing() ->
-    [aere_theme:error("Please specify what to set")].
-
 -spec option_usage(atom()) -> msg().
 option_usage(Option) ->
     case proplists:get_value(Option, aere_options:option_parse_rules(), unknown) of
@@ -130,15 +139,9 @@ option_usage(Option) ->
         Scheme ->
             [ aere_theme:error("Bad setting format\n")
             , aere_theme:setting(atom_to_list(Option) ++ " ")
-            , aere_theme:setting_arg(format_option_scheme(Scheme))
+            , aere_theme:setting_arg(aere_options:format_option_scheme(Scheme))
             ]
     end.
-
-format_option_scheme(integer) -> "INTEGER";
-format_option_scheme(boolean) -> "BOOLEAN";
-format_option_scheme({atom, Ats}) -> string:join(lists:map(fun atom_to_list/1, Ats), "|");
-format_option_scheme({valid, Kind, _, Expl}) ->
-    format_option_scheme(Kind) ++ "(" ++ Expl ++ ")".
 
 -spec chain_not_ready() -> msg().
 chain_not_ready() ->
@@ -177,102 +180,30 @@ list_includes(Incs) ->
 list_unknown(ToList) ->
     aere_theme:error("Possible items to print: " ++ string:join(ToList, ", ")).
 
--spec invalid_print() -> msg().
-invalid_print() ->
-    aere_theme:error("Argument error").
-
 -spec bye() -> msg().
 bye() -> aere_theme:output("bye!").
 
 -spec help() -> msg().
 help() ->
-    aere_theme:info(string:join(h(general), "\n")).
+    Help =
+        [ "Type a Sophia expression to evaluate it. Commands supported by the REPL:"
+        ] ++
+        [ "- :" ++ Command
+          || {Command, _} <- aere_parse:commands()
+        ] ++
+        ["Type `:help COMMAND` to learn about the given command"],
+
+    aere_theme:info(string:join(Help, "\n")).
 
 -spec help(any()) -> msg().
 help(What) ->
-    aere_theme:info(string:join(h(What), "\n")).
-
-%%% HELP STRINGS %%%
-
-h("reset") ->
-    [ "ARGS: none"
-    , ""
-    , "Restarts the REPL"
-    ];
-h("quit") ->
-    [ "ARGS: none"
-    , "ALIASES: :q"
-    , ""
-    , "Quits the REPL"
-    ];
-h("type") ->
-    [ "ARGS: Sophia expression"
-    , "ALIASES: :t"
-    , ""
-    , "Typechecks a Sophia expression"
-    ];
-h("eval") ->
-    [ "ARGS: Sophia expression"
-    , ""
-    , "Evaluates a Sophia expression and prints according to the print_format setting."
-    ];
-h("load") ->
-    [ "ARGS: [FILENAME]"
-    , ""
-    , "Loads files into the REPL. Adds the last file to the scope."
-    , "Cleans user variables and functions. Unloads previously loaded files."
-    ];
-h("reload") ->
-    [ "ARGS: [FILENAME]"
-    , ""
-    , "Reloads given files preserving the included scope."
-    , "Cleans user variables and functions."
-    ];
-h("add") ->
-    [ "ARGS: [FILENAME]"
-    , ""
-    , "Loads files into the REPL without unloading previously loaded files."
-    , "Cleans user variables and functions."
-    ];
-h("set") ->
-    Opts =
-        [ "- :set " ++ atom_to_list(Opt) ++ " " ++ format_option_scheme(Scheme)
-         || {Opt, Scheme} <- aere_options:option_parse_rules()
-        ],
-    [ "ARGS: SETTING [SETTING_ARGS]"
-    , ""
-    , "Configures REPL environment and behavior. "
-    , "Possible usages:"
-    ] ++ Opts;
-h("state") ->
-    [ "ARGS: Sophia expression"
-    , ""
-    , "Changes the in-REPL state value. Expects Sophia expression, not type."
-    , "This is used when the new value is of a different type and therefore"
-    , "cannot be adjusted using the put function."
-    , "Cleans user variables and functions."
-    ];
-h("print") ->
-    [ "ARGS: WHAT"
-    , ""
-    , "Prints REPL state. The argument determines what component is to be printed."
-    , "Possible componens:"
-    , "- vars: displays user-defined variables"
-    , "- types: displays user-defined types"
-    , "- options: displays the current configuration"
-    , "- files: displays loaded files"
-    , "- includes: displays files included in the scope"
-    ];
-h("help") ->
-    [ "ARGS: COMMAND|none"
-    , ""
-    , "Displays help about the command if the command is defined."
-    , "Otherwise displays general help."
-    ];
-h(_) ->
-    [ "Type a Sophia expression to evaluate it. Commands supported by the REPL:"
-    ] ++
-    [ "- :" ++ atom_to_list(Command)
-     || Command <- aere_parse:commands()
-    ] ++
-    ["Type `:help COMMAND` to learn about the given command"].
+    case aere_parse:resolve_command(What) of
+        {Cmd, {Aliases, _, ArgDoc, Doc}} ->
+            AliasesStr = string:join([":" ++ A || A <- Aliases], ", "),
+            command_usage(Cmd, ArgDoc) ++
+                [aere_theme:info("\nALIASES: "), aere_theme:command(AliasesStr)] ++
+                [aere_theme:output("\n\n")] ++
+                [aere_theme:info(string:join(Doc, "\n"))];
+        _ ->
+            help()
+    end.

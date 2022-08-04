@@ -1,6 +1,6 @@
 -module(aere_gen_server).
 -behaviour(gen_server).
--export([start_link/0]).
+-export([start/1, start_link/1]).
 -export([ init/1, handle_call/3, handle_cast/2
         %% , handle_info/2, terminate/2
         , code_change/3
@@ -36,13 +36,18 @@ load_deps() ->
     ok = application:load(aeutils),
     ok = application:load(setup).
 
+
 %%% --- GEN SERVER ---
 
-start_link() ->
+start(Args) ->
     load_deps(),
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+    gen_server:start({local, ?MODULE}, ?MODULE, Args, []).
 
-init([]) ->
+start_link(Args) ->
+    load_deps(),
+    gen_server:start_link({local, ?MODULE}, ?MODULE, Args, []).
+
+init(_) ->
     {ok, new_state()}.
 
 handle_call({input, Input}, _From, State) ->

@@ -12,7 +12,7 @@
 -include("aere_macros.hrl").
 
 process_err(Errs) when is_list(Errs) ->
-    throw({error, lists:concat([aeso_errors:err_msg(E) || E <- Errs])});
+    throw({repl_error, aere_msg:error(lists:concat([aeso_errors:err_msg(E) || E <- Errs]))});
 process_err(E) -> %% idk, rethrow
     throw(E).
 
@@ -24,7 +24,7 @@ typecheck(Ast, Opts) ->
         {TEnv, _TAstFolded, TAstUnfolded, _Warns} ->
             {TEnv, TAstUnfolded}
     catch _:{error, Errs} ->
-              throw({error, process_err(Errs)})
+              throw({repl_error, process_err(Errs)})
     end.
 
 compile_contract(TypedAst) ->
