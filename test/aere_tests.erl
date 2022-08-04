@@ -71,9 +71,6 @@ scenarios() ->
     [ twoplustwo
     ].
 
-format(T) ->
-    string:trim(aere_color:render_colored(none, T)).
-
 %% Split a file into entries
 -spec split_file(string()) -> [entry()].
 split_file(File) ->
