@@ -86,7 +86,8 @@ type_unfold_contract(Types, State) ->
 %% Mock that just adds a sample main contract to the given AST
 -spec ast_fillup_contract(ast()) -> ast().
 ast_fillup_contract(Ast) ->
-    Ast ++ [contract(?MOCK_CONTRACT, ?DEFAULT_CONTRACT_STATE_T, [function_e(?USER_INPUT, [], {tuple, ann(), []})])].
+    % So we can safely add mock contract
+    un_main(Ast) ++ [contract(?MOCK_CONTRACT, ?DEFAULT_CONTRACT_STATE_T, [function_e(?USER_INPUT, [], {tuple, ann(), []})])].
 
 %% Puts a pattern as the value of a function. Used in collection of free variables
 %% TODO This is a hack because used_ids requires decl; should be a feature of aesophia
@@ -109,7 +110,7 @@ typedef_namespaces(#repl_state{typedefs = Typedefs}) ->
 
 -spec includes(repl_state()) -> ast().
 includes(#repl_state{included_code = IncFiles}) ->
-    IncFiles.
+    un_main(IncFiles).
 
 -spec type_scope_usings(repl_state()) -> [decl()].
 type_scope_usings(#repl_state{type_scope = TypeScope}) ->
@@ -201,3 +202,11 @@ function(Attrs, Id, Args, Clauses) ->
     , Args
     , {id, ann(), "_"}
     , Clauses}.
+
+-spec un_main(ast()) -> ast().
+un_main(Ast) ->
+    lists:map(
+      fun({contract_main, A, Name, Impl, Body}) -> {contract_child, A, Name, Impl, Body};
+         (D) -> D
+      end,
+      Ast).
