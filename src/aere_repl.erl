@@ -70,12 +70,6 @@ process_input(State, String) ->
                 { output = aere_msg:bye()
                 , warnings = []
                 , status = finish
-                };
-        skip ->
-            #repl_response
-                { output = []
-                , warnings = []
-                , status = skip
                 }
     catch error:E:Stacktrace ->
             #repl_response

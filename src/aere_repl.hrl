@@ -50,8 +50,5 @@
         }).
 -type repl_response() :: #repl_response{}.
 
--type command_res() :: finish | {colored(), repl_state()} | repl_state() | none().
+-type command_res() :: finish | {aere_theme:renderable(), repl_state()} | repl_state() | no_return().
 
--type color() :: atom() | {[atom()], atom()}.
-
--type colored() :: string() | {colored, color(), string()} | list(colored()).

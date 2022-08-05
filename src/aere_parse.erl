@@ -2,10 +2,20 @@
 
 -export([ parse/1, words/1, commands/0, resolve_command/1 ]).
 
--type parse_result() :: {ok, {atom(), string()}}
-                      | {error, {no_such_command, string()}}
+-type parse_result() :: {atom(), string() | [string()]}
+                      | no_return()
                       | skip.
 
+-type command_scheme() :: none 
+                        | consume
+                        | many_args
+                        | {n_args, non_neg_integer()}
+                        | {min_args, non_neg_integer()}
+                        | {max_args, non_neg_integer()}.
+
+-type command_spec() :: {string(), {[string()], command_scheme(), string(), string()}}.
+
+-spec commands() -> [command_spec()].
 commands() ->
     [ {"reset",
        {[], none, "",
@@ -100,6 +110,7 @@ parse(Input) ->
             {eval, Input}
     end.
 
+-spec parse_args(command_scheme(), string()) -> {ok, string() | [string()]} | error.
 parse_args(consume, Str) ->
     {ok, Str};
 parse_args(none, Str) ->
