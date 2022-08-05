@@ -5,311 +5,208 @@
 
 -module(aere_mock).
 
--include("aere_repl.hrl").
 -include("aere_macros.hrl").
+-include("aere_repl.hrl").
 
--export([ chained_query_contract/2
-        , chained_initial_contract/3
-        , simple_query_contract/2
-        , letval_provider/3
+-export([ eval_contract/2
+        , letval_contract/4
+        , letfun_contract/4
+        , typedef_contract/4
+        , type_unfold_contract/1
+        , type_unfold_contract/2
+        , ast_fillup_contract/1
+        , pat_as_decl/1
         , ann/0
         ]).
 
+-type ast()          :: aeso_syntax:ast().
+-type ann()          :: aeso_syntax:ann().
+-type expr()         :: aeso_syntax:expr().
+-type stmt()         :: aeso_syntax:stmt().
+-type type()         :: aeso_syntax:type().
+-type pat()          :: aeso_syntax:pat().
+-type id()           :: aeso_syntax:id().
+-type con()          :: aeso_syntax:con().
+-type letfun()       :: aeso_syntax:letfun().
+-type tvar()         :: aeso_syntax:tvar().
+-type typedef()      :: aeso_syntax:typedef().
+-type decl()         :: aeso_syntax:decl().
+-type guarded_expr() :: aeso_syntax:guarded_expr().
+
+%%% --- Mocks --- %%%
+
+%% Mock to validate and evaluate Sophia expression
+-spec eval_contract(expr() | [stmt()], repl_state()) -> ast().
+eval_contract(Body, State) ->
+    CallFun = function_e([entrypoint, payable, stateful], ?USER_INPUT, args(State), Body),
+    mock_contract(State, [CallFun]).
+
+%% Mock to validate and get bytecode of a function
+-spec letfun_contract(id(), [pat()], [guarded_expr()], repl_state()) -> ast().
+letfun_contract(FName, Args, FBody, State) ->
+    FunDef = function([entrypoint, payable, stateful], FName, Args, FBody),
+    CallFun = function_e([entrypoint, payable, stateful], ?USER_INPUT, [], FName),
+    mock_contract(State, [FunDef, CallFun]).
+
+%% Mock to validate and compute value(s) of letval assignment
+-spec letval_contract(pat(), [string()], expr(), repl_state()) -> ast().
+letval_contract(Pattern, Vars, Expr, State) ->
+    Let = {letval, ann(), Pattern, Expr},
+    Ret = case Vars of
+              [V] -> {id, ann(), V};
+              _ -> {tuple, ann(), [{id, ann(), Var} || Var <- Vars]}
+          end,
+    Body = {block, ann(), [Let, Ret]},
+    mock_contract(State, [function_e([entrypoint, payable, stateful], ?USER_INPUT, args(State), Body)]).
+
+%% Mock to validate type definition
+-spec typedef_contract(string(), [tvar()], typedef(), repl_state()) -> ast().
+typedef_contract(Name, Args, Def, State) ->
+    TDef = {type_def, ann(), {id, ann(), Name}, Args, Def},
+    mock_contract(State, [TDef]).
+
+%% Mock for unfolding type aliases in type definitions
+-spec type_unfold_contract(repl_state()) -> ast().
+type_unfold_contract(State = #repl_state{type_scope = TypeScope}) ->
+    type_unfold_contract(TypeScope, State).
+type_unfold_contract(Types, State) ->
+    Aliases =
+        [ begin
+              ArgsT = [{tvar, ann(), "t" ++ integer_to_list(N)} || N <- lists:seq(1, ArgsN)],
+              Target = case ArgsN of
+                        0 -> {qid, ann(), [Ns, Type]};
+                        _ -> {app_t, ann(), {qid, ann(), [Ns, Type]}, ArgsT}
+                    end,
+              type_def(Type, ArgsT, {alias_t, Target})
+          end
+         || {Type, {Ns, ArgsN}} <- Types
+        ],
+    mock_contract(State, Aliases).
+
+%% Mock that just adds a sample main contract to the given AST
+-spec ast_fillup_contract(ast()) -> ast().
+ast_fillup_contract(Ast) ->
+    % So we can safely add mock contract
+    un_main(Ast) ++ [contract(?MOCK_CONTRACT, ?DEFAULT_CONTRACT_STATE_T, [function_e(?USER_INPUT, [], {tuple, ann(), []})])].
+
+%% Puts a pattern as the value of a function. Used in collection of free variables
+%% TODO This is a hack because used_ids requires decl; should be a feature of aesophia
+pat_as_decl(Pat) ->
+    function_e([], "_", [], Pat).
+
+%%% --- Entities extracted from REPL state
+
+-spec args(repl_state()) -> [pat()].
+args(#repl_state{vars = Vars}) ->
+    [{typed, ann(), {id, ann(), Arg}, ArgT} || {Arg, ArgT, _} <- Vars].
+
+-spec typedef_namespaces(repl_state()) -> ast().
+typedef_namespaces(#repl_state{typedefs = Typedefs}) ->
+    Namespaces =
+        [ namespace(Ns, [type_def(Name, Args, Def)])
+          || {Ns, Name, Args, Def} <- Typedefs
+        ],
+    lists:reverse(Namespaces).
+
+-spec includes(repl_state()) -> ast().
+includes(#repl_state{included_code = IncFiles}) ->
+    un_main(IncFiles).
+
+-spec type_scope_usings(repl_state()) -> [decl()].
+type_scope_usings(#repl_state{type_scope = TypeScope}) ->
+    [using(Namespace) || {_, {Namespace, _}} <- TypeScope].
+
+-spec with_state_decls(repl_state(), [decl()]) -> [decl()].
+with_state_decls(State, Decls) ->
+    Ta = type_scope_usings(State),
+    Ta ++ Decls.
+
+-spec with_state_ast(repl_state(), ast()) -> ast().
+with_state_ast(State, Ast) ->
+    Inc = includes(State),
+    Ns = typedef_namespaces(State),
+    Inc ++ Ns ++ Ast.
+
+-spec mock_contract(repl_state(), [decl()]) -> ast().
+mock_contract(State = #repl_state{contract_state = {StateT, _}}, Decls) ->
+    with_state_ast(
+      State,
+      [contract(?MOCK_CONTRACT, StateT, with_state_decls(State, Decls))]).
+
+%%% --- Sophia construction helpers --- %%%
 
 %% Default annotation
--spec ann() -> aeso_syntax:ann().
+-spec ann() -> ann().
 ann() ->
-    [{file, <<"REPL">>}].
+    [{origin, system}].
 
+-spec init() -> letfun().
+init() ->
+    Abort = {app, ann(), {id, ann(), "abort"}, [{string, ann(), "INIT NOT CALLABLE"}]},
+    function_e([entrypoint], "init", [], [Abort]).
 
-%% contract Name =
-%%   Body
--spec contract(list(aeso_syntax:decl())) -> aeso_syntax:decl().
-contract(Body) ->
-    contract(contract_main, ?MOCK_CONTRACT, Body).
--spec contract(contract_main | contract_interface, string(), list(aeso_syntax:decl())) -> aeso_syntax:decl().
-contract(ContractType, Name, Body) ->
-    {ContractType, [payable, ann()], {con, ann(), Name}, Body}.
+-spec state_typedef(type()) -> decl().
+state_typedef(Type) ->
+    type_def("state", [], {alias_t, Type}).
 
-%% type Name = Type
--spec type_alias(string(), aeso_syntax:type()) -> aeso_syntax:decl().
-type_alias(Name, Type) ->
-    {type_def, ann(),
-     {id, ann(), Name},
-     [],
-     {alias_t, Type}}.
+-spec contract(string() | con(), type(), list(decl())) -> decl().
+contract(Name, ContractState, Body) ->
+    contract(contract_main, ContractState, Name, Body).
 
+-spec contract(contract_main | contract_interface, type(), string() | con(), list(decl())) -> decl().
+contract(ContractType, StateT, Name, Body) when is_list(Name) ->
+    contract(ContractType, StateT, {con, ann(), Name}, Body);
+contract(ContractType, StateT, Con, Body) ->
+    {ContractType, [payable, ann()], Con, [], [state_typedef(StateT), init() | Body]}.
 
-%% Entrypoint without arguments
-%% Attributes entrpoint Name() = Body
--spec val_entrypoint(string(), aeso_syntax:expr()) -> aeso_syntax:decl().
-val_entrypoint(Name, Body) ->
-    val_entrypoint(Name, Body, []).
--spec val_entrypoint( string(), aeso_syntax:expr()
-                    , full | list(payable | stateful))
-                    -> aeso_syntax:decl().
-val_entrypoint(Name, Body, full) ->
-    val_entrypoint(Name, Body, [payable, stateful]);
-val_entrypoint(Name, Body, Attrs) when is_list(Attrs) ->
+-spec namespace(string() | con(), list(decl())) -> decl().
+namespace(Name, Body) when is_list(Name) ->
+    namespace({con, ann(), Name}, Body);
+namespace(Con, Body) ->
+    {namespace, ann(), Con, Body}.
+
+-spec type_def(string() | id(), list(tvar()), typedef()) -> decl().
+type_def(Name, Args, Def) when is_list(Name) ->
+    type_def({id, ann(), Name}, Args, Def);
+type_def(Id, Args, Def) ->
+    {type_def, ann(), Id, Args, Def}.
+
+%% using $Name
+-spec using(string() | con()) -> decl().
+using(Name) when is_list(Name) ->
+    using({con, ann(), Name});
+using(Con) ->
+    {using, ann(), Con, none, none}.
+
+%% Function constructor with unguarded body
+-spec function_e(string() | id(), [string() | pat()], expr() | [stmt()]) -> decl().
+function_e(Name, Args, Body) ->
+    function_e(ann(), Name, Args, Body).
+
+-spec function_e(ann(), string() | id(), [string() | pat()], expr() | [stmt()]) -> decl().
+function_e(Attrs, Name, Args, Body) when is_list(Name) ->
+    function_e(Attrs, {id, ann(), Name}, Args, Body);
+function_e(Attrs, Id, Args, Body) when is_list(Body) ->
+    function_e(Attrs, Id, Args, {block, ann(), Body});
+function_e(Attrs, Id, Args, Body) ->
+    function(Attrs, Id, Args, [{guarded, ann(), [], Body}]).
+
+%% Function constructor with guarded body
+-spec function(ann(), string() | id(), [string() | pat()], [guarded_expr()]) -> decl().
+function(Attrs, Name, Args, Body) when is_list(Name) ->
+    function(Attrs, {id, ann(), Name}, Args, Body);
+function(Attrs, Id, Args, Clauses) ->
     { letfun
-    , ann() ++ [{A, true} || A <- [entrypoint|Attrs]]
-    , {id, ann(), Name}
-    , []
+    , ann() ++ [A || A <- Attrs]
+    , Id
+    , Args
     , {id, ann(), "_"}
-    , [{guarded, ann(), [], Body}]}.
+    , Clauses}.
 
-
-%% Attributes entrypoint Name : Args -> Type
--spec entrypoint_decl(string(), list(aeso_syntax:pat()), aeso_syntax:type())
-                     -> aeso_syntax:decl().
-entrypoint_decl(Name, Args, Type) ->
-    entrypoint_decl(Name, Args, Type, []).
-entrypoint_decl(Name, Args, Type, full) ->
-    entrypoint_decl(Name, Args, Type, [payable, stateful]);
-entrypoint_decl(Name, Args, Type, Attrs) ->
-    { fun_decl
-    , ann() ++ [{A, true} || A <- [entrypoint|Attrs]]
-    , {id, ann(), Name}
-    , {fun_t, ann(), [], Args, Type}
-    }.
-
-
-%% (Ref : RemoteName).FName(Args)
--spec call_to_remote(binary(), string(), string()) -> aeso_syntax:expr().
-call_to_remote(Ref, RemoteName, FName) ->
-    call_to_remote(Ref, RemoteName, FName, []).
--spec call_to_remote(binary(), string(), string(), list(aeso_syntax:arg_expr()))
-                    -> aeso_syntax:expr().
-call_to_remote(Ref, RemoteName, FName, Args) ->
-    {app, ann()
-    , {proj, ann(), {typed, ann(), {contract_pubkey, ann(), Ref}, {con, ann(), RemoteName}}
-      , {id, ann(), FName}}
-    , Args}.
-
-
-%% state and init() definitions
--spec state_init(repl_state()) -> list(aeso_syntax:decl()).
-state_init(#repl_state{user_contract_state_type = {id, _, "unit"}}) ->
-    [];
-state_init(#repl_state{user_contract_state_type = {tuple_t, _, []}}) ->
-    [];
-state_init(#repl_state{last_state_provider = undefined}) ->
-    [];
-state_init(#repl_state
-           { user_contract_state_type = StType
-           , last_state_provider = PrevRef
-           }) ->
-    [ val_entrypoint("init", call_to_remote(PrevRef, ?PREV_CONTRACT, ?GET_STATE))
-    , type_alias("state", StType)].
-
-
--spec with_auto_imports(repl_state(), aeso_syntax:expr() | list(aeso_syntax:stmt())
-                       ) -> aeso_syntax:expr() | list(aeso_syntax:stmt()).
-with_auto_imports(State = #repl_state{include_files = Includes}, Expr) ->
-    AutoImports =
-        [ binary_to_list(AI)
-          || AI <- aeso_parser:auto_imports(Expr)
-        ],
-    case aere_repl:register_includes(State, AutoImports -- Includes) of
-        {_, S} -> S;
-        S = #repl_state{} -> S
-    end.
-
--spec with_letfun_auto_imports(repl_state()) -> repl_state().
-with_letfun_auto_imports(State = #repl_state{letfuns = Letfuns}) ->
-    FBodies =
-          [ FBody
-            || {_, {Funs, _, _}} <- Letfuns,
-               {letfun, _, _, _, _, [{guarded, _, _, FBody}]} <- Funs
-          ],
-    lists:foldr(fun(FB, S) -> with_auto_imports(S, FB) end, State, FBodies).
-
-
-
-%% Contract that evals Expr and does not chain state
--spec simple_query_contract(repl_state(), list(aeso_syntax:stmt()))
-                           -> aeso_syntax:ast().
-simple_query_contract(State = #repl_state{ user_contract_state_type = StType
-                                         }, Stmts) ->
-    Body = {block, ann(), Stmts},
-    State1 = with_auto_imports(State, Body),
-    State2 = with_letfun_auto_imports(State1),
-    Con = contract(
-            letfun_defs(State2) ++
-                [ type_alias("state", StType)
-                , val_entrypoint( ?USER_INPUT
-                                , with_value_refs(State2, Body), full)]),
-    prelude(State2) ++ [Con].
-
-
-%% Contract that evals expression and chains state if it makes sense
--spec chained_query_contract(repl_state(), list(aeso_syntax:stmt()))
-                            -> aeso_syntax:ast().
-chained_query_contract(State = #repl_state
-                       { user_contract_state_type = StType
-                       , options = #options{call_value = CallValue}
-                       }, Stmts) ->
-    Stmts1 = if is_list(Stmts) -> Stmts;
-                true -> [Stmts]
-             end,
-    Body = {block, ann(),
-            case CallValue of
-                0 -> Stmts1;
-                _ -> with_token_refund(State, Stmts1)
-            end},
-    State1 = with_auto_imports(State, Body),
-    State2 = with_letfun_auto_imports(State1),
-    Prev = contract( contract_interface
-                   , ?PREV_CONTRACT
-                   , [entrypoint_decl(?GET_STATE, [], StType)]),
-    Query = contract(state_init(State2) ++ letfun_defs(State2) ++ typedefs(State2) ++
-                         [ val_entrypoint(?USER_INPUT, with_value_refs(State2, Body), full)
-                         , val_entrypoint(?GET_STATE, {id, ann(), "state"})
-                         ]),
-    prelude(State2) ++ [Prev, Query].
-
--spec with_token_refund(repl_state(), list(aeso_syntax:stmt())) -> list(aeso_syntax:stmt()).
-with_token_refund(#repl_state{options = #options{call_value = 0}}, B) ->
-    B; % didn't spend anything
-with_token_refund(_, L) when is_list(L) ->
-    [Last|Rest] = lists:reverse(L),
-    Let = {letval, ann(), {id, ann(), "#RESULT_BACKUP"}, Last},
-    lists:reverse
-      ([ {id, ann(), "#RESULT_BACKUP"}
-       , { app, ann(), {qid, ann(), ["Chain", "spend"]}
-         , [ {qid, ann(), ["Call", "origin"]}
-           , {qid, ann(), ["Contract", "balance"]}
-           ]}
-       , Let
-       | Rest
-       ]).
-
-
-%% Contract that initializes state chaining
--spec chained_initial_contract(repl_state(), list(aeso_syntax:stmts()), aeso_syntax:type())
-                              -> aeso_syntax:ast().
-chained_initial_contract(State, Stmts, Type) ->
-    Body = {block, ann(), Stmts},
-    Con = contract([ type_alias("state", Type)
-                   , val_entrypoint("init", with_value_refs(State, Body))
-                   , val_entrypoint(?GET_STATE, {id, ann(), "state"})
-                   ]),
-    prelude(State) ++ [Con].
-
-
-%% Contract that exposes value via entrypoint.
-%% Not stateful nor payable, but remembers already defined values.
--spec letval_provider(repl_state(), string(), aeso_syntax:expr())
-                     -> aeso_syntax:ast().
-letval_provider(State = #repl_state{ user_contract_state_type = StType
-                                   }, Name, Body) ->
-    State1 = with_auto_imports(State, [Body]),
-    State2 = with_letfun_auto_imports(State1),
-    Prev = contract( contract_interface
-                   , ?PREV_CONTRACT
-                   , [entrypoint_decl(?GET_STATE, [], StType)]),
-    Con = contract( contract_main
-                  , ?LETVAL_PROVIDER(Name)
-                  , [val_entrypoint( ?LETVAL_GETTER(Name)
-                                   , with_value_refs(State2, Body))|state_init(State)]
-                   ++ letfun_defs(State2)
-                  ),
-    prelude(State2) ++ [Prev, Con].
-
-
-%% Declarations of providers of values
--spec letval_provider_decls(repl_state()) -> list(aeso_syntax:decl()).
-letval_provider_decls(#repl_state{letvals = Letvals}) ->
-    [contract( contract_interface
-             , ?LETVAL_PROVIDER_DECL(Name)
-             , [entrypoint_decl(?LETVAL_GETTER(Name), [], Type)])
-     || {{Name, _}, {_, Type}} <- Letvals
-    ].
-
-
-%% let-statements that refer to value providers
--spec letval_defs(repl_state()) -> list(aeso_syntax:stmt()).
-letval_defs(#repl_state{letvals = LetVals}) ->
-    [ { letval, ann(), Pat
-      , call_to_remote( ProvRef
-                      , ?LETVAL_PROVIDER_DECL(Provider)
-                      , ?LETVAL_GETTER(Provider))
-      }
-      || {{Provider, ProvRef}, {Pat, _}} <- lists:reverse(LetVals)].
-
-%% Definitions of functions defined by the user
--spec letfun_defs(repl_state()) -> list(aeso_syntax:decl()).
-letfun_defs(State = #repl_state{ letfuns = LetFuns
-                               }) ->
-    [ { block, ann()
-      , [ case F of
-              {fun_decl, _, _, _} -> F;
-              {letfun, A, N, Args, RT, [{guarded, _, _, Body}]} ->
-                  {Cons1, LetVals1} =
-                      begin
-                          UsedNames = [AN || Arg <- Args,
-                                             AN <- aere_sophia:get_pat_ids(Arg)
-                                      ],
-                          aere_repl:remove_references(UsedNames, Cons, LetVals)
-                      end,
-                  State1 = State#repl_state{tracked_contracts = Cons1, letvals = LetVals1},
-                  {letfun, A, N, Args, RT, [{guarded, A, [], with_value_refs(State1, Body)}]}
-          end
-          || F <- Funs
-        ]}
-      || {_, {Funs, Cons, LetVals}} <- LetFuns
-    ].
-
-%% References to contracts with their types
--spec contract_refs(repl_state()) -> list(aeso_syntax:stmt()).
-contract_refs(#repl_state{tracked_contracts = Contracts}) ->
-    [ { letval, ann(), {id, ann(), Name}
-      , {typed, ann(), {contract_pubkey, ann(), ConRef}, ConName}}
-      || {Name, {tracked_contract, ConRef, {contract_interface, _, ConName, _}}} <- Contracts
-    ].
-
-
-%% Namespaces that encapsulate the actual typedef definitions
--spec typedef_namespaces(repl_state()) -> list(aeso_syntax:decl()).
-typedef_namespaces(#repl_state{typedefs = Typedefs}) ->
-    [ { namespace, ann(), {con, ann(), Namespace}
-      , [{type_def, ann(), {id, NAnn, TName}, TArgs, TD}]}
-      || {{qid, NAnn, [Namespace, TName]}, {TArgs, TD}} <- lists:reverse(Typedefs)
-    ].
-
-%% TODO for which fuck is it here?
--spec typedefs(repl_state()) -> list(aeso_syntax:decl()).
-typedefs(#repl_state{typedefs = Typedefs}) ->
-    [ {type_def, ann(), Name, TArgs, TD}
-      || {Name = {id, _, _}, {TArgs, TD}} <- lists:reverse(Typedefs)
-    ].
-
-
-%% Declarations and includes to a contract
--spec prelude(repl_state()) -> list(aeso_syntax:decl()).
-prelude(State = #repl_state{ tracked_contracts = TrackedCons
-                           , include_ast = Includes
-                           }) ->
-    TDNamespaces = typedef_namespaces(State),
-    LetvalProviders = letval_provider_decls(State),
-    {TCUnique, _} = lists:foldr(
-                      fun(C = {_, {_, _, {contract_interface, _, TC, _}}}, {Acc, Set}) ->
-                              { case sets:is_element(TC, Set) of
-                                    true -> Acc;
-                                    false -> [C|Acc]
-                                end
-                              , sets:add_element(TC, Set)
-                              }
-                      end, {[], sets:new()}, TrackedCons
-                     ),
-    TrackedContractsDecls = [I || {_, {_Status, _, I}} <- TCUnique],
-    Includes ++ TDNamespaces ++ TrackedContractsDecls ++ LetvalProviders.
-
-
-%% Prefixes expression with letval definitions and contract references.
-%% Takes map that may specify name of respective provider for letvals.
--spec with_value_refs(repl_state(), aeso_syntax:expr()) -> aeso_syntax:expr().
-with_value_refs(#repl_state{tracked_contracts = [], letvals = []}, Expr) ->
-    Expr;
-with_value_refs(State, Expr) ->
-    {block, ann(), contract_refs(State) ++ letval_defs(State) ++ [Expr]}.
+-spec un_main(ast()) -> ast().
+un_main(Ast) ->
+    lists:map(
+      fun({contract_main, A, Name, Impl, Body}) -> {contract_child, A, Name, Impl, Body};
+         (D) -> D
+      end,
+      Ast).

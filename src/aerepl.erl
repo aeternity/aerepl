@@ -1,83 +1,59 @@
 -module(aerepl).
 
--export([ main/1, start/0, loop/1]).
-
--include("aere_repl.hrl").
--include("aere_macros.hrl").
+-export([main/1, start/0]).
 
 main(_Args) ->
     start().
 
 start() ->
     erlang:system_flag(backtrace_depth, 100),
-    loop([]).
+    {ok, _} = aere_gen_server:start([]),
+    Banner = gen_server:call(aere_gen_server, banner),
+    io:format(Banner ++ "\n\n"),
+    loop().
 
--spec init_message() -> {response, pid(), repl_response()}.
-init_message() ->
-    {response, self(), #repl_response
-     { output = aere_repl:banner()
-     , warnings = []
-     , status = {success, aere_repl:init_state()}
-     }}.
-
-finito(Clients) ->
-    [C ! finito || C <- Clients],
-    finito.
-
-loop(Clients) ->
-    receive
-        {join, Client} when is_pid(Client) ->
-            ?IF(lists:member(Client, Clients),
-                loop(Clients),
-                begin Client ! init_message(),
-                      loop([Client|Clients])
-                end
-               );
-        {leave, Client} -> lists:delete(Client, Clients);
-        {input, S = #repl_state{}, I} ->
-                case process_input(Clients, S, I) of
-                    continue -> loop(Clients);
-                    finito -> finito(Clients)
-                end,
-                loop(Clients);
-        finito -> finito(Clients)
-    after 2000000000 -> finito(Clients)
+loop() ->
+    Inp = get_input(),
+    {Status, Out} = aere_gen_server:input(Inp),
+    print_msg(Out),
+    case Status of
+        finish -> ok;
+        skip -> loop();
+        ok -> loop();
+        error -> loop();
+        internal_error -> loop()
     end.
 
-process_input(Clients, State, Inp) ->
-    case aere_repl:process_string(State, Inp) of
-        Resp = #repl_response{} ->
-            [C ! {response, self(), Resp}
-             || C <- Clients
-            ],
-            continue;
-        Q = #repl_question{} ->
-            process_question(Clients, State, Inp, Q)
-    end.
+print_msg("") -> ok;
+print_msg(Msg) ->
+    io:format("~s\n", [Msg]).
 
-process_question(Clients, State, Inp, MyQ = #repl_question{}) ->
-    [C ! {response, self(), aere_repl:question_to_response(MyQ)}
-     || C <- Clients
-    ],
-    receive
-        {answer, Ans} ->
-            case aere_repl:answer(MyQ, Ans) of
-                {retry, MyQ1} -> process_question(Clients, State, Inp, MyQ1);
-                {accept, X} ->
-                    {State1, Warns} = aere_repl:destroy_warnings(X),
-                    [C !
-                        { response
-                        , self()
-                        , #repl_response
-                          { output = ""
-                          , status = {success, State1}
-                          , warnings = Warns
-                          }
-                        }
-                     || C <- Clients
-                    ],
-                    continue
-            end
-    after 2000000000 ->
-            finito(Clients)
+
+%% Get single line or multiline input from the user and return it as a single string
+-spec get_input() -> string().
+get_input() ->
+    Line =
+        case io:get_line("AESO> ") of
+            eof          -> ":quit"; % that's dirty
+            {error, Err} -> exit(Err);
+            Data         -> Data
+        end,
+    Input =
+        case string:trim(Line, both, unicode_util:whitespace()) of
+            ":{" -> multiline_input();
+            ""   -> "";
+            _    -> lists:flatten(string:replace(Line, ";", "\n", all))
+        end,
+    string:trim(Input, both, unicode_util:whitespace()).
+
+-spec multiline_input() -> string().
+multiline_input() -> multiline_input([]).
+
+%% Keep reading input lines until :} is found. Return the code between :{ and :} as a single string
+-spec multiline_input([string()]) -> string().
+multiline_input(CodeBlock) ->
+    Line = io:get_line("| "),
+    case string:trim(Line, both, unicode_util:whitespace()) of
+        ":}" -> lists:flatten(lists:reverse(CodeBlock));
+        _    -> multiline_input([Line|CodeBlock])
     end.

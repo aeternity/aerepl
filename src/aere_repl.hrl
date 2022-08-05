@@ -1,101 +1,54 @@
--record(options,
-        { display_call_gas :: boolean()
-        , display_deploy_gas :: boolean()
-        , gas :: non_neg_integer()
-        , height :: non_neg_integer()
-        , call_value :: non_neg_integer()
-        , colors :: none | default | no_emph
-        , silent :: boolean()
-        , display_unit :: boolean()
-        , lock_cwd :: boolean()
-        }).
--type options() :: options().
+-type print_format() :: sophia | fate | json.
 
--record(repl_state,
-        { include_ast :: list(aeso_syntax:ast())
-        , include_hashes :: sets:set(aeso_parser:include_hash())
-        , include_files :: list(string())
-        , options :: options()
-        , blockchain_state :: any() %% blockchain
-        , user_contract_state_type :: aeso_syntax:type()
-        , last_state_provider :: binary()
-        , tracked_contracts :: list(tracked_contract())
-        , letfuns :: list(letfun())
-        , letvals :: list(letval())
-        , typedefs :: list(typedef())
-        , type_alias_map :: list(type_alias())
-        , user_account :: binary()
-        , supply :: integer()
-        , cwd :: string()
-        , warnings :: [string()]
-        }).
--type repl_state() :: repl_state().
-
--type letfun() ::
-        { string() %% name
-        , { list(aeso_syntax:decl()) %% clauses
-          , list(tracked_contract()) %% scope of contracts
-          , list(letval()) %% scope of letvals
-          }}.
--type tracked_contract() ::
-        { string()
-        , { tracked_contract | shadowed_contract
-          , aeso_syntax:constant() %% Reference address
-          , aeso_syntax:decl() %% ACI
-          }}.
--type letval() ::
-        { { string() %% name
-          , aeso_syntax:constant() %% provider address
-          }
-        , { aeso_syntax:pat() %% pattern of definition
-          , list(type_alias()) %% used types at the moment of creation
-          }}.
--type typedef() ::
-        { aeso_syntax:id() | aeso_syntax:qid() %% identifier
-        , { list(aeso_syntax:tvar()) %% args
-          , aeso_syntax:typedef() %% definition
-          }}.
--type type_alias() ::
-        { string() %% name
-          %% for type definitions
-        , {typedef, list(aeso_syntax:tvar()), aeso_syntax:con(), aes}
-          %% for tracked contracts
-          | {contract, string()}
-          %% for constructors
-          | {constructor, aeso_syntax:con()}
+-type repl_options() ::
+        #{ theme       := aere_theme:theme()
+        , display_gas  := boolean()
+        , call_gas     := pos_integer()
+        , call_value   := non_neg_integer()
+        , print_format := print_format()
+        , print_unit   := boolean()
         }.
 
+-type chain_state() :: {ready, aefa_chain_api:state()}
+                     | {breakpoint, aefa_engine_state:state()}.
+
+-type contract_state() :: {aeso_syntax:type(), aeb_fate_data:fate_type()}.
+
+-type var() :: {string(), aeso_syntax:type(), term()}.
+
+-type type_def() :: {string(), string(), [aeso_syntax:tvar()], aeso_syntax:typedef()}.
+
+-type type_scope() :: {string(), {string(), non_neg_integer()}}.
+
+-define(DEFAULT_CONTRACT_STATE_T, {tuple_t, aere_mock:ann(), []}).
+-define(DEFAULT_CONTRACT_STATE, {?DEFAULT_CONTRACT_STATE_T, {tuple, {}}}).
+
+-record(repl_state,
+        { blockchain_state     :: chain_state()
+        , repl_account         :: binary()
+        , options              :: repl_options()
+        , contract_state       :: contract_state()
+        , vars        = []     :: [var()]
+        , funs        = #{}    :: #{binary() => term()}
+        , typedefs    = []     :: [type_def()]
+        , type_scope  = []     :: [type_scope()]
+        , loaded_files = #{}   :: #{string() => binary()} % Loaded files ready to be included
+        , included_files = []  :: [string()] % Files included in the context
+        , included_code = []   :: aeso_syntax:ast() % Cached AST of the included files
+        , query_nonce = 0      :: non_neg_integer()
+        }).
+-type repl_state() :: #repl_state{}.
+
 -record(repl_response,
-        { output :: string()
+        { output :: aere_theme:renderable()
         , warnings :: [string()]
-        , status :: {success, repl_state()}
-                  | ask
+        , status :: {ok, repl_state()}
                   | error
                   | internal_error
-                  | finito
+                  | skip
+                  | finish
         }).
--type repl_response() :: repl_response().
+-type repl_response() :: #repl_response{}.
 
--record(repl_question,
-        { text :: string()
-        , options :: {string(), function()}
-        , default :: string()
-        , callback :: fun((repl_state()) -> repl_state())
-        }).
--type repl_question() :: repl_question().
+-type command_res() :: finish | {aere_theme:renderable(), repl_state()} | repl_state() | no_return().
 
--type color() :: default
-               | emph
-               | black
-               | red
-               | green
-               | yellow
-               | blue
-               | magenta
-               | cyan
-               | white
-               .
-
--type colored() :: string()
-                 | {colored, color(), integer(), colored()}
-                 | list(colored()).

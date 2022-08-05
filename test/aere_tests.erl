@@ -5,6 +5,13 @@
 -include("../src/aere_repl.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
+-record(entry,
+        { input  :: [string()]
+        , output :: [string()]
+        }).
+-type raw_entry() :: {raw_entry, [string()]}.
+-type entry() :: #entry{}.
+
 run_test(Test) ->
     TestFun = list_to_atom(lists:concat([Test, "_test_"])),
     [ begin
@@ -61,62 +68,67 @@ tests() ->
       end} || TestScenario <- scenarios()].
 
 scenarios() ->
-    [ my_test
-    , twoplustwo
-    , twocommands
-    , multiline
-    , rm
-    , deploy_tracked
-    , letdef
-    , fundef
-    , datatypes
-    , polytypes
-    , state
+    [ twoplustwo
     ].
 
-format(T) ->
-    string:trim(aere_color:render_colored(none, T)).
+%% Split a file into entries
+-spec split_file(string()) -> [entry()].
+split_file(File) ->
+    Lines = string:split(File, "\n", all),
+    TrimmedLines = [ string:trim(Line, both, unicode_util:whitespace()) || Line <- Lines ],
+    RawEntries = lines_to_raw_entries(TrimmedLines),
+    [ split_raw_entry(RawEntry) || RawEntry <- RawEntries ].
+
+%% Group each set of consecutive non-empty lines into a raw entry, where a raw entry
+%% is a list of lines representing a single repl input and its corresponding output
+-spec lines_to_raw_entries([string()]) -> [raw_entry()].
+lines_to_raw_entries(Lines) -> lines_to_raw_entries(Lines, []).
+
+-spec lines_to_raw_entries([string()], [raw_entry()]) -> [raw_entry()].
+lines_to_raw_entries([], Entries) ->
+    lists:reverse(Entries);
+lines_to_raw_entries(Lines, Entries) ->
+    IsEmpty = fun(L) -> L =:= [] end,
+    IsNotEmpty = fun(L) -> L =/= [] end,
+
+    NotEmpty = lists:dropwhile(IsEmpty, Lines),
+    {Entry, Rest} = lists:splitwith(IsNotEmpty, NotEmpty),
+    lines_to_raw_entries(Rest, [{raw_entry, Entry} | Entries]).
+
+%% Split an entry into an input and a clean output (without the // prefix)
+-spec split_raw_entry(raw_entry()) -> entry().
+split_raw_entry({raw_entry, EntryLines}) ->
+    IsNotComment = fun(Line) -> not lists:prefix("//", Line) end,
+    {Input, Output} = lists:splitwith(IsNotComment, EntryLines),
+    UncommentOutput = [ string:trim(OutputLine, leading, "/")
+                        || OutputLine <- Output ],
+    CleanOutput = [ string:trim(OutputLine, leading, unicode_util:whitespace())
+                    || OutputLine <- UncommentOutput ],
+    #entry{ input  = lists:flatten(lists:join("\n", Input))
+          , output = lists:flatten(lists:join("\n", CleanOutput)) }.
+
+eval_inputs(_State, [], Outputs) ->
+    lists:reverse(Outputs);
+eval_inputs(State, [Input | Rest], Outputs) ->
+    case aere_repl:process_input(State, Input) of
+        #repl_response{output = Received, status = {ok, NewState}} ->
+            Rendered = aere_theme:render(Received),
+            eval_inputs(NewState, Rest, [Rendered  | Outputs]);
+        #repl_response{output = Received, status = Err}
+          when Err == error orelse Err == internal_error ->
+            Rendered = aere_theme:render(Received),
+            eval_inputs(State, Rest, [Rendered | Outputs]);
+        _ ->
+            eval_inputs(State, Rest, Outputs)
+    end.
+
+eval_inputs(State, Inputs) ->
+    eval_inputs(State, Inputs, []).
 
 eval(I) ->
-    InitSt = aere_repl:init_state(),
-    Splitted = aere_parse:split_input(I),
-    Build =
-        lists:foldr(
-          fun("", Cont) -> Cont;
-             ([$/,$/|Ans], Cont) ->
-                  fun({S, {Answers, Inputs}}) ->
-                          case string:trim(Ans) of
-                              "_" -> Cont({S, {[any|Answers], Inputs}});
-                              "!error" -> Cont({S, {[error|Answers], Inputs}});
-                              A -> Cont({S, {[A|Answers], Inputs}})
-                          end
-                  end;
-             (Cmd, Cont) ->
-                  fun({S, {Answers, Inputs}}) ->
-                          Resp = aere_repl:process_string(S, Cmd),
-                          case Resp of
-                              #repl_response{status = finito} ->
-                                  {lists:reverse(Answers), lists:reverse(Inputs)};
-                              #repl_response{status = {success, S1},
-                                             output = ""
-                                            } ->
-                                  Cont({S1, {Answers, Inputs}});
-                              #repl_response{status = {success, S1},
-                                             output = Out
-                                            } ->
-                                  Cont({S1, {Answers, [format(Out)|Inputs]}});
-                              #repl_response{status = error} ->
-                                  Cont({S, {Answers, [error|Inputs]}});
-                              #repl_response{status = internal_error,
-                                             output = Out
-                                            } ->
-                                  io:format(format(Out)),
-                                  error(internal_error);
-                              #repl_question{} ->
-                                  {accept, S1} = aere_repl:answer(Resp, ""),
-                                  Cont({S1, {Answers, Inputs}})
-                          end
-                  end
-          end, fun({_, {As, Is}}) -> {lists:reverse(As), lists:reverse(Is)} end, Splitted),
-    Outputs = Build({InitSt, {[], []}}),
-    Outputs.
+    State = aere_repl:init_state(),
+    Entries = split_file(I),
+    Expected = [ Output || #entry{output = Output} <- Entries],
+    Inputs = [ Input || #entry{input = Input} <- Entries ],
+    Received = eval_inputs(State, Inputs),
+    {Expected, Received}.

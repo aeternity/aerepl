@@ -5,933 +5,502 @@
 
 -module(aere_repl).
 
--export([ register_includes/2, init_state/0, process_string/2
-        , remove_references/3, answer/2, question_to_response/1
-        , print_msg/2, render_msg/2, banner/0, destroy_warnings/1
-        , register_tracked_contract/3
-        , list_names/1, to_response/2
+-export([ init_state/0
+        , process_input/2
         ]).
 
 -include("aere_repl.hrl").
 -include("aere_macros.hrl").
 
-
--spec default_options() -> options().
-default_options() ->
-    #options{ display_call_gas = false
-            , display_deploy_gas = false
-            , gas = 1000000
-            , height = 1
-            , call_value = 0
-            , colors = none
-            , silent = false
-            , display_unit = false
-            , lock_cwd = false
-            }.
-
+-spec init_options() -> repl_options().
+init_options() ->
+    #{ theme => aere_theme:default_theme()
+    , display_gas => false
+    , call_gas => 100000000000000000
+    , call_value => 0
+    , print_format => sophia
+    , print_unit => false
+    }.
 
 -spec init_state() -> repl_state().
 init_state() ->
-    {PK, ChainState} = aere_chain:new_account(100000000000000000000000000000, #{}),
-    {ok, CWD} = file:get_cwd(),
-    #repl_state{ include_ast = []
-               , include_hashes = sets:new()
-               , include_files = []
-               , options = default_options()
-               , blockchain_state = ChainState
-               , user_contract_state_type = {tuple_t, [], []}
-               , tracked_contracts = []
-               , letvals = []
-               , letfuns = []
-               , typedefs = []
-               , type_alias_map = []
-               , user_account = PK
-               , warnings = []
-               , cwd = CWD
-               , supply = 0
-               }.
+    Trees0 = aec_trees:new(),
+    {PK, Trees} = aere_chain:new_account(100000000000000000000000000000, Trees0),
+    ChainState = aefa_chain_api:new(
+                   #{ gas_price => 1,
+                      fee       => 0,
+                      trees     => Trees,
+                      origin    => PK,
+                      tx_env    => aere_chain:default_tx_env(1)
+                   }
+                  ),
+    S0 = #repl_state{
+       blockchain_state = {ready, ChainState},
+       repl_account     = PK,
+       options          = init_options(),
+       contract_state   = ?DEFAULT_CONTRACT_STATE
+      },
+    S1 = add_modules(default_loaded_files(), S0),
+    S1.
 
-
--spec banner() -> string().
-banner() ->
-"
-    ____
-   / __ | ,             _     _
-  / / |_|  )           | |   (_)
- ( (_____,-` ___  _ __ | |__  _  __ _
-  \\______ \\ / _ \\| '_ \\| '_ \\| |/ _` |
-  ,-`    ) ) (_) ) |_) ) | | | | (_| |
- (  ____/ / \\___/| .__/|_| |_|_|\\__,_|
-  `(_____/       | |
-                 |_|  interactive
-
-".
-
-
-%% Extract warnings from state and clear them
--spec destroy_warnings(repl_state()) -> {repl_state(), list(string())}.
-destroy_warnings(State = #repl_state{warnings = Ws}) ->
-    {State#repl_state{warnings = []}, Ws}.
-
-
-%% Renders colored and untrimmed text into a string
--spec render_msg(repl_state(), colored()) -> string().
-render_msg(#repl_state{options = Opts}, Msg) ->
-    render_msg(Opts, Msg);
-render_msg(O = #options{}, Msg) ->
-    lists:flatten(aere_color:render_colored(O, Msg)).
-
-
-%% Renders and prints message
--spec print_msg(repl_state(), colored()) -> ok.
-print_msg(_, "") -> ok;
-print_msg(_, "&#wololo#&") ->
-    put(wololo, wololo), ok;
-print_msg(S, M) ->
-    Render = render_msg(S, M),
-    io:format("~s\n", [string:trim(Render, both, aere_parse:whitespaces())]).
-
-
-%% String describing possible answers accepted by the question
--spec valid_question_options_str(repl_question()) -> string().
-valid_question_options_str(#repl_question
-                           { options = Options
-                           , default = Default
-                           }) ->
-    ValidOptions = [K || {K, _} <- Options],
-    lists:concat([ if O =:= Default -> io_lib:format("[~s]", [O]);
-                      true -> io_lib:format("~s", [O])
-                   end
-                   || O <- ValidOptions
-                 ]).
-
-
-%% Turn a question into a remote response.
-%% Used to inform the client about the question and keeping the
-%% callback on the server side
--spec question_to_response(repl_question()) -> repl_response().
-question_to_response( Q = #repl_question
-                      { text = Text
-                      }) ->
-    #repl_response
-        { output = [Text, " ", valid_question_options_str(Q)]
-        , warnings = []
-        , status = ask
-        }.
-
-%% Answer the question. Returns proper response if succeeded or
-%% another question if the answer is not satisfying
--spec answer(repl_question(), string()) -> {retry, repl_question()} | {accept, repl_state()}.
-answer(Q = #repl_question
-    { options = Options
-    , default = Default
-    , callback = Callback
-    }, Ans) ->
-    Parsed =
-        case Ans of
-            "" -> Default;
-            _ -> Ans
-        end,
-    case proplists:get_value(Parsed, Options, {no_match}) of
-        {no_match} ->
-            Notification = aere_color:emph("Invalid option."),
-            {retry, Q#repl_question{text = Notification}};
-        Act ->
-            {accept, Callback(Act())}
-    end.
-
-
-%% state + input = response
--spec process_string(repl_state(), binary() | string())
-                    -> repl_response() | repl_question() | finito.
-process_string(State, String) when is_binary(String) ->
-    process_string(State, binary_to_list(String));
-process_string(State, String) ->
-    Proc = aere_parse:dispatch(String),
-    handle_dispatch(State, Proc).
-
-
-%% Handle result of REPL command dispatcher
--spec handle_dispatch(repl_state(), skip | {ok, {command, string()}})
-                     -> repl_response() | repl_question().
-handle_dispatch(State, skip) ->
-    #repl_response
-        { output = ""
-        , warnings = []
-        , status = {success, State}
-        };
-handle_dispatch(State = #repl_state{}, {ok, {Command, Args}}) ->
-    to_response(State,
-        fun() ->
-            case process_input(State, Command, Args) of
-                NewState = #repl_state{}        -> assert_integrity(NewState);
-                {Msg, NewState = #repl_state{}} -> {Msg, assert_integrity(NewState)};
-                Res                             -> Res
-            end
-        end);
-handle_dispatch(State, {error, {no_such_command, "wololo"}}) ->
-    put(wololo, wololo),
-    #repl_response{output = "&#wololo#&", warnings = [], status = {success, State}};
-handle_dispatch(#repl_state{}, {error, {no_such_command, Command}}) ->
-    Msg = aere_error:no_such_command(Command),
-    #repl_response
-        { output = Msg
-        , warnings = []
-        , status = error
-        };
-handle_dispatch(#repl_state{}, {error, {ambiguous_prefix, Propositions}}) ->
-    Msg = aere_error:ambiguous_prefix(Propositions),
-    #repl_response
-        { output = Msg
-        , warnings = []
-        , status = error
-        }.
-
--spec to_response(repl_state(), fun(() -> finito | {string(), repl_state()} | repl_state() | none()))
-                 -> repl_response().
-to_response(FallbackState, Action) ->
-    try Action() of
-        {Output, State1 = #repl_state{options = #options{silent = Silent}}} ->
-            {State2, Warnings} = destroy_warnings(State1),
-            Msg = ?IF(Silent, "", aere_color:emph(aere_color:default(Output))),
+%% Process an input string in the current state of the repl and respond accordingly
+%% This is supposed to be called after each input to the repl
+-spec process_input(repl_state(), binary() | string()) -> repl_response().
+process_input(State, String) when is_binary(String) ->
+    process_input(State, binary_to_list(String));
+process_input(State, String) ->
+    check_wololo(String),
+    try {Command, Args} = aere_parse:parse(String),
+         apply_command(Command, Args, bump_nonce(State))
+    of
+        {Out, State1 = #repl_state{}} ->
             #repl_response
-                { output = Msg
-                , warnings = Warnings
-                , status = {success, State2}
+                { output = Out
+                , warnings = []
+                , status = {ok, State1}
                 };
         State1 = #repl_state{} ->
             #repl_response
-                { output = ""
+                { output = []
                 , warnings = []
-                , status = {success, State1}
+                , status = {ok, State1}
                 };
-        Question = #repl_question{} ->
-            Question;
-        skip ->
+        finish ->
             #repl_response
-                { output = ""
+                { output = aere_msg:bye()
                 , warnings = []
-                , status = {success, FallbackState}
-                };
-        finito ->
-            #repl_response
-                { output = ""
-                , warnings = []
-                , status = finito
-                };
-        WTF ->
-            Msg = aere_color:emph(
-                    aere_color:red(
-                      io_lib:format("Unexpected dispatch: ~p", [WTF]))),
-            #repl_response
-                { output = Msg
-                , warnings = []
-                , status = internal_error
+                , status = finish
                 }
     catch error:E:Stacktrace ->
-            Msg = aere_error:internal(E, Stacktrace),
             #repl_response
-                { output = Msg
+                { output = aere_msg:internal(E, Stacktrace)
                 , warnings = []
                 , status = internal_error
                 };
-          {error, Msg} ->
+          {repl_error, E} ->
             #repl_response
-                { output = Msg
+                { output = E
+                , warnings = []
+                , status = error
+                };
+          {revert, Err} ->
+            #repl_response
+                { output = aere_msg:abort(Err)
+                , warnings = []
+                , status = error
+                };
+          {aefa_fate, FateErr, _} ->
+            #repl_response
+                { output = aere_msg:error("FATE error: " ++ FateErr)
                 , warnings = []
                 , status = error
                 }
     end.
 
-%% Specific reactions to commands and inputs
--spec process_input(repl_state(), aere_parse:command(), string()) ->
-          finito | {string(), repl_state()} | repl_state() | none().
-process_input(_, quit, _) ->
-    finito;
-process_input(_, reset, _) ->
+%% Easter egg, don't ask.
+-spec check_wololo(string()) -> ok.
+check_wololo(String) ->
+    string:find(String, "wololo") =:= nomatch orelse put(wololo, wololo),
+    ok.
+
+%% Return the result of applying a repl command to the given argument
+-spec apply_command(aere_parse:command(), string() | [string()], repl_state()) -> command_res().
+apply_command(quit, [], _) ->
+    finish;
+apply_command(reset, [], _) ->
     init_state();
-process_input(State, '_names', _) ->
-    Names = list_names(State),
-    {io_lib:format("~p", [Names]), State};
-process_input(State, type, I) ->
+apply_command(type, I, State) ->
     Stmts = aere_sophia:parse_body(I),
-    Contract = aere_mock:chained_query_contract(State, unfold_aliases(State, Stmts)),
-    TAst = aere_sophia:typecheck(Contract, [dont_unfold]),
-    {_, Type} = aere_sophia:type_of(TAst, ?USER_INPUT),
-    {aeso_ast_infer_types:pp_type("", Type), State};
-process_input(State, eval, I) ->
+    Contract = aere_mock:eval_contract(Stmts, State),
+    {TEnv, _} = aere_sophia:typecheck(Contract, [dont_unfold, allow_higher_order_entrypoints]),
+    Type = aere_sophia:type_of_user_input(TEnv),
+    TypeStr = aeso_ast_infer_types:pp_type("", Type),
+    TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER ++ "[0-9]*\\.", "", [global, {return, list}]),
+    {aere_msg:output(TypeStrClean), State};
+apply_command(state, I, State) ->
+    set_state(aere_sophia:parse_body(I), State);
+apply_command(eval, I, State) ->
     Parse = aere_sophia:parse_top(I),
     case Parse of
         {body, Body} ->
-            Mock = aere_mock:chained_query_contract(State, unfold_aliases(State, Body)),
-            eval_contract(I, Mock, State);
+            eval_expr(Body, State);
         [{include, _, {string, _, Inc}}] ->
-            register_includes(State, [binary_to_list(Inc)]);
-        [{letval, _, Pat, Expr}] -> register_letval(State, Pat, Expr);
-        [FD = {fun_decl, _, _Name, _Type}] -> register_letfun(State, [FD]);
-        [FD = {letfun, _, _Name, _Args, _RetType, _GuardedBodies}] -> register_letfun(State, [FD]);
-        [{block, _, Funs}] -> register_letfun(State, Funs);
-        [TDf] when element(1, TDf) =:= type_def ->
-            register_typedef(State, TDf);
-
-        [TDc] when element(1, TDc) =:= type_decl ->
-            throw(aere_error:unsupported_decl(type_decl));
-        [Con] when element(1, Con) =:= contract ->
-            throw(aere_error:unsupported_decl(contract));
-        [Ns] when element(1, Ns) =:= namespace ->
-            throw(aere_error:unsupported_decl(namespace));
-        Multi = [_|_] ->
-            case lists:all(fun({letfun, _, _, _, _, _}) -> true;
-                              ({block, _, _}) -> true;
-                              (_) -> false
-                           end, Multi) of
-                true ->
-                    register_multiple_letfuns(State, Multi);
-                false ->
-                    throw(aere_error:unsupported_decl(multidecl))
-            end
+            register_include(Inc, State);
+        [{letval, _, Pat, Expr}] ->
+            register_letval(Pat, Expr, State);
+        [{letfun, _, FName, Args, _, Body}] ->
+            register_letfun(FName, Args, Body, State);
+        [{type_def, _, Name, Args, Body}] ->
+            register_typedef(Name, Args, Body, State);
+        _ -> error(too_many_shit)
     end;
-process_input(State, include, Inp) ->
-    Files = string:tokens(Inp, aere_parse:whitespaces()),
-    register_includes(State, Files);
-process_input(State = #repl_state{include_files = IFiles}, reinclude, _) ->
-    register_includes(State#repl_state{ include_ast = []
-                                      , include_hashes = sets:new()
-                                      , include_files = []
-                                      }, IFiles);
-process_input(State, uninclude, _) ->
-    State1 = State#repl_state{ include_ast = []
-                             , include_hashes = sets:new()
-                             , include_files = []
-                             },
-    %% TODO: state integrity assertion is done on an upper level but this had
-    %% to be kept in order to throw the right error.
-    %% this should be handled differently in the future.
-    try assert_integrity(State1)
-    catch {error, Msg} ->
-            throw(aere_error:uninclude_error(Msg))
-    end,
-    {"Unregistered all includes", State1};
-process_input(State, set, Inp) ->
-    {Prop, Val0} = lists:splitwith(fun(X) -> X /= $  end, Inp),
-    Val = string:trim(Val0),
-    set_option(State, Prop, Val);
-process_input(State = #repl_state {cwd = CWD}, deploy, Inp) ->
-    {File, MaybeRefName} =
-        case string:tokens(Inp, aere_parse:whitespaces()) of
-            [] -> throw(aere_error:no_file_deploy());
-            [F] -> {F, none};
-            [F, "as", N] ->
-                Valid = fun(C) -> ((C >= $a) and (C =< $z))
-                                      or ((C >= $A) and (C =< $Z))
-                                      or ((C >= $0) and (C =< $9))
-                                      or (C == $_)
-                        end,
-                [throw(aere_error:bad_deploy_name())
-                 || (lists:nth(1, N) < $a) or (lists:nth(1, N) > $z)],
-                [throw(aere_error:bad_deploy_name())
-                 || not lists:all(Valid, N)],
-                {F, N};
-            _ -> throw(aere_error:parse_deploy())
-        end,
-    Src = case file:read_file(filename:join(CWD, File)) of
-              {ok, Src_} -> Src_;
-              {error, Reason} -> throw(aere_error:file_error(File, Reason))
-          end,
-    register_tracked_contract(State, MaybeRefName, Src);
-process_input(State, rm, Inp) ->
-    State1 = free_names(State, string:split(Inp, aere_parse:whitespaces())),
-    [ throw(aere_error:nothing_to_remove())
-      || State#repl_state.letvals == State1#repl_state.letvals
-         andalso State#repl_state.tracked_contracts == State1#repl_state.tracked_contracts
-         andalso State#repl_state.letfuns == State1#repl_state.letfuns
-    ],
-    free_names(State, string:split(Inp, aere_parse:whitespaces()));
-process_input(S = #repl_state{cwd = CWD}, pwd, _) ->
-    {CWD, S};
-process_input(#repl_state{options = #options{lock_cwd = true}}, cd, _) ->
-    throw(aere_error:locked_cwd());
-process_input(S = #repl_state{cwd = CWD}, cd, Inp) ->
-    Target = filename:join(CWD, Inp),
-    [throw(aere_error:file_error(Target, enoent)) || not filelib:is_dir(Target)],
-    S#repl_state{cwd = Target};
-process_input(S = #repl_state{cwd = CWD}, ls, _) ->
-    {ok, Files} = file:list_dir_all(CWD),
-    { case Files of
-          [] -> "";
-          [F] -> F;
-          [F|More] ->
-              [F|[[", ", Fx] || Fx <- More]]
-      end
-    , S};
-process_input(_, _, _) ->
-    throw(aere_error:undefined_command()).
+apply_command(load, Modules, State) ->
+    load_modules(Modules, State);
+apply_command(reload, Modules, State) ->
+    reload_modules(Modules, State);
+apply_command(add, Modules, State) ->
+    add_modules(Modules, State);
+apply_command(module, Modules, State) ->
+    register_include(Modules, State);
+apply_command(set, [Option|Args], State) ->
+    set_option(list_to_atom(Option), Args, State);
+apply_command(help, Arg, State) ->
+    case Arg of
+        [On] -> {aere_msg:help(On), State};
+        _ -> {aere_msg:help(), State}
+    end;
+apply_command(print, [What], State) ->
+    {print_state(State, What), State};
+apply_command(continue, _, State = #repl_state{blockchain_state = BS}) ->
+    case BS of
+        {ready, _} ->
+            {aere_msg:error("Not at breakpoint!"), State};
+        {breakpoint, ES} ->
+            Stack = aefa_engine_state:accumulator_stack(ES),
+            StackS = io_lib:format("~p", [Stack]),
+            {StackS, State}
+    end.
 
--spec register_letval(repl_state(), aeso_syntax:pat(), aeso_syntax:expr())
-                     -> repl_state().
-register_letval(S0 = #repl_state{ letvals = Letvals
-                                , tracked_contracts = Cons
-                                , options = Opts
-                                }, Pat, Expr0) ->
-    Expr = unfold_aliases(S0, Expr0),
-    {S1, PName} = make_provider_name(S0, Pat),
-    Provider = aere_mock:letval_provider(S1, PName, Expr),
+-spec set_state([aeso_syntax:stmt()], repl_state()) -> command_res().
+set_state(Body, S0) ->
+    Contract = aere_mock:eval_contract(Body, S0),
+    {TEnv, TAst} = aere_sophia:typecheck(Contract),
+    Type = aere_sophia:type_of_user_input(TEnv),
+    ByteCode = aere_sophia:compile_contract(TAst),
+    {StateVal, _, S1} = run_contract(ByteCode, S0),
 
-    %% Typecheck for deploy
-    TProvider = aere_sophia:typecheck(Provider),
-    %% Typecheck for declaration of the provider
-    TProviderD = aere_sophia:typecheck(Provider, [dont_unfold]),
-    {[], Type} = aere_sophia:type_of(TProviderD, ?LETVAL_GETTER(PName)),
-
-    {{Ref, _}, S2} = build_deploy_contract("no_source", TProvider, {}, Opts, S1),
-
-    {Cons1, Letvals1} = remove_references(aere_sophia:get_pat_ids(Pat), Cons, Letvals),
-    S3 = S2#repl_state{ letvals = [{{PName, Ref}, {Pat, Type}}|Letvals1]
-                      , tracked_contracts = Cons1
-                      },
-    S3.
-
-
--spec register_multiple_letfuns(repl_state(), list(aeso_syntax:decl())) -> repl_state().
-register_multiple_letfuns(State0, MultiFuns) ->
-    Folder = fun(FD = {letfun, _, _, _, _, _}, State) -> register_letfun_no_integrity_assertion(State, [FD]);
-                ({block, _, Funs}, State)             -> register_letfun_no_integrity_assertion(State, Funs);
-                (_, _)                                -> throw(aere_error:unsupported_decl(multidecl))
-             end,
-    lists:foldr(Folder, State0, MultiFuns).
-
--spec register_letfun(repl_state(), list(aeso_syntax:decl())) -> repl_state().
-register_letfun(State, Funs) ->
-    register_letfun_no_integrity_assertion(State, Funs).
-
--spec register_letfun_no_integrity_assertion(repl_state(), list(aeso_syntax:decl())) -> repl_state().
-register_letfun_no_integrity_assertion(S, []) ->
-    S; % I couldn't even extract the name
-register_letfun_no_integrity_assertion(S0 = #repl_state{ letfuns = Letfuns
-                                                       , letvals = Letvals
-                                                       , tracked_contracts = Cons
-                                                       }, Funs0) ->
-    Funs = unfold_aliases(S0, Funs0),
-    Name = case Funs of
-               [{fun_decl, _, {id, _, N}, _}|_] -> N;
-               [{letfun, _, {id, _, N}, _, _, _}|_] -> N
-           end,
-    case Name of
-        "init" -> throw(aere_error:forbidden_id(Name));
-        _ -> ok
-    end,
-    {Cons1, Letvals1} = remove_references([Name], Cons, Letvals),
-    {S1, Shadowed} =
-        case proplists:get_value(Name, Letfuns, none) of
-            none -> {S0, Letfuns};
-            Dupl ->
-                begin %% Shadow duplicates
-                    {SS, NewName} = make_shadowed_fun_name(S0, Name),
-                    UpdateName =
-                        fun(NN) -> ?IF(NN == Name, NewName, NN) end,
-                    {SS, [{FName,
-                           {[case F of
-                                 {fun_decl, A, {id, AName, Fn}, RT} ->
-                                     {fun_decl, A, {id, AName, UpdateName(Fn)}, RT};
-                                 {letfun, A, {id, AName, Fn}, Args, RT, [{guarded, _, _, B}]} ->
-                                     {letfun, A, {id, AName, UpdateName(Fn)}, Args, RT,
-                                      [{guarded, A, [], aere_sophia:replace(B, id, Name, NewName)}]}
-                             end
-                             || F <- Fs], Cs, Ls}}
-                          || {FName, {Fs, Cs, Ls}} <- [{NewName, Dupl}|proplists:delete(Name, Letfuns)]
-                         ]}
-                end
-        end,
-    S2 = S1#repl_state{ letfuns = [{Name, {Funs, Cons1, Letvals1}} | Shadowed]
-                      , letvals = Letvals1
-                      , tracked_contracts = Cons1
+    S2 = S1#repl_state{contract_state = {Type, StateVal},
+                       vars = [],
+                       funs = #{}
                       },
     S2.
 
--spec make_provider_name(repl_state(), aeso_syntax:pat()) -> {repl_state(), string()}.
-make_provider_name(S0, Pat) ->
-    Ids = aere_sophia:get_pat_ids(Pat),
-    {S1, Sup} = next_sup(S0),
-    {S1, string:join(Ids, "_") ++ io_lib:format("#~p", [Sup])}.
-
--spec make_shadowed_fun_name(repl_state(), string()) -> {repl_state(), string()}.
-make_shadowed_fun_name(S0, Name) ->
-    {S1, Sup} = next_sup(S0),
-    {S1, Name ++ "#" ++ integer_to_list(Sup)}.
-
-%% Shadows out or removes defined tracked contracts or local variables
--spec remove_references(list(string()), list(tracked_contract()), list(letval()))
-                       -> {list(tracked_contract()), list(letval())}.
-remove_references(Names, Cons, LetVals) ->
-    LetVals1 =
-        [ {{Provider, ProvRef}, {NewPat, Type}}
-          || {{Provider, ProvRef}, {Pat, Type}} <- LetVals,
-             NewPat <- [lists:foldl(
-                          fun(V, P) -> aere_sophia:replace(P, id, V, "_")
-                          end, Pat, Names)],
-             %% If no id is used then remove the reference
-             lists:any(fun({id, _, "_"}) -> false;
-                          (_) -> true
-                       end, aere_sophia:get_pat_ids(NewPat))
-        ],
-    Cons1 =
-        [ ?IF(lists:member(CName, Names), {CName, {shadowed_contract, ConRef, I}}, C)
-          || C = {CName, {_, ConRef, I}} <- Cons
-        ],
-    %% Get letvals after first cleansing
-    LetvalNames = [N || {_, {Pat, _}} <- LetVals, N <- aere_sophia:get_pat_ids(Pat)],
-    Cons2 = lists:filter(  %% If shadowed by nothing then we remove it
-              fun({CName, {shadowed_contract, _, _}}) ->
-                      lists:member(CName, LetvalNames) or not lists:member(CName, Names);
-                 (_) -> true
-              end, Cons1),
-    {Cons2, LetVals1}.
-
-%% Removes variables along with everything that depends on them
--spec free_names(repl_state(), list(string())) -> repl_state() | repl_question().
-free_names(State, Names) ->
-    free_names(State, Names, fun(X) -> X end).
-free_names(State = #repl_state{ letfuns = Letfuns
-                              , letvals = Letvals
-                              , tracked_contracts = Cons
-                              }, Names, Callback) ->
-    RunCleansing =
-        fun Cleansing([], [], L) ->
-                L;
-            Cleansing(_, _, []) ->
-                [];
-            Cleansing([], NextWave, L) ->
-                Cleansing(NextWave, [], L);
-            Cleansing([Bad|Rest], NextWave, Fs) ->
-                {ToRemove, ToKeep} =
-                    lists:partition
-                      (fun({_, {Defs, _, _}}) ->
-                               lists:any(
-                                 fun(Def) ->
-                                         UsedNames = aeso_syntax_utils:used_ids(Def),
-                                         lists:member(Bad, UsedNames)
-                                 end, Defs)
-                       end, Fs),
-                Cleansing(Rest, [NewBad || {NewBad, _} <- ToRemove] ++ NextWave, ToKeep)
-        end,
-    Letfuns1 = [ F
-                || F = {Fn, _} <- RunCleansing(Names, [], Letfuns),
-                   not(lists:member(Fn, Names))
-               ],
-    {Cons1, Letvals1} = remove_references(Names, Cons, Letvals),
-    State1 = State#repl_state
-        { letfuns = Letfuns1
-        , letvals = Letvals1
-        , tracked_contracts = Cons1
-        },
-    case ([FN || {FN, _} <- Letfuns -- Letfuns1, not(lists:member(FN, Names))]) of
-        [] -> Callback(State1);
-        AdditionalNames ->
-            #repl_question
-                { text = [ aere_color:emph("This will require removing following entities: ")
-                         , aere_color:yellow(string:join(AdditionalNames, ", "))
-                         , aere_color:emph(". Proceed?")
-                         ]
-                , options = [{"y", ?LAZY({removed, State1})}, {"n", ?LAZY({not_removed, State})}]
-                , default = "y"
-                , callback = fun({removed, X}) -> Callback(X);
-                                ({not_removed, X}) -> X
-                             end
-                }
+-spec eval_expr([aeso_syntax:stmt()], repl_state()) -> command_res().
+eval_expr(Body, S0 = #repl_state{options = #{display_gas  := DisplayGas,
+                                             print_unit   := PrintUnit,
+                                             print_format := PrintFormat
+                                           }}) ->
+    Ast = aere_mock:eval_contract(Body, S0),
+    {TEnv, TAst} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
+    ByteCode = aere_sophia:compile_contract(TAst),
+    {Res, UsedGas, S1} = run_contract(ByteCode, S0),
+    case {PrintUnit, Res, DisplayGas} of
+        {false, {tuple, {}}, false} -> S1;
+        {false, {tuple, {}}, true} -> {aere_msg:used_gas(UsedGas), S1};
+        _ ->
+            Type = aere_sophia:type_of_user_input(TEnv),
+            ResStr = aere_msg:output(format_value(PrintFormat, TEnv, Type, Res)),
+	    GasStr = [aere_msg:used_gas(UsedGas) || DisplayGas],
+            {[ResStr|GasStr], S1}
     end.
 
+format_value(fate, _, _, Val) ->
+    io_lib:format("~p", [Val]);
+format_value(sophia, TEnv, Type, Val) ->
+    aere_sophia:format_value(sophia, TEnv, Type, Val);
+format_value(json, TEnv, Type, Val) ->
+    aere_sophia:format_value(json, TEnv, Type, Val).
 
--spec name_status(repl_state(), string()) -> free | taken.
-name_status(#repl_state
-            { letvals = LetDefs
-            , letfuns = LocFuns
-            , tracked_contracts = TCons
-            }, Name) ->
-    % The best 'if' you will ever see
-    case { proplists:is_defined(Name, LetDefs)
-         , proplists:is_defined(Name, LocFuns)
-         , proplists:is_defined(Name, TCons)
-         } of
-        {false, false, false} -> free;
-        _ -> taken
+load_modules(Modules, S0) ->
+    S1 = S0#repl_state{loaded_files = #{}},
+    S2 = add_modules(default_loaded_files() ++ Modules, S1),
+    register_include(lists:last(Modules), S2).
+
+reload_modules([], S0 = #repl_state{loaded_files = LdFiles}) ->
+    reload_modules(maps:keys(LdFiles), S0);
+reload_modules(Modules, S0 = #repl_state{included_files = IncFiles}) ->
+    S1 = add_modules(Modules -- default_loaded_files(), S0),
+    S2 = lists:foldl(fun register_include/2, S1, IncFiles),
+    S2.
+
+add_modules([], S0) ->
+    S0; %% Can happen
+add_modules(Modules, S0 = #repl_state{loaded_files = LdFiles}) ->
+    Files = read_modules(Modules),
+
+    S1 = clear_context(S0),
+    S2 = S1#repl_state{loaded_files = maps:merge(LdFiles, maps:from_list(lists:zip(Modules, Files)))},
+    S2.
+
+% Reads files either from working dir or stdlib
+read_file(Filename) ->
+    case file:read_file(Filename) of
+        {error, enoent} ->
+            file:read_file(filename:join(aeso_stdlib:stdlib_include_path(), Filename));
+        Res -> Res
     end.
 
+read_modules(Modules) ->
+    Files = [read_file(M) || M <- Modules],
 
--spec register_includes(repl_state(), list(string())) -> repl_state().
-register_includes(State, []) ->
-    State; %% This is necessary to break check-loops
-register_includes(State = #repl_state{ include_ast = Includes
-                                     , include_hashes = Hashes
-                                     , include_files = PrevFiles
-                                     , cwd = CWD
-                                     }
-                 , Files) ->
-    Trimmed = lists:map(fun string:trim/1, Files),
-    NoDups = Trimmed -- PrevFiles,  % without duplicates
-    State1 = case Trimmed -- NoDups of
-                 [] -> State;
-                 Duplicates ->
-                     ColoredD = lists:flatten([" " ++ D || D <- Duplicates]),
-                     warning(State, ["Following files are already included: ", ColoredD])
+    case [{File, file:format_error(Err)} || {File, {error, Err}} <- lists:zip(Modules, Files)] of
+        []     -> ok;
+        Failed -> throw({repl_error, aere_msg:files_load_error(Failed)})
     end,
-    IncludingContract =
-        lists:flatmap(fun(I) -> "include \"" ++ I ++ "\"\n" end, NoDups),
-    {Addition, NewHashes} =
-        aere_sophia:parse_file( IncludingContract
-                              , Hashes
-                              , aeso_compiler:add_include_path(
-                                  %% this "mock" is because `add_include_path` removes head
-                                  filename:join(CWD, "mock"), [keep_included])),
-    NewIncludes = Includes ++ Addition,
-    State2 = State1#repl_state{ include_ast    = NewIncludes
-                              , include_hashes = NewHashes
-                              , include_files  = NoDups ++ PrevFiles
-                              },
 
-    Colored = aere_color:yellow(lists:flatten([" " ++ F || F <- NoDups])),
-    IncludeWord = case NoDups of
-                      []  -> "nothing";
-                      [_] -> "include";
-                      _   -> "includes"
-                  end,
-    Msg = ["Registered ", IncludeWord, Colored],
-    {Msg, State2}.
+    OkFiles =
+        [ begin
+              Ast0 = aeso_parser:string(binary:bin_to_list(File)),
+              aere_sophia:typecheck(aere_mock:ast_fillup_contract(Ast0)),
+              File
+          end
+          || {ok, File} <- Files
+        ],
 
--spec register_tracked_contract(repl_state(), none | string(), binary())
-                               -> {string(), repl_state()}.
-register_tracked_contract(State = #repl_state
-                          { letvals = Letvals
-                          , options = Opts
-                          , cwd = CWD
-                          }, MaybeRefName, Src) ->
+    OkFiles.
 
-    % typecheck and prepare ACI
-    Ast = aere_sophia:parse_file(binary_to_list(Src), aeso_compiler:add_include_path(CWD, [])),
-    TAstUnfolded = aere_sophia:typecheck(Ast, [dont_unfold]),
-    TAst = aere_sophia:typecheck(Ast),
-    BCode = aere_sophia:compile_contract(fate, binary_to_list(Src), TAst),
-    Interface = {contract_interface, _, {con, _, StrDeclName}, _}
-        = aere_sophia:generate_interface_decl(TAstUnfolded),
-    State0 = State#repl_state
-        {type_alias_map =
-             proplists:delete(StrDeclName, State#repl_state.type_alias_map)},
+%% Removes all variables, functions, types and contracts
+clear_context(S0 = #repl_state{vars = Vars}) ->
+    Contracts = [PK || {_Name, _Type, {contract, PK}} <- Vars],
+    Chain0 = get_ready_chain(S0),
+    Chain1 = lists:foldl(fun aefa_chain_api:remove_contract/2, Chain0, Contracts),
+    put(contract_code_cache, undefined),
+    S0#repl_state{
+      vars = [],
+      funs = #{},
+      typedefs = [],
+      type_scope = [],
+      included_files = [],
+      included_code = [],
+      blockchain_state = {ready, Chain1}}.
 
-    % Generate the reference name by the contract name if not provided
-    RefName =
-        case MaybeRefName of
-            none ->
-                [FstChar|OrigNameRest] = StrDeclName,
-                NameWithIndex =
-                    fun(X) -> string:lowercase([FstChar]) ++
-                                  OrigNameRest ++
-                                  case X of
-                                      -1 -> "";
-                                      _ -> integer_to_list(X)
-                                  end
-                    end,
-                MakeIndex =
-                    fun R(X) ->
-                            case name_status(State0, NameWithIndex(X)) of
-                                free -> X;
-                                _    -> R(X + 1)
-                            end
-                    end,
-                NameWithIndex(MakeIndex(-1));
-            _ -> MaybeRefName
+register_include(Include, S0) when is_binary(Include) ->
+    register_include(binary:bin_to_list(Include), S0);
+register_include(Include, S0 = #repl_state{included_files = IncFiles, included_code = IncCode, loaded_files = LdFiles}) ->
+    case maps:get(Include, LdFiles, not_loaded) of
+        not_loaded ->
+            throw({repl_error, aere_msg:file_not_loaded(Include)});
+        File ->
+            S1 = case lists:member(Include, IncFiles) of
+                     true -> S0;
+                     false ->
+                         IncludeSet = sets:from_list([{FName, Code} || {FName, Code} <- maps:to_list(LdFiles), lists:member(FName, IncFiles)]),
+                         {Ast0, _IncludeSet1} = aere_sophia:parse_file(File, IncludeSet, [keep_included]),
+                         S0#repl_state{included_files = [Include|IncFiles], included_code = IncCode ++ Ast0}
+                 end,
+            Ast = aere_mock:eval_contract([{tuple, aere_mock:ann(), []}], S1),
+            aere_sophia:typecheck(Ast),
+            S1
+    end.
+
+-spec register_letval(aeso_syntax:pat(), aeso_syntax:expr(), repl_state()) -> command_res().
+register_letval(Pat, Expr, S0 = #repl_state{funs = Funs}) ->
+    NewVars = lists:filter(
+                fun(Var) -> Var /= "_" end,
+                aeso_syntax_utils:used_ids([aere_mock:pat_as_decl(Pat)])),
+    Ast = aere_mock:letval_contract(Pat, NewVars, Expr, S0),
+    {TEnv, TypedAst} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
+    ByteCode = aere_sophia:compile_contract(TypedAst),
+
+    {Vals, Types, S1} =
+        case NewVars of
+            [_] ->
+                T = aere_sophia:type_of_user_input(TEnv),
+                {V, _, S} = run_contract(ByteCode, S0),
+                {[V], [T], S};
+            _ ->
+                {tuple_t, _, Ts} = aere_sophia:type_of_user_input(TEnv),
+                {{tuple, Vs}, _, S} = run_contract(ByteCode, S0),
+                {tuple_to_list(Vs), Ts, S}
         end,
+    NameMap = build_fresh_name_map(ByteCode),
 
-    % Generate the unique name for the contract declaration
-    {State1, ActualName} =
-        (fun Retry(State0_0) ->
-                 {State0_1, Sup} = next_sup(State0_0),
-                 TryName =
-                     "REPL_" ++ integer_to_list(Sup) ++ "_" ++ StrDeclName,
-                 case [bad || {_, {contract, NameConflict}} <-
-                                  State0_1#repl_state.type_alias_map,
-                              NameConflict == TryName] of
-                     [] -> { State0_1#repl_state
-                             {type_alias_map = [{StrDeclName, {contract, TryName}}
-                                                | State0_1#repl_state.type_alias_map
-                                               ]}
-                           , TryName};
-                     _ -> Retry(State0_1)
-                 end
-         end)(State0),
+    Vals1 = replace_function_name(Vals, NameMap),
+    Vars1 = lists:zip3(NewVars, Types, Vals1),
+    Funs1 = generated_functions(ByteCode, NameMap),
 
-    Interface1 =
-        begin
-            {contract_interface, IAnn, {con, INAnn, _}, IDecl} = unfold_aliases(State1, Interface),
-            {contract_interface, IAnn, {con, INAnn, ActualName}, IDecl}
-        end,
+    S2 = register_vars(Vars1, S1),
 
-    {{ConAddr, DeployGas}, State2} = deploy_contract(BCode, {}, Opts, State1),
-    DepGasStr = ?IF(Opts#options.display_deploy_gas,
-                    [ aere_color:yellow("\ndeploy gas: "), io_lib:format("~p", [DeployGas])],
-                    ""
-                   ),
-    {Cons1, Letvals1} = remove_references([RefName], State2#repl_state.tracked_contracts, Letvals),
-    State3 = State2#repl_state
-        { tracked_contracts =
-              [{ RefName
-               , {tracked_contract, ConAddr, Interface1}} | Cons1]
-        , letvals = Letvals1
+    S2#repl_state{funs = maps:merge(Funs, Funs1)}.
+
+-spec register_letfun(aeso_syntax:id(), [aeso_syntax:pat()], [aeso_syntax:guarded_expr()], repl_state()) -> command_res().
+register_letfun(Id = {id, _, Name}, Args, Body, S0 = #repl_state{funs = Funs}) ->
+    Ast = aere_mock:letfun_contract(Id, Args, Body, S0),
+    {TEnv, TypedAst} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
+    ByteCode = aere_sophia:compile_contract(TypedAst),
+
+    Type = aere_sophia:type_of_user_input(TEnv),
+
+    NameMap = build_fresh_name_map(ByteCode),
+
+    Funs1 = generated_functions(ByteCode, NameMap),
+
+    FunNewName = maps:get(aeb_fate_code:symbol_identifier(binary:list_to_bin(Name)), NameMap),
+    FunVal = {tuple, {FunNewName, {tuple, {}}}}, %% TODO this is broken
+
+    S1 = register_vars([{Name, Type, FunVal}], S0),
+
+    {aere_theme:error("Warning: defining functions in REPL is WIP and may be unstable."), S1#repl_state{funs = maps:merge(Funs, Funs1)}}.
+
+register_vars(NewVars, S = #repl_state{vars = OldVars}) ->
+    Filtered = [V || V = {Id, _, _} <- OldVars, [] =:= proplists:lookup_all(Id, NewVars)],
+    S#repl_state{vars = NewVars ++ Filtered}.
+
+build_fresh_name_map(ByteCode) ->
+    Symbols = aeb_fate_code:symbols(ByteCode),
+    AddedFuns = [FSym || {FSym, FName} <- maps:to_list(Symbols), not ?IS_REPL_ENTRYPOINT(FName)],
+    NewAddedFuns = [binary:list_to_bin(erlang:ref_to_list(make_ref()))|| _ <- AddedFuns],
+    maps:from_list(lists:zip(AddedFuns, NewAddedFuns)).
+
+generated_functions(ByteCode, NameMap) ->
+    Funs = maps:to_list(aeb_fate_code:functions(ByteCode)),
+    Filter = fun({FName, Def}) ->
+                     not ?IS_REPL_ENTRYPOINT(FName) andalso
+                         {true, {maps:get(FName, NameMap, FName), replace_function_name(Def, NameMap)}}
+             end,
+    maps:from_list(lists:filtermap(Filter, Funs)).
+
+replace_function_name({tuple, {FName, Closure}}, NameMap) when is_binary(FName) ->
+    {tuple, {maps:get(FName, NameMap, FName), Closure}};
+replace_function_name(E = {I, {immediate, FName}}, NameMap) when is_atom(I) andalso is_binary(FName) ->
+    case atom_to_list(I) of
+        "CALL" ++ _ -> {I, {immediate, maps:get(FName, NameMap, FName)}};
+        _ -> E
+    end;
+replace_function_name(T, NameMap) when is_tuple(T) ->
+    list_to_tuple(replace_function_name(tuple_to_list(T), NameMap));
+replace_function_name([H|T], NameMap) ->
+    [replace_function_name(H, NameMap)|replace_function_name(T, NameMap)];
+replace_function_name(M, NameMap) when is_map(M) ->
+    maps:from_list(replace_function_name(maps:to_list(M), NameMap));
+replace_function_name(E, _) ->
+    E.
+
+-spec register_typedef(aeso_syntax:id(), [aeso_syntax:tvar()], aeso_syntax:typedef(), repl_state()) -> command_res().
+register_typedef({id, _, Name}, Args, Def, S0 = #repl_state{query_nonce = Nonce, typedefs = TypeDefs, type_scope = TypeScope}) ->
+    NamespaceName = ?TYPE_CONTAINER(Nonce),
+
+    TypeScope1 = proplists:delete(Name, TypeScope),
+    S1 = S0#repl_state{type_scope = TypeScope1},
+
+    Def1 = unfold_types_in_type(Def, S1),
+
+    % Check if definition is valid
+    Ast = aere_mock:typedef_contract(Name, Args, Def1, S1),
+    aere_sophia:typecheck(Ast),
+
+    TypeDefEntry = {NamespaceName, Name, Args, Def1},
+    TypeScope2 = [{Name, {NamespaceName, length(Args)}}|TypeScope1],
+
+    S1#repl_state{typedefs = [TypeDefEntry|TypeDefs], type_scope = TypeScope2}.
+
+unfold_types_in_type(T, S0) ->
+    Ast = aere_mock:type_unfold_contract(S0),
+    {TEnv, _} = aere_sophia:typecheck(Ast, [dont_unfold]),
+    TEnv1 = aeso_ast_infer_types:switch_scope([?MOCK_CONTRACT], TEnv),
+    T1 = aeso_ast_infer_types:unfold_types_in_type(TEnv1, T),
+    T1.
+
+run_contract(ByteCode, S) ->
+    ES = setup_fate_state(ByteCode, S),
+    eval_state(ES, S).
+
+eval_state(ES0, S = #repl_state{contract_state = {StateType, _}}) ->
+    try ES1 = aefa_fate:execute(ES0),
+         {StateVal, ES2} = aefa_fate:lookup_var({var, -1}, ES1),
+
+         Res       = aefa_engine_state:accumulator(ES2),
+         ChainApi  = aefa_engine_state:chain_api(ES2),
+         UsedGas   = maps:get(call_gas, S#repl_state.options) - aefa_engine_state:gas(ES2) - 10, %% RETURN(R) costs 10
+
+         {Res, UsedGas, S#repl_state{blockchain_state = {ready, ChainApi},
+                                     contract_state = {StateType, StateVal}
+                                    }}
+    catch {aefa_fate, revert, ErrMsg, _} ->
+            throw({revert, ErrMsg})
+    end.
+
+setup_fate_state(
+  ByteCode,
+  #repl_state{
+     repl_account = Owner,
+     blockchain_state = {ready, ChainApi0},
+     vars = Vars,
+     funs = Funs,
+     options = #{call_gas := Gas, call_value := Value},
+     contract_state = {_, StateVal}
+    }) ->
+
+    Version = #{ vm => aere_version:vm_version(), abi => aere_version:abi_version() },
+    Binary = aeb_fate_code:serialize(ByteCode, []),
+    Code = #{byte_code => Binary,
+            compiler_version => aere_version:sophia_version(),
+            source_hash => <<>>,%crypto:hash(sha256, OriginalSourceCode ++ [0] ++ C),
+            type_info => [],
+            abi_version => aeb_fate_abi:abi_version(),
+            payable => false %maps:get(payable, FCode)
         },
-    {[ aere_color:green(RefName ++ " : " ++ StrDeclName)
-     , " was successfully deployed", DepGasStr]
-    , State3
-    }.
+    Contract = aect_contracts:new(Owner, 0, Version, aeser_contract_code:serialize(Code), 0),
+    ChainApi = aefa_chain_api:put_contract(Contract, ChainApi0),
+    Function = aeb_fate_code:symbol_identifier(<<?USER_INPUT>>),
 
+    Caller = aeb_fate_data:make_address(Owner),
 
--spec register_typedef(repl_state(), typedef()) -> repl_state().
-register_typedef(State, {type_def, _, {id, NAnn, StrName}, Args, Def}) ->
-    Constructors = case Def of
-                       {variant_t, Constrs} ->
-                           [C || {constr_t, _, {con, _, C}, _} <- Constrs];
-                       _ -> []
-                   end,
-    FreeTypeMap =
-        lists:foldl(
-          fun(Con, Prev) ->
-                  proplists:delete(Con, Prev)
-          end,
-          proplists:delete(StrName, State#repl_state.type_alias_map),
-          Constructors
+    setup_fate_state(aect_contracts:pubkey(Contract), ByteCode, Owner, Caller, Function, Vars, Gas, Value, StateVal, Funs, ChainApi).
+
+setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, StateVal, Functions0, ChainApi) ->
+    Store = aefa_stores:initial_contract_store(),
+    Functions = maps:merge(Functions0, aeb_fate_code:functions(ByteCode)),
+    ES0 =
+        aefa_engine_state:new(
+          Gas,
+          Value,
+          #{caller => Owner}, % Spec
+          aefa_stores:put_contract_store(Contract, Store, aefa_stores:new()),
+          ChainApi,
+          #{Contract => {ByteCode, aere_version:vm_version()}}, % Code cache
+          aere_version:vm_version()
          ),
-    State0 = State#repl_state
-        { type_alias_map = FreeTypeMap },
+    ES1 = aefa_engine_state:update_for_remote_call(Contract, ByteCode, aere_version:vm_version(), Caller, ES0),
+    ES2 = aefa_fate:set_local_function(Function, false, ES1),
+    ES3 = aefa_fate:bind_args([Arg || {_, _, Arg} <- Vars], ES2),
+    ES4 = aefa_engine_state:set_functions(Functions, ES3),
+    ES5 = aefa_fate:store_var({var, -1}, StateVal, ES4),
 
-    % search for free namespace
-    {State1, NSName} =
-        (fun Retry(State0_0) ->
-                 {State0_1, Sup} = next_sup(State0_0),
-                 TryName = "TYPEDEF_" ++ integer_to_list(Sup),
-                 Mock = aere_mock:simple_query_contract(State0_1, [{id, aere_mock:ann(), "state"}]),
-                 Namespaces = [N || {namespace, _, {con, _, N}, _} <- Mock],
-                 Contracts = [N || {contract, _, {con, _, N}, _} <- Mock],
-                 ?IF(lists:member(TryName, Namespaces ++ Contracts),
-                     Retry(State0_1),
-                     {State0_1, TryName}
-                    )
-         end)(State0),
-    NewTypeMap =
-        lists:foldr(
-          fun(Constr, Prev) -> [{Constr, {constructor, NSName}}|Prev] end,
-          [{StrName, {typedef, Args, NSName}} | FreeTypeMap],
-          Constructors
-         ),
+    ES5.
 
-    State2 = State1#repl_state
-        { typedefs = [{ {qid, NAnn, [NSName, StrName]}
-                      , {Args, unfold_aliases(State1, Def)}}|State1#repl_state.typedefs]
-        , type_alias_map = NewTypeMap
+bump_nonce(S = #repl_state{query_nonce = N}) ->
+    S#repl_state{query_nonce = N + 1}.
+
+default_loaded_files() ->
+    StdlibDir = aeso_stdlib:stdlib_include_path(),
+    Files =
+        [ File ||
+            File <- element(2, file:list_dir(StdlibDir)),
+            filename:extension(File) =:= ".aes"
+        ],
+    Files.
+
+get_ready_chain(#repl_state{blockchain_state = {ready, Chain}}) ->
+    Chain;
+get_ready_chain(_) ->
+    throw({repl_error, aere_msg:chain_not_ready()}).
+
+set_option(Option, Args, S = #repl_state{options = Opts}) ->
+    case aere_options:parse_option(Option, Args) of
+        error ->
+            {aere_msg:option_usage(Option), S};
+        Val -> S#repl_state{options = Opts#{Option => Val}}
+    end.
+
+print_state(#repl_state{
+               vars = Vars,
+               %% funs = Funs,
+               typedefs = Types,
+               options = Opts,
+               loaded_files = Files,
+               included_files = Incs
+            }, What) ->
+    PrintFuns =
+        #{ "vars" => {fun aere_msg:list_vars/1, Vars},
+           %% "funs" => {fun aere_msg:list_funs/1, Funs},
+           "types" => {fun aere_msg:list_types/1, Types},
+           "options" => {fun aere_msg:list_options/1, Opts},
+           "files" => {fun aere_msg:list_loaded_files/1, Files},
+           "includes" => {fun aere_msg:list_includes/1, Incs}
         },
-    State2.
-
-
--spec unfold_aliases(repl_state(), any()) -> any().
-unfold_aliases(#repl_state{type_alias_map = TypeMap}, Obj) ->
-    Run = fun R([{Name, {typedef, _, Ns}}|Rest], O) ->
-                  O1 = aere_sophia:replace(
-                         O, type, Name, {qid, aere_mock:ann(), [Ns, Name]}),
-                  R(Rest, O1);
-              R([{Name, {contract, IName}}|Rest], O) ->
-                  O1 = aere_sophia:replace(O, type, Name, IName),
-                  R(Rest, O1);
-              R([{Name, {constructor, Ns}}|Rest], O) ->
-                  O1 = aere_sophia:replace(
-                         O, con, Name, {qcon, aere_mock:ann(), [Ns, Name]}),
-                  R(Rest, O1);
-              R([], O) -> O
-          end,
-    Run(TypeMap, Obj).
-
-
--spec warning(repl_state(), string()) -> repl_state().
-warning(State = #repl_state{warnings = Ws}, W) ->
-    State#repl_state{warnings = [W|Ws]}.
-
-
-%% Returns the list of all names in the context. Useful for autocompletion.
--spec list_names(repl_state()) -> list({type | constructor | variable | field | scope, string()}).
-list_names(State = #repl_state{ type_alias_map = TypeMap
-                              , letvals = LetVals
-                              , tracked_contracts = Cons
-                              }) ->
-    Mock = aere_mock:simple_query_contract(State, [{id, aere_mock:ann(), "state"}]),
-    {Env, _} = aere_sophia:typecheck(Mock, [return_env]),
-    Scopes = maps:to_list(element(2, Env)), % Hope nobody will change the format
-
-    Names =
-        [ {Kind, case ScopeName of
-                     [] -> "";
-                     [?MOCK_CONTRACT] -> "";
-                     _ when ScopeName == [Name] -> "";
-                     [N] -> N ++ "."
-                 end ++ Name} % NOTE Using the fact that nested scopes are forbidden
-          || {ScopeName, Scope} <- Scopes,
-             {Kind, Name} <-
-                 [ {variable, F}    || {F, _} <- element(2, Scope)] ++
-                 [ {type, T}        || {T, _} <- element(3, Scope)] ++
-                 [ {constructor, C} || {_Tname, {_Ann, {_Args, {variant_t, Constrs}}}} <- element(3, Scope),
-                                       {constr_t, _, {_, _, C}, _} <- Constrs] ++
-                 [{scope, S}        || ScopeName /= [], S <- ScopeName]
-            ] ++
-        [ {field, Fl} || Fl <- maps:keys(element(5, Env)) ] ++
-        [ {variable, Ctr}  || {Ctr, {tracked_contract, _, _}} <- Cons] ++
-        [ {variable, V}    || {_, {Pat, _}} <- LetVals,
-                              V <- aere_sophia:get_pat_ids(Pat)] ++
-        [ {type, T} || {T, _} <- TypeMap],
-    [{Kind, Name} || {Kind, Name} <- Names,
-                     % filter out internals, hash won't be accepted by the parser anyway].
-                     lists:all(fun(C) -> C /= $# end, Name)
-    ].
-
-
--spec build_deploy_contract(string(), aeso_syntax:ast(), [any()], options(), repl_state())
-                           -> {any(), repl_state()}.
-build_deploy_contract(Src, TypedAst, Args, Options, State) ->
-    Code = aere_sophia:compile_contract(fate, Src, TypedAst),
-    deploy_contract(Code, Args, Options, State).
-
-
-deploy_contract( ByteCode, Args, Options
-               , State = #repl_state{ blockchain_state = S0
-                                    , user_account = Owner
-                                    }) ->
-    aere_chain:state(S0),
-    Serialized = aect_sophia:serialize(ByteCode, aere_version:contract_version()),
-    try aere_chain:create_contract(Owner, Serialized, Args, Options, S0) of
-        {Result, S1} -> {Result, State#repl_state{blockchain_state = S1}}
-    catch error:Reason ->
-            ReasonS = if is_binary(Reason) -> binary_to_list(Reason);
-                         is_list(Reason) -> Reason;
-                         true -> io_lib:format("~p", [Reason])
-                      end,
-            throw(aere_error:contract_creation_error(ReasonS))
+    case maps:get(What, PrintFuns, unknown) of
+        unknown ->
+            throw({repl_error, aere_msg:list_unknown(maps:keys(PrintFuns))});
+        {Print, Payload} -> Print(Payload)
     end.
-
-
-eval_contract(Src, Ast, S1 = #repl_state{options = Options}) ->
-    TypedAst = aere_sophia:typecheck(Ast),
-    RetType = aere_response:convert_type( build_type_map(TypedAst)
-                                        , element(2, aere_sophia:type_of(TypedAst, ?USER_INPUT))),
-    Owner = S1#repl_state.user_account,
-    {{Con, GasDeploy}, S2} = build_deploy_contract(Src, TypedAst, {}, Options, S1),
-    CS1 = S2#repl_state.blockchain_state,
-    {{Resp, GasCall}, CS2} =
-        aere_chain:call_contract( Owner, Con, list_to_binary(?USER_INPUT)
-                                  , RetType, {}, Options, CS1),
-    S3 = S2#repl_state{blockchain_state = CS2},
-
-    PPResp = prettypr:format(aere_response:pp_response(Resp)),
-    DeployGasStr =
-        ?IF(Options#options.display_deploy_gas,
-            [ aere_color:yellow("\ndeploy gas: "), io_lib:format("~p", [GasDeploy])],
-            ""),
-    CallGasStr =
-        ?IF(Options#options.display_call_gas,
-            [ aere_color:yellow("\ncall gas: "), io_lib:format("~p", [GasCall])],
-            ""),
-    Out = [PPResp, DeployGasStr, CallGasStr],
-    S4 = S3#repl_state{last_state_provider = Con},
-    case {RetType, DeployGasStr, CallGasStr} of
-        {{tuple, []}, "", ""} ->
-            case Resp of
-                {error, _} -> {Out, S4};
-                _ -> ?IF(S4#repl_state.options#options.display_unit, {Out, S4}, S4)
-            end;
-        _ -> {Out, S4}
-    end.
-
-
--define(ParseOptionBool(Field),
-        if
-            Val =:= "true" orelse Val =:= 1 ->
-                {options, Opts#options{Field = true}};
-            Val =:= "false" orelse Val =:= 0 ->
-                {options, Opts#options{Field = false}};
-            true ->
-                throw(aere_error:bad_option(["true", "false"]))
-        end).
--define(ParseOptionInt(Field),
-        try {options, Opts#options{Field = list_to_integer(Val)}}
-        catch error:badarg -> throw(aere_error:bad_option(["integer"]))
-        end).
-set_option(State = #repl_state{options = Opts}, Prop, Val) ->
-    Parse =
-        case Prop of
-            "display-gas" -> ?ParseOptionBool(display_call_gas);
-            "display-deploy-gas" -> ?ParseOptionBool(display_deploy_gas);
-            "silent" -> ?ParseOptionBool(silent);
-            "display-unit" -> ?ParseOptionBool(display_unit);
-            "balance" ->
-                try list_to_integer(Val) of
-                    ValInt ->
-                        CS0 = State#repl_state.blockchain_state,
-                        PK = State#repl_state.user_account,
-                        CS1 = aere_chain:update_balance(ValInt, PK, CS0),
-                        { state
-                        , State#repl_state{blockchain_state = CS1}
-                        }
-                catch error:badarg -> throw(aere_error:bad_option(["integer"]))
-                end;
-            "colors" ->
-                case Val of
-                    "none" -> {options, Opts#options{colors = none}};
-                    "emph" -> erase(wololo), {options, Opts#options{colors = emph}};
-                    "no-emph" -> erase(wololo), {options, Opts#options{colors = no_emph}};
-                    _ -> throw(aere_error:bad_option(["emph", "none", "no-emph"]))
-                end;
-            "call-gas" -> ?ParseOptionInt(gas);
-            "call-value" -> ?ParseOptionInt(call_value);
-            "state" ->
-                Stmts = aere_sophia:parse_body(Val),
-                Cont = fun(State1) ->
-                               TExprAst = aere_sophia:typecheck(aere_mock:simple_query_contract(State1, Stmts)),
-                               {_, Type} = aere_sophia:type_of(TExprAst, ?USER_INPUT),
-                               Mock = aere_mock:chained_initial_contract(State1, Stmts, Type),
-                               TMock = aere_sophia:typecheck(Mock),
-                               {{Key, _}, State2} = build_deploy_contract("no_src", TMock, {}, Opts, State1),
-                               State2#repl_state
-                                   { user_contract_state_type = Type
-                                   , last_state_provider = Key
-                                   }
-                       end,
-                {state, free_names(State, ["state", "put"], Cont)};
-            _ -> throw(aere_error:unknown_option(Prop))
-        end,
-    case Parse of
-        {options, NewOpts} ->
-            State#repl_state{options = NewOpts};
-        {state, NewState} ->
-            NewState;
-        {options, Msg, NewOpts} ->
-            {Msg, State#repl_state{options = NewOpts}};
-        {state, Msg, NewState} ->
-            {Msg, NewState}
-    end.
-
--spec build_type_map(aeso_syntax:ast()) -> #{list(string()) => aeso_syntax:type_def()}.
-build_type_map(Ast) ->
-    build_type_map([], Ast, #{}).
-build_type_map(_Scope, [], Acc) ->
-    Acc;
-build_type_map(Scope, [{namespace, _, {con, _, Name}, Defs} | Rest], Acc) ->
-    build_type_map(Scope, Rest, build_type_map(Scope ++ [Name], Defs, Acc));
-build_type_map(Scope, [{contract, _, {con, _, Name}, Defs} | Rest], Acc) ->
-    build_type_map(Scope, Rest, build_type_map(Scope ++ [Name], Defs, Acc));
-build_type_map(Scope, [{type_def, _, {id, _, Name}, Args, {variant_t, Cons}} | Rest], Acc) ->
-    build_type_map(Scope, Rest, Acc#{Scope ++ [Name] => {variant, Args, Cons}});
-build_type_map(Scope, [{type_def, _, {id, _, Name}, Args, {record_t, Fields}} | Rest], Acc) ->
-    build_type_map(Scope, Rest, Acc#{Scope ++ [Name] => {record, Args, Fields}});
-build_type_map(Scope, [_|Rest], Acc) ->
-    build_type_map(Scope, Rest, Acc).
-
-next_sup(State = #repl_state{supply=S}) ->
-    {State#repl_state{supply=S+1}, S}.
-
--spec assert_integrity(repl_state()) -> repl_state().
-assert_integrity(S) ->
-    TestMock = aere_mock:chained_query_contract(S, [{tuple, aere_mock:ann(), []}]),
-    aere_sophia:typecheck(TestMock),
-    S.
