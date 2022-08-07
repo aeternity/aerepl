@@ -13,3 +13,10 @@
 
 :b 121
 // No such command "b"
+
+:
+//
+
+:load nonexistent_file.aes
+// Could not load files:
+// nonexistent_file.aes: no such file or directory

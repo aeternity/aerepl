@@ -58,8 +58,11 @@ process_input(State, String) when is_binary(String) ->
     process_input(State, binary_to_list(String));
 process_input(State, String) ->
     check_wololo(String),
-    try {Command, Args} = aere_parse:parse(String),
-         apply_command(Command, Args, bump_nonce(State))
+    try
+        case aere_parse:parse(String) of
+            skip -> State;
+            {Command, Args} -> apply_command(Command, Args, bump_nonce(State))
+        end
     of
         {Out, State1 = #repl_state{}} ->
             #repl_response
@@ -85,24 +88,24 @@ process_input(State, String) ->
                 , warnings = []
                 , status = internal_error
                 };
-          {repl_error, E} ->
-            #repl_response
-                { output = E
-                , warnings = []
-                , status = error
-                };
-          {revert, Err} ->
-            #repl_response
-                { output = aere_msg:abort(Err)
-                , warnings = []
-                , status = error
-                };
-          {aefa_fate, FateErr, _} ->
-            #repl_response
-                { output = aere_msg:error("FATE error: " ++ FateErr)
-                , warnings = []
-                , status = error
-                }
+            {repl_error, E} ->
+                #repl_response
+                    { output = E
+                    , warnings = []
+                    , status = error
+                    };
+            {revert, Err} ->
+                #repl_response
+                    { output = aere_msg:abort(Err)
+                    , warnings = []
+                    , status = error
+                    };
+            {aefa_fate, FateErr, _} ->
+                #repl_response
+                    { output = aere_msg:error("FATE error: " ++ FateErr)
+                    , warnings = []
+                    , status = error
+                    }
     end.
 
 %% Easter egg, don't ask.
