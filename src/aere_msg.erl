@@ -143,11 +143,11 @@ files_load_error(Failed) ->
 
 -spec state_typedef() -> msg().
 state_typedef() ->
-    [aere_theme:error("Cannot define a state type. Use :state to set the value of the state")].
+    [aere_theme:error("Cannot define a state type. Use :state to set the value of the state.")].
 
 -spec event_typedef() -> msg().
 event_typedef() ->
-    [aere_theme:error("Cannot define an event type. Use :event to set the value of the event")].
+    [aere_theme:error("Cannot define an event type. Use :event to set the value of the event.")].
 
 -spec option_usage(atom()) -> msg().
 option_usage(Option) ->
