@@ -1,0 +1,47 @@
+:t 1
+// int
+
+:t Call.origin
+// address
+
+:t #fedcba9876543210
+// bytes(8)
+
+:t "some string"
+// string
+
+:t [1, 2, 3]
+// list(int)
+
+:t (x : int, y : int) => x + y
+// (int, int) => int
+
+:t (42, "Foo", true)
+// (int * string * bool)
+
+type accounts = map(string, address)
+
+let x : accounts = {}
+
+:t x
+// map(string, address)
+
+:t Oracle.query
+// (oracle('a, 'b), 'a, int, Chain.ttl, Chain.ttl) => oracle_query('a, 'b)
+
+:t RelativeTTL(50)
+// Chain.ttl
+
+datatype event = EventX(indexed int, string)
+
+let e : event = EventX(1, "ev")
+
+:t e
+// event
+
+record balance = { owner: address, value: int }
+
+let x = { owner = Call.origin, value = 1 }
+
+:t x
+// balance
