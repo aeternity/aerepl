@@ -386,6 +386,12 @@ replace_function_name(E, _) ->
 
 -spec register_typedef(aeso_syntax:id(), [aeso_syntax:tvar()], aeso_syntax:typedef(), repl_state()) -> command_res().
 register_typedef({id, _, Name}, Args, Def, S0 = #repl_state{query_nonce = Nonce, typedefs = TypeDefs, type_scope = TypeScope}) ->
+    case Name of
+        "state" -> throw({repl_error, aere_msg:state_typedef()});
+        "event" -> throw({repl_error, aere_msg:event_typedef()});
+        _       -> ok
+    end,
+
     NamespaceName = ?TYPE_CONTAINER(Nonce),
 
     TypeScope1 = proplists:delete(Name, TypeScope),

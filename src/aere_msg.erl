@@ -11,6 +11,8 @@
         , bad_command_args/2
         , file_not_loaded/1
         , files_load_error/1
+        , state_typedef/0
+        , event_typedef/0
         , chain_not_ready/0
         , locked_option/0
         , option_usage/1
@@ -138,6 +140,14 @@ files_load_error(Failed) ->
                         ] || {File, Err} <- Failed ],
     FlatList = lists:flatten(lists:join(aere_theme:output("\n"), FilesAndReasons)),
     [aere_theme:error("Could not load files:\n") | FlatList].
+
+-spec state_typedef() -> msg().
+state_typedef() ->
+    [aere_theme:error("Cannot define a state type. Use :state to set the value of the state")].
+
+-spec event_typedef() -> msg().
+event_typedef() ->
+    [aere_theme:error("Cannot define an event type. Use :event to set the value of the event")].
 
 -spec option_usage(atom()) -> msg().
 option_usage(Option) ->
