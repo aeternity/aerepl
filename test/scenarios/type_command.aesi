@@ -32,13 +32,6 @@ let x : accounts = {}
 :t RelativeTTL(50)
 // Chain.ttl
 
-datatype event = EventX(indexed int, string)
-
-let e : event = EventX(1, "ev")
-
-:t e
-// event
-
 record balance = { owner: address, value: int }
 
 let x = { owner = Call.origin, value = 1 }
