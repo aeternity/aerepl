@@ -70,6 +70,7 @@ tests() ->
 scenarios() ->
     [ twoplustwo
     , type_command
+    , state_command
     ].
 
 %% Split a file into entries

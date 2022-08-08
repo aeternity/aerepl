@@ -306,8 +306,9 @@ register_letval(Pat, Expr, S0 = #repl_state{funs = Funs}) ->
                 fun(Var) -> Var /= "_" end,
                 aeso_syntax_utils:used_ids([aere_mock:pat_as_decl(Pat)])),
     Ast = aere_mock:letval_contract(Pat, NewVars, Expr, S0),
-    {TEnv, TypedAst} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints, dont_unfold]),
-    TypedAstUnfolded = aeso_ast_infer_types:unfold_types_in_type(TEnv, TypedAst, [unfold_record_types]),
+    {TEnv, _} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints, dont_unfold]),
+    %% TODO: Try to get TypedAstUnfolded without runnning the typechecker a second time
+    {_, TypedAstUnfolded} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
     ByteCode = aere_sophia:compile_contract(TypedAstUnfolded),
 
     {Vals, Types, S1} =
