@@ -1,59 +1,28 @@
 -module(aerepl).
 
--export([main/1, start/0]).
+-export([start/2, stop/1]).
 
-main(_Args) ->
-    start().
+-behaviour(application).
 
-start() ->
-    erlang:system_flag(backtrace_depth, 100),
-    {ok, _} = aere_gen_server:start([]),
-    Banner = gen_server:call(aere_gen_server, banner),
-    io:format(Banner ++ "\n\n"),
-    loop().
-
-loop() ->
-    Inp = get_input(),
-    {Status, Out} = aere_gen_server:input(Inp),
-    print_msg(Out),
-    case Status of
-        finish -> ok;
-        skip -> loop();
-        ok -> loop();
-        error -> loop();
-        internal_error -> loop()
+load_deps() ->
+    case
+        code:add_pathz("node/_build/dev1/lib/aechannel/ebin/") andalso
+        code:add_pathz("node/_build/dev1/lib/aecontract/ebin/") andalso
+        code:add_pathz("node/_build/dev1/lib/aecore/ebin/") andalso
+        code:add_pathz("node/_build/dev1/lib/aefate/ebin/") andalso
+        code:add_pathz("node/_build/dev1/lib/aens/ebin/") andalso
+        code:add_pathz("node/_build/dev1/lib/aeoracle/ebin/") andalso
+        code:add_pathz("node/_build/dev1/lib/aeprimop/ebin/") andalso
+        code:add_pathz("node/_build/dev1/lib/aetx/ebin/") andalso
+        code:add_pathz("node/_build/dev1/lib/aeutils/ebin/") andalso
+        code:add_pathz("node/_build/dev1/lib/setup/ebin/") of
+        true -> ok;
+        Err -> throw(Err)
     end.
 
-print_msg("") -> ok;
-print_msg(Msg) ->
-    io:format("~s\n", [Msg]).
+start(_StartType, _StartArgs) ->
+    load_deps(),
+    aere_supervisor:start_link().
 
-
-%% Get single line or multiline input from the user and return it as a single string
--spec get_input() -> string().
-get_input() ->
-    Line =
-        case io:get_line("AESO> ") of
-            eof          -> ":quit"; % that's dirty
-            {error, Err} -> exit(Err);
-            Data         -> Data
-        end,
-    Input =
-        case string:trim(Line, both, unicode_util:whitespace()) of
-            ":{" -> multiline_input();
-            ""   -> "";
-            _    -> lists:flatten(string:replace(Line, ";", "\n", all))
-        end,
-    string:trim(Input, both, unicode_util:whitespace()).
-
--spec multiline_input() -> string().
-multiline_input() -> multiline_input([]).
-
-%% Keep reading input lines until :} is found. Return the code between :{ and :} as a single string
--spec multiline_input([string()]) -> string().
-multiline_input(CodeBlock) ->
-    Line = io:get_line("| "),
-    case string:trim(Line, both, unicode_util:whitespace()) of
-        ":}" -> lists:flatten(lists:reverse(CodeBlock));
-        _    -> multiline_input([Line|CodeBlock])
-    end.
+stop(_State) ->
+    ok.

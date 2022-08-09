@@ -10,41 +10,12 @@
 
 -include("aere_repl.hrl").
 
-load_deps() ->
-    case
-        code:add_pathz("node/_build/dev1/lib/aechannel/ebin/") andalso
-        code:add_pathz("node/_build/dev1/lib/aecontract/ebin/") andalso
-        code:add_pathz("node/_build/dev1/lib/aecore/ebin/") andalso
-        code:add_pathz("node/_build/dev1/lib/aefate/ebin/") andalso
-        code:add_pathz("node/_build/dev1/lib/aens/ebin/") andalso
-        code:add_pathz("node/_build/dev1/lib/aeoracle/ebin/") andalso
-        code:add_pathz("node/_build/dev1/lib/aeprimop/ebin/") andalso
-        code:add_pathz("node/_build/dev1/lib/aetx/ebin/") andalso
-        code:add_pathz("node/_build/dev1/lib/aeutils/ebin/") andalso
-        code:add_pathz("node/_build/dev1/lib/setup/ebin/") of
-        true -> ok;
-        Err -> throw(Err)
-    end,
-    ok = application:load(aechannel),
-    ok = application:load(aecontract),
-    ok = application:load(aecore),
-    ok = application:load(aefate),
-    ok = application:load(aens),
-    ok = application:load(aeoracle),
-    ok = application:load(aeprimop),
-    ok = application:load(aetx),
-    ok = application:load(aeutils),
-    ok = application:load(setup).
-
-
 %%% --- GEN SERVER ---
 
 start(Args) ->
-    load_deps(),
     gen_server:start({local, ?MODULE}, ?MODULE, Args, []).
 
 start_link(Args) ->
-    load_deps(),
     gen_server:start_link({local, ?MODULE}, ?MODULE, Args, []).
 
 init(_) ->
