@@ -3,7 +3,7 @@
 %%! -smp enable -setcookie aerepl_cookie -mnesia debug verbose
 -mode(compile).
 
-load_deps() ->
+load_paths() ->
     Paths = filelib:wildcard(
               "_build/prod/lib/*/ebin/",
               filename:dirname(escript:script_name())),
@@ -11,8 +11,7 @@ load_deps() ->
     ok.
 
 main(_Args) ->
-    load_deps(),
-    erlang:system_flag(backtrace_depth, 100),
+    load_paths(),
     application:ensure_all_started(aerepl),
     start().
 
