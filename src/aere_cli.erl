@@ -6,9 +6,7 @@ main(_Args) ->
     start().
 
 start() ->
-    erlang:system_flag(backtrace_depth, 100),
-    {ok, _} = aere_gen_server:start([]),
-    Banner = gen_server:call(aere_gen_server, banner),
+    Banner = aere_gen_server:banner(),
     io:format(Banner ++ "\n\n"),
     loop().
 

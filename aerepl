@@ -12,4 +12,6 @@ load_deps() ->
 
 main(Args) ->
     load_deps(),
-    aerepl:main(Args).
+    erlang:system_flag(backtrace_depth, 100),
+    application:ensure_all_started(aerepl),
+    aere_cli:main(Args).
