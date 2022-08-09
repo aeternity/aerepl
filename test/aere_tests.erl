@@ -71,6 +71,7 @@ scenarios() ->
     [ twoplustwo
     , type_command
     , state_command
+    , print_command
     ].
 
 %% Split a file into entries

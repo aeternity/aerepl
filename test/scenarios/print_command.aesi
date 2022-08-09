@@ -1,0 +1,8 @@
+datatype d = Int
+
+datatype d = Char
+
+datatype d = String
+
+:print types
+// d
