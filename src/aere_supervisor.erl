@@ -21,7 +21,7 @@ init(_Args) ->
             significant => false,
             shutdown => brutal_kill,
             type => worker,
-            modules => [aerepl]
+            modules => [aere_gen_server]
           }
         ],
     {ok, {Flags, ChildSpecs}}.
