@@ -9,6 +9,8 @@ first.
 
 # Setup
 
+## Local build
+
 Clone the repo:
 
 ```
@@ -28,7 +30,21 @@ Launch the REPL
 ./aerepl
 ```
 
-* Basic usage
+## Docker image
+
+For a consistent setup, a docker image can be created:
+
+```
+make docker
+```
+
+Then to start the dockerized REPL:
+
+```
+docker run -i aeternity/aerepl
+```
+
+# Basic usage
 
 æREPL usage patterns are highly inspired by
 [GHCi](https://wiki.haskell.org/GHC/GHCi). Most of the syntax is a direct
