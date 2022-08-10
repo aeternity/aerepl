@@ -3,7 +3,6 @@
 -export([start/1, start_link/1]).
 -export([ init/1, handle_call/3, handle_cast/2
         %% , handle_info/2, terminate/2
-        , code_change/3
         , input/1, banner/0
         , reset/0
         ]).
@@ -25,18 +24,14 @@ handle_call({input, Input}, _From, State) ->
     {Output, State1} = process_input(Input, State),
     {reply, Output, State1};
 handle_call(banner, _From, State = #repl_state{options = #{theme := Theme}}) ->
-    {reply, aere_theme:render(Theme, aere_msg:banner()), State}.
+    {reply, aere_theme:render(Theme, aere_msg:banner()), State};
+handle_call(_, _, State) ->
+    {noreply, State}.
 
 handle_cast(reset, _) ->
     {noreply, new_state()};
-handle_cast(upgrade, State) ->
-    code:purge(aere_repl),
-    compile:file(aere_repl, {i, "src"}),
-    code:load_file(aere_repl),
+handle_cast(_, State) ->
     {noreply, State}.
-
-code_change(_Vsn, State, _Extra) ->
-    {ok, State}.
 
 input(Input) ->
     gen_server:call(?MODULE, {input, Input}).

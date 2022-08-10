@@ -7,17 +7,6 @@
    [kernel,
     stdlib,
     aesophia
-    %% lager,
-    %% aechannel,
-    %% aecontract,
-    %% aecore,
-    %% aefate,
-    %% aens,
-    %% aeoracle,
-    %% aeprimop,
-    %% aetx,
-    %% aeutils,
-    %% setup
    ]},
   {env,[]},
   {modules, []},

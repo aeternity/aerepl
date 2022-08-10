@@ -15,3 +15,8 @@ link_node_app aeprimop
 link_node_app aetx
 link_node_app aeutils
 link_node_app setup
+
+link_node_app jsx
+link_node_app lager
+link_node_app mnesia_rocksdb
+link_node_app rocksdb
