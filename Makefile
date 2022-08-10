@@ -1,4 +1,4 @@
-.PHONY: all node aerepl test clean nuke nuke-all
+.PHONY: all node aerepl docker test clean nuke nuke-all
 
 all:  node aerepl
 
@@ -10,6 +10,9 @@ node:
 aerepl:
 	./rebar3 as prod release
 	chmod +x aerepl
+
+docker:
+	@docker build -t aeternity/aerepl:local .
 
 test:
 	./rebar3 eunit --module=aere_tests
