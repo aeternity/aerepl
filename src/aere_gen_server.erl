@@ -3,7 +3,7 @@
 -export([start/1, start_link/1]).
 -export([ init/1, handle_call/3, handle_cast/2
         %% , handle_info/2, terminate/2
-        , input/1, banner/0
+        , input/1, input/2, banner/0
         , reset/0
         ]).
 
@@ -17,9 +17,12 @@ start(Args) ->
 start_link(Args) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Args, []).
 
-init(_) ->
-    {ok, new_state()}.
+init(Args) ->
+    {ok, new_state(Args)}.
 
+handle_call({input, Input, UserState}, _From, State) ->
+    {Output, UserState1} = process_input(Input, UserState),
+    {reply, {Output, UserState1}, State};
 handle_call({input, Input}, _From, State) ->
     {Output, State1} = process_input(Input, State),
     {reply, Output, State1};
@@ -36,6 +39,9 @@ handle_cast(_, State) ->
 input(Input) ->
     gen_server:call(?MODULE, {input, Input}).
 
+input(Input, State) ->
+    gen_server:call(?MODULE, {input, Input, State}).
+
 banner() ->
     gen_server:call(?MODULE, banner).
 
@@ -46,7 +52,10 @@ reset() ->
 %%% --- LOGIC ---
 
 new_state() ->
-    aere_repl:init_state().
+    new_state([]).
+new_state(Args) ->
+    Opts = proplists:get_value(options, Args, #{}),
+    aere_repl:init_state(Opts).
 
 process_input(Input, State = #repl_state{options = #{theme := Theme}}) ->
     #repl_response{

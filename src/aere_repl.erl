@@ -5,7 +5,7 @@
 
 -module(aere_repl).
 
--export([ init_state/0
+-export([ init_state/0, init_state/1
         , process_input/2
         ]).
 
@@ -24,6 +24,10 @@ init_options() ->
 
 -spec init_state() -> repl_state().
 init_state() ->
+    init_state(#{}).
+
+-spec init_state(repl_options()) -> repl_state().
+init_state(Opts) ->
     Trees0 = aec_trees:new(),
     {PK, Trees} = aere_chain:new_account(100000000000000000000000000000, Trees0),
     ChainState = aefa_chain_api:new(
@@ -37,7 +41,7 @@ init_state() ->
     S0 = #repl_state{
        blockchain_state = {ready, ChainState},
        repl_account     = PK,
-       options          = init_options(),
+       options          = maps:merge(init_options(), Opts),
        contract_state   = ?DEFAULT_CONTRACT_STATE
       },
     S1 = add_modules(default_loaded_files(), S0),
