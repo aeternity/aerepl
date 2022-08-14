@@ -6,3 +6,25 @@ datatype d = String
 
 :print types
 // d
+
+let x = 'c'
+
+:print vars
+// x : char
+
+let x = 1
+
+:print vars
+// x : int
+
+let y = 2
+
+:print vars
+// y : int
+// x : int
+
+let y = "string"
+
+:print vars
+// y : string
+// x : int
