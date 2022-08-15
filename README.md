@@ -41,7 +41,7 @@ make docker
 Then to start the dockerized REPL:
 
 ```
-docker run -i aeternity/aerepl
+docker run -i aeternity/aerepl:local
 ```
 
 # Basic usage
