@@ -24,7 +24,7 @@ init_options() ->
 
 -spec init_state() -> repl_state().
 init_state() ->
-    init_state(#{}).
+    init_state(init_options()).
 
 -spec init_state(repl_options()) -> repl_state().
 init_state(Opts) ->
@@ -499,7 +499,7 @@ print_state(#repl_state{
                options = Opts,
                loaded_files = Files,
                included_files = Incs
-            }, What) ->
+              }, What) ->
     PrintFuns =
         #{ "vars" => {fun aere_msg:list_vars/1, Vars},
            %% "funs" => {fun aere_msg:list_funs/1, Funs},
