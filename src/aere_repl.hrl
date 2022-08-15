@@ -7,6 +7,7 @@
         , call_value   := non_neg_integer()
         , print_format := print_format()
         , print_unit   := boolean()
+        , locked_opts  := [atom()]
         }.
 
 -type chain_state() :: {ready, aefa_chain_api:state()}

@@ -20,9 +20,6 @@ start_link(Args) ->
 init(Args) ->
     {ok, new_state(Args)}.
 
-handle_call({input, Input, UserState}, _From, State) ->
-    {Output, UserState1} = process_input(Input, UserState),
-    {reply, {Output, UserState1}, State};
 handle_call({input, Input}, _From, State) ->
     {Output, State1} = process_input(Input, State),
     {reply, Output, State1};

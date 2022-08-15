@@ -12,6 +12,7 @@
         , file_not_loaded/1
         , files_load_error/1
         , chain_not_ready/0
+        , locked_option/0
         , option_usage/1
         , list_vars/1
         , list_types/1
@@ -100,6 +101,10 @@ no_such_command(Command) ->
     [ aere_theme:output("No such command ")
     , aere_theme:command(io_lib:format("~p", [Command]))
     ].
+
+-spec locked_option() -> msg().
+locked_option() ->
+    [aere_theme:error("This option is locked.")].
 
 -spec command_usage(string() | atom(), string()) -> msg().
 command_usage(Command, Doc) when is_atom(Command) ->

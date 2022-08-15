@@ -481,6 +481,11 @@ get_ready_chain(_) ->
     throw({repl_error, aere_msg:chain_not_ready()}).
 
 set_option(Option, Args, S = #repl_state{options = Opts}) ->
+    Locked = maps:get(locked_opts, Opts, []),
+    case lists:member(Option, [locked_opts|Locked]) of
+        true -> throw({repl_error, aere_msg:locked_option()});
+        _ -> ok
+    end,
     case aere_options:parse_option(Option, Args) of
         error ->
             {aere_msg:option_usage(Option), S};
