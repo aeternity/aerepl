@@ -111,6 +111,8 @@ check_wololo(String) ->
 -spec apply_command(aere_parse:command(), string() | [string()], repl_state()) -> command_res().
 apply_command(quit, [], _) ->
     finish;
+apply_command(skip, [], State) ->
+    State;
 apply_command(reset, [], _) ->
     init_state();
 apply_command(type, I, State) ->
