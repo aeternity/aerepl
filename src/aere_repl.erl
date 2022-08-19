@@ -129,6 +129,8 @@ apply_command(type, I, State) ->
     {aere_msg:output(TypeStrClean), State};
 apply_command(state, I, State) ->
     set_state(aere_sophia:parse_body(I), State);
+apply_command(event, I, State) ->
+    set_event_type(aere_sophia:parse_typedef_variant(I), State);
 apply_command(eval, I, State) ->
     Parse = aere_sophia:parse_top(I),
     case Parse of
@@ -169,6 +171,16 @@ apply_command(continue, _, State = #repl_state{blockchain_state = BS}) ->
             StackS = io_lib:format("~p", [Stack]),
             {StackS, State}
     end.
+
+-spec set_event_type([aeso_syntax:type()], repl_state()) -> command_res().
+set_event_type(Type, S) ->
+    S#repl_state{event_type = Type,
+                 typedefs   = [],
+                 type_scope = [],
+                 vars       = [],
+                 funs       = #{},
+                 events     = []
+                }.
 
 -spec set_state([aeso_syntax:stmt()], repl_state()) -> command_res().
 set_state(Body, S0) ->
@@ -462,16 +474,18 @@ run_contract(ByteCode, S) ->
     ES = setup_fate_state(ByteCode, S),
     eval_state(ES, S).
 
-eval_state(ES0, S = #repl_state{contract_state = {StateType, _}}) ->
+eval_state(ES0, S = #repl_state{contract_state = {StateType, _}, events = Events}) ->
     try ES1 = aefa_fate:execute(ES0),
          {StateVal, ES2} = aefa_fate:lookup_var({var, -1}, ES1),
 
          Res       = aefa_engine_state:accumulator(ES2),
          ChainApi  = aefa_engine_state:chain_api(ES2),
+         NewEvents = aefa_engine_state:logs(ES2),
          UsedGas   = maps:get(call_gas, S#repl_state.options) - aefa_engine_state:gas(ES2) - 10, %% RETURN(R) costs 10
 
          {Res, UsedGas, S#repl_state{blockchain_state = {ready, ChainApi},
-                                     contract_state = {StateType, StateVal}
+                                     contract_state   = {StateType, StateVal},
+                                     events           = Events ++ NewEvents
                                     }}
     catch {aefa_fate, revert, ErrMsg, _} ->
             throw({revert, ErrMsg})
