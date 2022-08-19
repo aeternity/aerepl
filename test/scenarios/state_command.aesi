@@ -13,6 +13,8 @@ datatype dt = D(int)
 
 :state D(1)
 
+datatype d = S(state)
+
 let x = state
 
 datatype dt = X(int)
