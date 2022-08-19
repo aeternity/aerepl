@@ -72,6 +72,7 @@ scenarios() ->
     , type_command
     , state_command
     , print_command
+    , event_command
     ].
 
 %% Split a file into entries

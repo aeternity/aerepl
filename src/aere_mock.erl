@@ -87,7 +87,7 @@ type_unfold_contract(Types, State) ->
 -spec ast_fillup_contract(ast()) -> ast().
 ast_fillup_contract(Ast) ->
     % So we can safely add mock contract
-    un_main(Ast) ++ [contract(?MOCK_CONTRACT, ?DEFAULT_CONTRACT_STATE_T, [function_e(?USER_INPUT, [], {tuple, ann(), []})])].
+    un_main(Ast) ++ [contract(?MOCK_CONTRACT, ?DEFAULT_CONTRACT_STATE_T, none, [function_e(?USER_INPUT, [], {tuple, ann(), []})])].
 
 %% Puts a pattern as the value of a function. Used in collection of free variables
 %% TODO This is a hack because used_ids requires decl; should be a feature of aesophia
@@ -128,10 +128,10 @@ with_state_ast(State, Ast) ->
     Inc ++ Ns ++ Ast.
 
 -spec mock_contract(repl_state(), [decl()]) -> ast().
-mock_contract(State = #repl_state{contract_state = {StateT, _}}, Decls) ->
+mock_contract(State = #repl_state{contract_state = {StateT, _}, event_type = EventType}, Decls) ->
     with_state_ast(
       State,
-      [contract(?MOCK_CONTRACT, StateT, with_state_decls(State, Decls))]).
+      [contract(?MOCK_CONTRACT, StateT, EventType, with_state_decls(State, Decls))]).
 
 %%% --- Sophia construction helpers --- %%%
 
@@ -149,15 +149,24 @@ init() ->
 state_typedef(Type) ->
     type_def("state", [], {alias_t, Type}).
 
--spec contract(string() | con(), type(), list(decl())) -> decl().
-contract(Name, ContractState, Body) ->
-    contract(contract_main, ContractState, Name, Body).
+-spec event_typedef(typedef()) -> decl().
+event_typedef(Typedef) ->
+    type_def("event", [], Typedef).
 
--spec contract(contract_main | contract_interface, type(), string() | con(), list(decl())) -> decl().
-contract(ContractType, StateT, Name, Body) when is_list(Name) ->
-    contract(ContractType, StateT, {con, ann(), Name}, Body);
-contract(ContractType, StateT, Con, Body) ->
-    {ContractType, [payable, ann()], Con, [], [state_typedef(StateT), init() | Body]}.
+-spec contract(string() | con(), type(), event_type(), list(decl())) -> decl().
+contract(Name, ContractState, EventType, Body) ->
+    contract(contract_main, ContractState, EventType, Name, Body).
+
+-spec contract(contract_main | contract_interface, type(), event_type(), string() | con(), list(decl())) -> decl().
+contract(ContractType, StateT, EventT, Name, Body) when is_list(Name) ->
+    contract(ContractType, StateT, EventT, {con, ann(), Name}, Body);
+contract(ContractType, StateT, EventT, Con, Body) ->
+    EventTypedef =
+        case EventT of
+            none -> [];
+            _    -> [event_typedef(EventT)]
+        end,
+    {ContractType, [payable, ann()], Con, [], EventTypedef ++ [state_typedef(StateT), init() | Body]}.
 
 -spec namespace(string() | con(), list(decl())) -> decl().
 namespace(Name, Body) when is_list(Name) ->
