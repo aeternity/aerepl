@@ -68,7 +68,7 @@ tests() ->
       end} || TestScenario <- scenarios()].
 
 scenarios() ->
-    [ twoplustwo
+    [ basic_usage
     , type_command
     , state_command
     , print_command
