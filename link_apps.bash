@@ -1,7 +1,7 @@
 link_node_app () {
     if ! [ -d $REBAR_BUILD_DIR/lib/$1 ]
     then
-       ln -sdf $PWD/node/_build/dev1/lib/$1 $REBAR_BUILD_DIR/lib/$1;
+       ln -sf $PWD/node/_build/dev1/lib/$1 $REBAR_BUILD_DIR/lib/$1;
     fi
 }
 
