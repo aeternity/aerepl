@@ -1,0 +1,29 @@
+:load test/contracts/c.aes
+
+let x = 1
+
+datatype t = T
+
+function f(x) = x + 1
+// Warning: defining functions in REPL is WIP and may be unstable. 
+
+:print vars
+// f : (int) => int
+// x : int
+
+:print types
+// t
+
+:print includes
+// test/contracts/c.aes
+
+:load test/contracts/d.aes
+
+:print vars
+//
+
+:print types
+//
+
+:print includes
+// test/contracts/d.aes

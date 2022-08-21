@@ -36,17 +36,18 @@ commands() ->
     , {"load",
        {["l"], {min_args, 1}, "FILENAMES",
         [ "Loads files into the REPL. Adds the last file to the scope."
-        , "Cleans user variables and functions. Unloads previously loaded files."]
+        , "Cleans user variables, functions, types and contracts."
+        , "Unloads previously loaded files."]
        }}
     , {"reload",
        {["r"], many_args, "[FILENAMES]",
         [ "Reloads given files preserving the included scope."
-        , "Cleans user variables and functions."]
+        , "Cleans user variables, functions, types and contracts."]
        }}
     , {"add",
        {["a"], {min_args, 1}, "FILENAMES",
         [ "Loads files into the REPL without unloading previously loaded files."
-        , "Cleans user variables and functions."]
+        , "Cleans user variables, functions, types and contracts."]
        }}
     , {"set",
        {["s"], {min_args, 1}, "SETTING [SETTING_ARGS]",

@@ -73,6 +73,10 @@ scenarios() ->
     , state_command
     , print_command
     , event_command
+    , load_command
+    , reload_command
+    , add_command
+    , all_loading_commands
     ].
 
 %% Split a file into entries
