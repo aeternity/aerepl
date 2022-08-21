@@ -153,8 +153,6 @@ apply_command(load, Modules, State) ->
     load_modules(Modules, State);
 apply_command(reload, [], State) ->
     reload_modules(State);
-apply_command(module, Modules, State) ->
-    register_include(Modules, State);
 apply_command(set, [Option|Args], State) ->
     set_option(list_to_atom(Option), Args, State);
 apply_command(help, Arg, State) ->
