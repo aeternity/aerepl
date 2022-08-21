@@ -160,7 +160,12 @@ list_vars(Vars) ->
 
 -spec list_types([type_def()]) -> msg().
 list_types(Types) ->
-    TypesS = [ TName || {_, TName, _, _} <- Types],
+    TypesS = [ TName ++
+               case TArgs of
+                   [] -> " : type";
+                   _ -> " : (" ++ string:join(["type" || _ <- TArgs], ", ") ++ ") => type"
+               end
+	       || {_, TName, TArgs, _} <- Types],
     aere_theme:output(string:join(TypesS, "\n")).
 
 -spec list_options(repl_options()) -> msg().
