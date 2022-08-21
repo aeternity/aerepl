@@ -69,6 +69,8 @@ typedef_contract(Name, Args, Def, State) ->
 -spec type_unfold_contract(repl_state()) -> ast().
 type_unfold_contract(State = #repl_state{type_scope = TypeScope}) ->
     type_unfold_contract(TypeScope, State).
+
+-spec type_unfold_contract([type_scope()], repl_state()) -> ast().
 type_unfold_contract(Types, State) ->
     Aliases =
         [ begin
