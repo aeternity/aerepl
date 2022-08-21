@@ -172,7 +172,7 @@ apply_command(continue, _, State = #repl_state{blockchain_state = BS}) ->
             {StackS, State}
     end.
 
--spec set_event_type([aeso_syntax:type()], repl_state()) -> command_res().
+-spec set_event_type(aeso_syntax:typedef(), repl_state()) -> command_res().
 set_event_type(Type, S) ->
     S#repl_state{event_type = Type,
                  typedefs   = [],
