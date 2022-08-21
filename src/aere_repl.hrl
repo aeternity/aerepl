@@ -15,7 +15,7 @@
 
 -type contract_state() :: {aeso_syntax:type(), aeb_fate_data:fate_type()}.
 
--type event_type() :: aeso_syntax:type() | none.
+-type event_type() :: aeso_syntax:typedef() | none.
 
 -type var() :: {string(), aeso_syntax:type(), term()}.
 
