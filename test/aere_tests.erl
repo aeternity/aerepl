@@ -77,6 +77,7 @@ scenarios() ->
     , reload_command
     , add_command
     , all_loading_commands
+    , reset_command
     ].
 
 %% Split a file into entries
