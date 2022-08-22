@@ -59,9 +59,13 @@ Chain.event(E2("str"))
 type t = int
 
 :event E(t)
+// 1:4:Unbound type t.
 
-type t = string
-
-Chain.event(E(1))
+:event E(int)
 
 Chain.event(E("str"))
+// 1:13:Cannot unify `int` and `string`
+// when checking the application of
+//   `E : (int) => event`
+// to arguments
+//   `"str" : string`

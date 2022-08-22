@@ -174,13 +174,16 @@ apply_command(continue, _, State = #repl_state{blockchain_state = BS}) ->
 
 -spec set_event_type(aeso_syntax:typedef(), repl_state()) -> command_res().
 set_event_type(Type, S) ->
-    S#repl_state{event_type = Type,
-                 typedefs   = [],
-                 type_scope = [],
-                 vars       = [],
-                 funs       = #{},
-                 events     = []
-                }.
+    S1 = S#repl_state{event_type = Type,
+                      typedefs   = [],
+                      type_scope = [],
+                      vars       = [],
+                      funs       = #{},
+                      events     = []
+                     },
+    Contract = aere_mock:eval_contract([{tuple, aere_mock:ann(), []}], S1),
+    aere_sophia:typecheck(Contract),
+    S1.
 
 -spec set_state([aeso_syntax:stmt()], repl_state()) -> command_res().
 set_state(Body, S0) ->
