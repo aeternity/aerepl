@@ -306,7 +306,7 @@ register_include(Include, S0 = #repl_state{included_files = IncFiles, included_c
                          S0#repl_state{included_files = [Include|IncFiles], included_code = IncCode ++ Ast0}
                  end,
             Ast = aere_mock:eval_contract([{tuple, aere_mock:ann(), []}], S1),
-            aere_sophia:typecheck(Ast),
+            aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
             S1
     end.
 

@@ -2,9 +2,13 @@
 
 let x = 1
 
+function f(x) = x + 1
+// Warning: defining functions in REPL is WIP and may be unstable.
+
 datatype t = T
 
 :print vars
+// f : (int) => int
 // x : int
 
 :print types
