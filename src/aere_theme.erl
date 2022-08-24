@@ -150,7 +150,7 @@ render(Theme, ThemedTxt = {themed, _, _}) ->
     render(Theme, [ThemedTxt]);
 render(Theme, ThemedTxts) when is_list(ThemedTxts) ->
     AnsiStr = lists:flatten(lists:map(fun(T) -> apply_theme(Theme, T) end, ThemedTxts)),
-    string:trim(AnsiStr, both, unicode_util:whitespace()).
+    string:trim(AnsiStr, trailing, unicode_util:whitespace()).
 
 -spec apply_theme(theme(), themed_text()) -> string().
 apply_theme(Theme, {themed, ThemeCxt, Text}) ->

@@ -1,11 +1,13 @@
 {application, aerepl,
  [{description, "Read-Eval-Print Loop for Sophia"},
   {vsn, "2.0.0"},
+  {mod, {aerepl, []}},
   {registered, []},
   {applications,
    [kernel,
     stdlib,
-    aesophia]},
+    aesophia
+   ]},
   {env,[]},
   {modules, []},
   {links, []}

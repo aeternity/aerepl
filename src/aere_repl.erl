@@ -5,7 +5,7 @@
 
 -module(aere_repl).
 
--export([ init_state/0
+-export([ init_state/0, init_state/1
         , process_input/2
         ]).
 
@@ -24,6 +24,10 @@ init_options() ->
 
 -spec init_state() -> repl_state().
 init_state() ->
+    init_state(init_options()).
+
+-spec init_state(repl_options()) -> repl_state().
+init_state(Opts) ->
     Trees0 = aec_trees:new(),
     {PK, Trees} = aere_chain:new_account(100000000000000000000000000000, Trees0),
     ChainState = aefa_chain_api:new(
@@ -37,7 +41,7 @@ init_state() ->
     S0 = #repl_state{
        blockchain_state = {ready, ChainState},
        repl_account     = PK,
-       options          = init_options(),
+       options          = maps:merge(init_options(), Opts),
        contract_state   = ?DEFAULT_CONTRACT_STATE
       },
     S1 = add_modules(default_loaded_files(), S0),
@@ -107,6 +111,8 @@ check_wololo(String) ->
 -spec apply_command(aere_parse:command(), string() | [string()], repl_state()) -> command_res().
 apply_command(quit, [], _) ->
     finish;
+apply_command(skip, [], State) ->
+    State;
 apply_command(reset, [], _) ->
     init_state();
 apply_command(type, I, State) ->
@@ -477,6 +483,9 @@ get_ready_chain(_) ->
     throw({repl_error, aere_msg:chain_not_ready()}).
 
 set_option(Option, Args, S = #repl_state{options = Opts}) ->
+    Locked = maps:get(locked_opts, Opts, []),
+    LockedOption = lists:member(Option, [locked_opts|Locked]),
+    LockedOption andalso throw({repl_error, aere_msg:locked_option()}),
     case aere_options:parse_option(Option, Args) of
         error ->
             {aere_msg:option_usage(Option), S};
@@ -490,7 +499,7 @@ print_state(#repl_state{
                options = Opts,
                loaded_files = Files,
                included_files = Incs
-            }, What) ->
+              }, What) ->
     PrintFuns =
         #{ "vars" => {fun aere_msg:list_vars/1, Vars},
            %% "funs" => {fun aere_msg:list_funs/1, Funs},

@@ -12,6 +12,7 @@
         , file_not_loaded/1
         , files_load_error/1
         , chain_not_ready/0
+        , locked_option/0
         , option_usage/1
         , list_vars/1
         , list_types/1
@@ -101,6 +102,10 @@ no_such_command(Command) ->
     , aere_theme:command(io_lib:format("~p", [Command]))
     ].
 
+-spec locked_option() -> msg().
+locked_option() ->
+    [aere_theme:error("This option is locked.")].
+
 -spec command_usage(string() | atom(), string()) -> msg().
 command_usage(Command, Doc) when is_atom(Command) ->
     command_usage(atom_to_list(Command), Doc);
@@ -155,7 +160,12 @@ list_vars(Vars) ->
 
 -spec list_types([type_def()]) -> msg().
 list_types(Types) ->
-    TypesS = [ TName || {_, TName, _, _} <- Types],
+    TypesS = [ TName ++
+               case TArgs of
+                   [] -> " : type";
+                   _ -> " : (" ++ string:join(["type" || _ <- TArgs], ", ") ++ ") => type"
+               end
+	       || {_, TName, TArgs, _} <- Types],
     aere_theme:output(string:join(TypesS, "\n")).
 
 -spec list_options(repl_options()) -> msg().

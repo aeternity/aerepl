@@ -3,10 +3,9 @@
 -export([ parse/1, words/1, commands/0, resolve_command/1 ]).
 
 -type parse_result() :: {atom(), string() | [string()]}
-                      | no_return()
-                      | skip.
+                      | no_return().
 
--type command_scheme() :: none 
+-type command_scheme() :: none
                         | consume
                         | many_args
                         | {n_args, non_neg_integer()}
@@ -93,8 +92,8 @@ resolve_command(Cmd) ->
 -spec parse(string()) -> parse_result().
 parse(Input) ->
     case string:trim(Input) of
-        []  -> skip;
-        ":" -> skip;
+        []  -> {skip, []};
+        ":" -> {skip, []};
         [$:|CommandAndArgs] ->
             {CommandStr, ArgStr} = split_first_word(CommandAndArgs),
             case resolve_command(CommandStr) of
