@@ -1,4 +1,4 @@
-FROM aeternity/builder:1804 as builder
+FROM aeternity/builder:bionic-otp23 as builder
 
 ADD . /app
 ENV ERLANG_ROCKSDB_OPTS "-DWITH_SYSTEM_ROCKSDB=ON -DWITH_LZ4=ON -DWITH_SNAPPY=ON -DWITH_BZ2=ON -DWITH_ZSTD=ON"
