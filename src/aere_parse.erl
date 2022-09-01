@@ -78,6 +78,11 @@ commands() ->
         [ "Displays help about the command if the command is defined."
         , "Otherwise displays general help."]
        }}
+    , {"disas",
+       {["d"], {n_args, 1}, "FUNCTION_NAME|CONTRACT.FUNCTION_NAME",
+       [ "Prints FATE assembly of a function. Can be an in-REPL function"
+       , "or a function defined in a loaded or created contract or namespace."]
+       }}
     ].
 
 resolve_command(Cmd) ->

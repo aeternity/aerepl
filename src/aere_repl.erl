@@ -138,7 +138,7 @@ apply_command(eval, I, State) ->
             register_letfun(FName, Args, Body, State);
         [{type_def, _, Name, Args, Body}] ->
             register_typedef(Name, Args, Body, State);
-        _ -> error(too_many_shit)
+        _ -> error(too_much_stuff) %% FIXME
     end;
 apply_command(load, Modules, State) ->
     load_modules(Modules, State);
@@ -157,6 +157,9 @@ apply_command(help, Arg, State) ->
     end;
 apply_command(print, [What], State) ->
     {print_state(State, What), State};
+apply_command(disas, [What], State) ->
+    Fate = disassemble(What, State),
+    {aere_msg:output(lists:flatten(aeb_fate_asm:pp(Fate))), State};
 apply_command(continue, _, State = #repl_state{blockchain_state = BS}) ->
     case BS of
         {ready, _} ->
@@ -396,6 +399,52 @@ unfold_types_in_type(T, S0) ->
     TEnv1 = aeso_ast_infer_types:switch_scope([?MOCK_CONTRACT], TEnv),
     T1 = aeso_ast_infer_types:unfold_types_in_type(TEnv1, T),
     T1.
+
+-spec disassemble(string(), repl_state()) -> term(). %% -> bytecode
+disassemble(What, S0) ->
+    WhatP = parse_fun_ref(What),
+    case WhatP of
+        {deployed, Expr, Name} ->
+            Contract = aere_mock:eval_contract(Expr, S0),
+            {_, TAst} = aere_sophia:typecheck(Contract),
+            MockByteCode = aere_sophia:compile_contract(TAst),
+            {{contract, Pubkey}, _, S1} = run_contract(MockByteCode, S0),
+            Chain = aere_repl_state:chain_api(S1),
+            case aefa_chain_api:contract_fate_bytecode(Pubkey, Chain) of
+                error -> error(not_found);
+                {ok, Code, _, _} ->
+                    SerName = aeb_fate_code:symbol_identifier(binary:list_to_bin(Name)),
+                    extract_fun(Code, SerName)
+            end;
+        {definition, Id} ->
+            Contract = aere_mock:eval_contract(Id, S0),
+            {_, TAst} = aere_sophia:typecheck(Contract, [allow_higher_order_entrypoints]),
+            MockByteCode = aere_sophia:compile_contract(TAst),
+            {{tuple, {FName, _}}, _, _} = run_contract(MockByteCode, S0),
+            extract_fun(MockByteCode, FName);
+        {local, Name} -> error(not_supported)
+    end.
+
+extract_fun(Code, Name) ->
+    Functions = aeb_fate_code:functions(Code),
+    case maps:get(Name, Functions, not_found) of
+        not_found -> error(not_found_in_c);
+        _ ->
+            Functions1 = maps:filter(fun(F, _) -> F == Name end, Functions),
+            Code0 = aeb_fate_code:new(),
+            Code1 = aeb_fate_code:update_symbols(Code0, aeb_fate_code:symbols(Code)),
+            Code2 = aeb_fate_code:update_functions(Code1, Functions1),
+            Code2
+    end.
+
+parse_fun_ref(What) ->
+    What1 = aere_sophia:parse_body(What),
+    case What1 of
+        [{qid, _, _} = Qid] -> {definition, Qid};
+        [{id, _, Name}] -> {local, Name};
+        [{proj, _, Contr, {id, _, Name}}] -> {deployed, Contr, Name};
+        _ -> error({dupa, What1})
+    end.
 
 run_contract(ByteCode, S) ->
     ES = setup_fate_state(ByteCode, S),
