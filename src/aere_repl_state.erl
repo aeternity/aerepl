@@ -25,6 +25,9 @@
         , query_nonce/1, query_nonce/2
         ]).
 
+-export([ chain_api/1
+        ]).
+
 -spec blockchain_state(state()) -> chain_state().
 blockchain_state(S) ->
     S#repl_state.blockchain_state.
@@ -120,3 +123,11 @@ query_nonce(S) ->
 -spec query_nonce(non_neg_integer(), state()) -> state().
 query_nonce(X, S) ->
     S#repl_state{query_nonce = X}.
+
+%% Advanced getters
+
+-spec chain_api(state()) -> aefa_chain_api:state().
+chain_api(#repl_state{blockchain_state = {ready, Api}}) ->
+    Api;
+chain_api(#repl_state{blockchain_state = {breakpoint, ES}}) ->
+    aefa_engine_state:chain_api(ES).
