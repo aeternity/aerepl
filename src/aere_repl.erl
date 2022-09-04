@@ -410,7 +410,7 @@ disassemble(What, S0) ->
             {{contract, Pubkey}, _, S1} = run_contract(MockByteCode, S0),
             Chain = aere_repl_state:chain_api(S1),
             case aefa_chain_api:contract_fate_bytecode(Pubkey, Chain) of
-                error -> error(not_found);
+                error -> throw({repl_error, aere_msg:contract_not_found()});
                 {ok, Code, _, _} ->
                     SerName = aeb_fate_code:symbol_identifier(binary:list_to_bin(Name)),
                     extract_fun(Code, SerName)
@@ -428,7 +428,7 @@ disassemble(What, S0) ->
 extract_fun(Code, Name) ->
     Functions = aeb_fate_code:functions(Code),
     case maps:get(Name, Functions, not_found) of
-        not_found -> error(not_found_in_c);
+        not_found -> throw({repl_error, aere_msg:function_not_found_in(Name)});
         _ ->
             Functions1 = maps:filter(fun(F, _) -> F == Name end, Functions),
             Code0 = aeb_fate_code:new(),
@@ -444,7 +444,7 @@ parse_fun_ref(What) ->
         [{qid, _, _} = Qid] -> {definition, Qid};
         [{id, _, Name}] -> {local, Name};
         [{proj, _, Contr, {id, _, Name}}] -> {deployed, Contr, Name};
-        _ -> error({dupa, What1})
+        _ -> throw({repl_error, aere_msg:bad_fun_ref()})
     end.
 
 run_contract(ByteCode, S) ->

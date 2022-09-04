@@ -20,6 +20,9 @@
         , list_loaded_files/1
         , list_includes/1
         , list_unknown/1
+        , bad_fun_ref/0
+        , contract_not_found/0
+        , function_not_found_in/1
         , help/0, help/1
         , bye/0
         ]).
@@ -189,6 +192,18 @@ list_includes(Incs) ->
 -spec list_unknown([string()]) -> msg().
 list_unknown(ToList) ->
     aere_theme:error("Possible items to print: " ++ string:join(ToList, ", ")).
+
+-spec bad_fun_ref() -> msg().
+bad_fun_ref() ->
+    aere_theme:error("Could not parse a function reference.").
+
+-spec contract_not_found() -> msg().
+contract_not_found() ->
+    aere_theme:error("This contract is not deployed in the REPL context.").
+
+-spec function_not_found_in(binary()) -> msg().
+function_not_found_in(Name) ->
+    aere_theme:error("This contract does not have a function of hash name " ++ binary:bin_to_list(Name) ++ ".").
 
 -spec bye() -> msg().
 bye() -> aere_theme:output("bye!").
