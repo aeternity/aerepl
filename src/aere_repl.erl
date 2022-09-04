@@ -402,8 +402,7 @@ unfold_types_in_type(T, S0) ->
 
 -spec disassemble(string(), repl_state()) -> term(). %% -> bytecode
 disassemble(What, S0) ->
-    WhatP = parse_fun_ref(What),
-    case WhatP of
+    case parse_fun_ref(What) of
         {deployed, Expr, Name} ->
             Contract = aere_mock:eval_contract(Expr, S0),
             {_, TAst} = aere_sophia:typecheck(Contract),
