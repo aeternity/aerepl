@@ -249,7 +249,7 @@ read_modules(Modules) ->
 
     OkFiles =
         [ begin
-              Ast0 = aeso_parser:string(binary:bin_to_list(File)),
+              Ast0 = aere_sophia:parse_file(File, []),
               aere_sophia:typecheck(aere_mock:ast_fillup_contract(Ast0)),
               File
           end
@@ -422,7 +422,7 @@ disassemble(What, S0) ->
             MockByteCode = aere_sophia:compile_contract(TAst),
             {{tuple, {FName, _}}, _, _} = run_contract(MockByteCode, S0),
             extract_fun(MockByteCode, FName);
-        {local, Name} -> error(not_supported)
+        {local, _Name} -> throw(not_supported)
     end.
 
 extract_fun(Code, Name) ->
