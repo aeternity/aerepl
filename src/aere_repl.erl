@@ -425,6 +425,7 @@ disassemble(What, S0) ->
         {local, _Name} -> throw(not_supported)
     end.
 
+-spec extract_fun(aeb_fate_code:fcode(), binary()) -> aeb_fate_code:fcode().
 extract_fun(Code, Name) ->
     Functions = aeb_fate_code:functions(Code),
     case maps:get(Name, Functions, not_found) of
