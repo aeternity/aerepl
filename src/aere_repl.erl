@@ -438,6 +438,7 @@ extract_fun(Code, Name) ->
             Code2
     end.
 
+-spec parse_fun_ref(string()) -> fun_ref().
 parse_fun_ref(What) ->
     What1 = aere_sophia:parse_body(What),
     case What1 of
