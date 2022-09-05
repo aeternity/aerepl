@@ -12,6 +12,10 @@
 -include("aere_repl.hrl").
 -include("aere_macros.hrl").
 
+-type fun_ref() :: {definition, aeso_syntax:qid()}
+                 | {local, aeso_syntax:name()}
+                 | {deployed, aeso_syntax:expr(), aeso_syntax:name()}.
+
 -spec init_options() -> repl_options().
 init_options() ->
     #{ theme => aere_theme:default_theme()
