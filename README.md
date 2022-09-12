@@ -125,10 +125,9 @@ be used:
 AESO> include "List.aes"
 ```
 
-Note that `:load` reloads all listed files and unloads those skipped. If you
-want to add another file without unloading the rest, use `:add`. Yet another
-useful command is `:reload`, which reloads all loaded files, preserving the
-included scope.
+Note that `:load` reloads all listed files and unloads those skipped. Yet
+another useful command is `:reload`, which reloads all loaded files, preserving
+the included scope.
 
 ```
 AESO> :load X.aes Y.aes
@@ -141,8 +140,7 @@ AESO> X.x()  // Now it works
 "x"
 ```
 
-`:load`, `:add` and `:reload` clear out the scope, meaning that they will
-clean
+`:load` and `:reload` clear out the scope, meaning that they will clean
 
 - User defined variables
 - User defined functions

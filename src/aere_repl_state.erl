@@ -7,7 +7,7 @@
 %% We want to keep the record definition available for internal use.
 -include("aere_repl.hrl").
 
--opaque state() :: repl_state().
+-type state() :: repl_state().
 
 -export_type([state/0]).
 
