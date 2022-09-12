@@ -7,6 +7,7 @@
 
 -export([ init_state/0, init_state/1
         , process_input/2
+        , register_modules/2, default_loaded_files/0
         ]).
 
 -include("aere_repl.hrl").
@@ -48,8 +49,7 @@ init_state(Opts) ->
        options          = maps:merge(init_options(), Opts),
        contract_state   = ?DEFAULT_CONTRACT_STATE
       },
-    S1 = add_modules(default_loaded_files(), S0),
-    S1.
+    S0.
 
 %% Process an input string in the current state of the repl and respond accordingly
 %% This is supposed to be called after each input to the repl
@@ -146,10 +146,8 @@ apply_command(eval, I, State) ->
     end;
 apply_command(load, Modules, State) ->
     load_modules(Modules, State);
-apply_command(reload, Modules, State) ->
-    reload_modules(Modules, State);
-apply_command(add, Modules, State) ->
-    add_modules(Modules, State);
+apply_command(reload, [], State) ->
+    reload_modules(State);
 apply_command(module, Modules, State) ->
     register_include(Modules, State);
 apply_command(set, [Option|Args], State) ->
@@ -214,25 +212,18 @@ format_value(sophia, TEnv, Type, Val) ->
 format_value(json, TEnv, Type, Val) ->
     aere_sophia:format_value(json, TEnv, Type, Val).
 
-load_modules(Modules, S0) ->
-    S1 = S0#repl_state{loaded_files = #{}},
-    S2 = add_modules(default_loaded_files() ++ Modules, S1),
-    register_include(lists:last(Modules), S2).
-
-reload_modules([], S0 = #repl_state{loaded_files = LdFiles}) ->
-    reload_modules(maps:keys(LdFiles), S0);
-reload_modules(Modules, S0 = #repl_state{included_files = IncFiles}) ->
-    S1 = add_modules(Modules -- default_loaded_files(), S0),
-    S2 = lists:foldl(fun register_include/2, S1, IncFiles),
+load_modules([], S0) ->
+    S0;
+load_modules(Filenames, S0) ->
+    Modules = read_files(Filenames),
+    S1 = register_modules(Modules, S0),
+    S2 = register_include(element(1, lists:last(Modules)), S1),
     S2.
 
-add_modules([], S0) ->
-    S0; %% Can happen
-add_modules(Modules, S0 = #repl_state{loaded_files = LdFiles}) ->
-    Files = read_modules(Modules),
-
-    S1 = clear_context(S0),
-    S2 = S1#repl_state{loaded_files = maps:merge(LdFiles, maps:from_list(lists:zip(Modules, Files)))},
+reload_modules(S0 = #repl_state{loaded_files = LdFiles, included_files = IncFiles}) ->
+    Modules = read_files(maps:keys(LdFiles)),
+    S1 = register_modules(Modules, S0),
+    S2 = lists:foldl(fun register_include/2, S1, IncFiles),
     S2.
 
 % Reads files either from working dir or stdlib
@@ -243,24 +234,30 @@ read_file(Filename) ->
         Res -> Res
     end.
 
-read_modules(Modules) ->
-    Files = [read_file(M) || M <- Modules],
+read_files(Filenames) ->
+    Files = [read_file(F) || F <- Filenames],
 
-    case [{File, file:format_error(Err)} || {File, {error, Err}} <- lists:zip(Modules, Files)] of
+    case [{File, file:format_error(Err)} || {File, {error, Err}} <- lists:zip(Filenames, Files)] of
         []     -> ok;
         Failed -> throw({repl_error, aere_msg:files_load_error(Failed)})
     end,
 
-    OkFiles =
-        [ begin
-              Ast0 = aere_sophia:parse_file(File, []),
-              aere_sophia:typecheck(aere_mock:ast_fillup_contract(Ast0)),
-              File
-          end
-          || {ok, File} <- Files
-        ],
+    lists:zip(Filenames, [File || {ok, File} <- Files]).
 
-    OkFiles.
+-spec register_modules([{string(), binary()}], repl_state()) -> command_res().
+register_modules(Modules, S0) ->
+    FileMap = maps:from_list(Modules),
+    [ begin
+          Ast0 = aere_sophia:parse_file(File, []),
+          aere_sophia:typecheck(aere_mock:ast_fillup_contract(Ast0)),
+          File
+      end
+      || {_, File} <- Modules
+    ],
+
+    S1 = clear_context(S0),
+    S2 = S1#repl_state{loaded_files = FileMap},
+    S2.
 
 %% Removes all variables, functions, types and contracts
 clear_context(S0 = #repl_state{vars = Vars}) ->
@@ -280,14 +277,18 @@ clear_context(S0 = #repl_state{vars = Vars}) ->
 register_include(Include, S0) when is_binary(Include) ->
     register_include(binary:bin_to_list(Include), S0);
 register_include(Include, S0 = #repl_state{included_files = IncFiles, included_code = IncCode, loaded_files = LdFiles}) ->
-    case maps:get(Include, LdFiles, not_loaded) of
+    case maps:get(Include, maps:merge(default_loaded_files(), LdFiles), not_loaded) of
         not_loaded ->
             throw({repl_error, aere_msg:file_not_loaded(Include)});
         File ->
             S1 = case lists:member(Include, IncFiles) of
                      true -> S0;
                      false ->
-                         IncludeSet = sets:from_list([{FName, Code} || {FName, Code} <- maps:to_list(LdFiles), lists:member(FName, IncFiles)]),
+                         IncludeSet = sets:from_list(
+                                        [ {FName, Code} ||
+                                            {FName, Code} <- maps:to_list(LdFiles),
+                                            lists:member(FName, IncFiles)
+                                        ]),
                          {Ast0, _IncludeSet1} = aere_sophia:parse_file(File, IncludeSet, [keep_included]),
                          S0#repl_state{included_files = [Include|IncFiles], included_code = IncCode ++ Ast0}
                  end,
@@ -522,14 +523,22 @@ setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, 
 bump_nonce(S = #repl_state{query_nonce = N}) ->
     S#repl_state{query_nonce = N + 1}.
 
+-spec default_loaded_files() -> #{string() => binary()}.
 default_loaded_files() ->
-    StdlibDir = aeso_stdlib:stdlib_include_path(),
-    Files =
-        [ File ||
-            File <- element(2, file:list_dir(StdlibDir)),
-            filename:extension(File) =:= ".aes"
-        ],
-    Files.
+    case get(aere_default_loaded_files) of
+        undefined ->
+            StdlibDir = aeso_stdlib:stdlib_include_path(),
+            Files =
+                [ File ||
+                    File <- element(2, file:list_dir(StdlibDir)),
+                    filename:extension(File) =:= ".aes"
+                ],
+            FileMap = maps:from_list(read_files(Files)),
+            put(aere_default_loaded_files, FileMap),
+            FileMap;
+        Files ->
+            Files
+    end.
 
 get_ready_chain(#repl_state{blockchain_state = {ready, Chain}}) ->
     Chain;
