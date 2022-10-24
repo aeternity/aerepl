@@ -58,7 +58,7 @@ process_input(State, String) when is_binary(String) ->
     process_input(State, binary_to_list(String));
 process_input(State, String) ->
     check_wololo(String),
-    try {Command, Args} = aere_parse:parse(String)
+    try {Command, Args} = aere_parse:parse(String),
         apply_command(Command, Args, bump_nonce(State))
     of
         {Out, State1 = #repl_state{}} ->
