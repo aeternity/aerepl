@@ -15,6 +15,8 @@
 
 -type contract_state() :: {aeso_syntax:type(), aeb_fate_data:fate_type()}.
 
+-type event_type() :: aeso_syntax:typedef() | none.
+
 -type var() :: {string(), aeso_syntax:type(), term()}.
 
 -type type_def() :: {string(), string(), [aeso_syntax:tvar()], aeso_syntax:typedef()}.
@@ -29,6 +31,8 @@
         , repl_account         :: binary()
         , options              :: repl_options()
         , contract_state       :: contract_state()
+        , event_type  = none   :: event_type()
+        , events      = []     :: [term()]
         , vars        = []     :: [var()]
         , funs        = #{}    :: #{binary() => term()}
         , typedefs    = []     :: [type_def()]

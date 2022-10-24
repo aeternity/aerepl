@@ -3,7 +3,7 @@
 -export([ typecheck/2, typecheck/1, parse_file/2, parse_file/3, compile_contract/1
         , parse_body/1, parse_top/2
         , parse_decl/1, parse_top/1, parse_type/1, type_of_user_input/1
-        , process_err/1, format_value/4
+        , process_err/1, format_value/4, parse_typedef_variant/1
         ]).
 
 -include("../_build/default/lib/aesophia/src/aeso_parse_lib.hrl").
@@ -72,6 +72,8 @@ parse_body(I) ->
        end).
 parse_type(I) ->
     ?with_error_handle(aeso_parser:run_parser(aeso_parser:type(), I)).
+parse_typedef_variant(I) ->
+    ?with_error_handle(aeso_parser:run_parser(aeso_parser:typedef(variant), I)).
 parse_file(I, Opts) ->
     parse_file(I, sets:new(), Opts).
 parse_file(I, Includes, Opts) when is_binary(I) ->

@@ -77,6 +77,7 @@ scenarios() ->
     , all_loading_commands
     , reset_command
     , options_setting
+    , event_command
     ].
 
 %% Split a file into entries
@@ -110,7 +111,7 @@ split_raw_entry({raw_entry, EntryLines}) ->
     {Input, Output} = lists:splitwith(IsNotComment, EntryLines),
     UncommentOutput = [ string:trim(OutputLine, leading, "/")
                         || OutputLine <- Output ],
-    CleanOutput = [ string:trim(OutputLine, leading, unicode_util:whitespace())
+    CleanOutput = [ lists:nthtail(min(length(OutputLine), 1), OutputLine)
                     || OutputLine <- UncommentOutput ],
     #entry{ input  = lists:flatten(lists:join("\n", Input))
           , output = lists:flatten(lists:join("\n", CleanOutput)) }.
