@@ -179,7 +179,7 @@ list_types(Types) ->
                    _ -> " : (" ++ string:join(["type" || _ <- TArgs], ", ") ++ ") => type"
                end
 	       || {_, TName, TArgs, _} <- Types],
-    UniqTypesS = sets:to_list(sets:from_list(TypesS)),
+    UniqTypesS = lists:usort(TypesS),
     aere_theme:output(string:join(UniqTypesS, "\n")).
 
 -spec list_options(repl_options()) -> msg().
