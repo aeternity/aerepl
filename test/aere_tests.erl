@@ -68,7 +68,15 @@ tests() ->
       end} || TestScenario <- scenarios()].
 
 scenarios() ->
-    [ twoplustwo
+    [ basic_usage
+    , type_command
+    , state_command
+    , print_command
+    , load_command
+    , reload_command
+    , all_loading_commands
+    , reset_command
+    , options_setting
     ].
 
 %% Split a file into entries

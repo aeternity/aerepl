@@ -1,0 +1,60 @@
+:load test/contracts/c.aes
+
+let x = 1
+
+let y = 2
+
+type al = int
+
+datatype t = T
+
+include "List.aes"
+
+function f(x) = x + 1
+// Warning: defining functions in REPL is WIP and may be unstable. 
+
+:set call_value 100
+
+:print vars
+// f : (int) => int
+// y : int
+// x : int
+
+:print types
+// al : type
+// t : type
+
+:print includes
+// List.aes
+// test/contracts/c.aes
+
+:print files
+// test/contracts/c.aes
+
+:print options
+// call_gas = 100000000000000000
+// call_value = 100
+// display_gas = false
+// print_format = sophia
+// print_unit = false
+
+:reset
+
+:print vars
+//
+
+:print types
+//
+
+:print includes
+//
+
+:print files
+//
+
+:print options
+// call_gas = 100000000000000000
+// call_value = 0
+// display_gas = false
+// print_format = sophia
+// print_unit = false

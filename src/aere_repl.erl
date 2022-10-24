@@ -59,7 +59,7 @@ process_input(State, String) when is_binary(String) ->
 process_input(State, String) ->
     check_wololo(String),
     try {Command, Args} = aere_parse:parse(String),
-         apply_command(Command, Args, bump_nonce(State))
+        apply_command(Command, Args, bump_nonce(State))
     of
         {Out, State1 = #repl_state{}} ->
             #repl_response
@@ -85,24 +85,24 @@ process_input(State, String) ->
                 , warnings = []
                 , status = internal_error
                 };
-          {repl_error, E} ->
-            #repl_response
-                { output = E
-                , warnings = []
-                , status = error
-                };
-          {revert, Err} ->
-            #repl_response
-                { output = aere_msg:abort(Err)
-                , warnings = []
-                , status = error
-                };
-          {aefa_fate, FateErr, _} ->
-            #repl_response
-                { output = aere_msg:error("FATE error: " ++ FateErr)
-                , warnings = []
-                , status = error
-                }
+            {repl_error, E} ->
+                #repl_response
+                    { output = E
+                    , warnings = []
+                    , status = error
+                    };
+            {revert, Err} ->
+                #repl_response
+                    { output = aere_msg:abort(Err)
+                    , warnings = []
+                    , status = error
+                    };
+            {aefa_fate, FateErr, _} ->
+                #repl_response
+                    { output = aere_msg:error("FATE error: " ++ FateErr)
+                    , warnings = []
+                    , status = error
+                    }
     end.
 
 %% Easter egg, don't ask.
@@ -148,8 +148,6 @@ apply_command(load, Modules, State) ->
     load_modules(Modules, State);
 apply_command(reload, [], State) ->
     reload_modules(State);
-apply_command(module, Modules, State) ->
-    register_include(Modules, State);
 apply_command(set, [Option|Args], State) ->
     set_option(list_to_atom(Option), Args, State);
 apply_command(help, Arg, State) ->
@@ -293,7 +291,7 @@ register_include(Include, S0 = #repl_state{included_files = IncFiles, included_c
                          S0#repl_state{included_files = [Include|IncFiles], included_code = IncCode ++ Ast0}
                  end,
             Ast = aere_mock:eval_contract([{tuple, aere_mock:ann(), []}], S1),
-            aere_sophia:typecheck(Ast),
+            aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
             S1
     end.
 
@@ -303,8 +301,10 @@ register_letval(Pat, Expr, S0 = #repl_state{funs = Funs}) ->
                 fun(Var) -> Var /= "_" end,
                 aeso_syntax_utils:used_ids([aere_mock:pat_as_decl(Pat)])),
     Ast = aere_mock:letval_contract(Pat, NewVars, Expr, S0),
-    {TEnv, TypedAst} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
-    ByteCode = aere_sophia:compile_contract(TypedAst),
+    {TEnv, _} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints, dont_unfold]),
+    %% TODO: Try to get TypedAstUnfolded without runnning the typechecker a second time
+    {_, TypedAstUnfolded} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
+    ByteCode = aere_sophia:compile_contract(TypedAstUnfolded),
 
     {Vals, Types, S1} =
         case NewVars of
@@ -382,6 +382,12 @@ replace_function_name(E, _) ->
 
 -spec register_typedef(aeso_syntax:id(), [aeso_syntax:tvar()], aeso_syntax:typedef(), repl_state()) -> command_res().
 register_typedef({id, _, Name}, Args, Def, S0 = #repl_state{query_nonce = Nonce, typedefs = TypeDefs, type_scope = TypeScope}) ->
+    case Name of
+        "state" -> throw({repl_error, aere_msg:state_typedef()});
+        "event" -> throw({repl_error, aere_msg:event_typedef()});
+        _       -> ok
+    end,
+
     NamespaceName = ?TYPE_CONTAINER(Nonce),
 
     TypeScope1 = proplists:delete(Name, TypeScope),

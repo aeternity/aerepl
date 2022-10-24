@@ -1,0 +1,28 @@
+datatype state = ST(int)
+// Cannot define a state type. Use :state to set the value of the state.
+
+:state ST(1)
+// 1:2:Unbound variable `ST`
+
+:state 1
+
+:type state
+// int
+
+datatype dt = D(int)
+
+:state D(1)
+
+datatype d = S(state)
+
+let x = state
+
+datatype dt = X(int)
+
+x
+// D(1)
+
+:state X(1)
+
+:t x
+// 1:2:Unbound variable `x`

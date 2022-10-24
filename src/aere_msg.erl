@@ -11,6 +11,8 @@
         , bad_command_args/2
         , file_not_loaded/1
         , files_load_error/1
+        , state_typedef/0
+        , event_typedef/0
         , chain_not_ready/0
         , locked_option/0
         , option_usage/1
@@ -139,6 +141,14 @@ files_load_error(Failed) ->
     FlatList = lists:flatten(lists:join(aere_theme:output("\n"), FilesAndReasons)),
     [aere_theme:error("Could not load files:\n") | FlatList].
 
+-spec state_typedef() -> msg().
+state_typedef() ->
+    [aere_theme:error("Cannot define a state type. Use :state to set the value of the state.")].
+
+-spec event_typedef() -> msg().
+event_typedef() ->
+    [aere_theme:error("Cannot define an event type. Use :event to set the value of the event.")].
+
 -spec option_usage(atom()) -> msg().
 option_usage(Option) ->
     case proplists:get_value(Option, aere_options:option_parse_rules(), unknown) of
@@ -169,7 +179,8 @@ list_types(Types) ->
                    _ -> " : (" ++ string:join(["type" || _ <- TArgs], ", ") ++ ") => type"
                end
 	       || {_, TName, TArgs, _} <- Types],
-    aere_theme:output(string:join(TypesS, "\n")).
+    UniqTypesS = lists:usort(TypesS),
+    aere_theme:output(string:join(UniqTypesS, "\n")).
 
 -spec list_options(repl_options()) -> msg().
 list_options(Opts) ->

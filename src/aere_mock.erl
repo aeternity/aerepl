@@ -69,6 +69,8 @@ typedef_contract(Name, Args, Def, State) ->
 -spec type_unfold_contract(repl_state()) -> ast().
 type_unfold_contract(State = #repl_state{type_scope = TypeScope}) ->
     type_unfold_contract(TypeScope, State).
+
+-spec type_unfold_contract([type_scope()], repl_state()) -> ast().
 type_unfold_contract(Types, State) ->
     Aliases =
         [ begin
@@ -192,9 +194,7 @@ function_e(Attrs, Id, Args, Body) ->
     function(Attrs, Id, Args, [{guarded, ann(), [], Body}]).
 
 %% Function constructor with guarded body
--spec function(ann(), string() | id(), [string() | pat()], [guarded_expr()]) -> decl().
-function(Attrs, Name, Args, Body) when is_list(Name) ->
-    function(Attrs, {id, ann(), Name}, Args, Body);
+-spec function(ann(), id(), [string() | pat()], [guarded_expr()]) -> decl().
 function(Attrs, Id, Args, Clauses) ->
     { letfun
     , ann() ++ [A || A <- Attrs]

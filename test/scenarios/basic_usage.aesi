@@ -1,0 +1,43 @@
+:set display_gas true
+//
+
+2 + 2
+// 4
+// USED GAS: 41
+
+:set display_gas false
+//
+
+2 + 1 + 1
+// 4
+
+:b 121
+// No such command "b"
+
+:
+//
+
+:load nonexistent_file.aes
+// Could not load files:
+// nonexistent_file.aes: no such file or directory
+
+type t1 = int
+
+type t2('a) = list('a)
+
+type t3('a) = t2('a)
+
+let e1 = 1
+
+let [e2, e3] : t3(t1) = [2, 3]
+
+e1 + e2 + e3
+// 6 
+
+include "List.aes"
+
+List.map((x) => x + 1, [1, 2, 3])
+// [2, 3, 4]
+
+function g(x) = x * 10
+// Warning: defining functions in REPL is WIP and may be unstable. 
