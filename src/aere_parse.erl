@@ -64,11 +64,6 @@ commands() ->
         , "cannot be adjusted using the put function."
         , "Cleans user variables and functions."]
        }}
-    , {"event",
-       {["ev"], consume, "SOPHIA_TYPE",
-        [ "Changes the in-REPL event type. Expects a Sophia variant type."
-        , "Cleans user variables, functions, typedefs, type scopes, and older events."]
-       }}
     , {"print",
        {["p"], {n_args, 1}, "WHAT",
         [ "Prints REPL state. The argument determines what component is to be printed."

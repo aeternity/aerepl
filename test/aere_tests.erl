@@ -72,7 +72,6 @@ scenarios() ->
     , type_command
     , state_command
     , print_command
-    , event_command
     , load_command
     , reload_command
     , add_command
@@ -112,7 +111,7 @@ split_raw_entry({raw_entry, EntryLines}) ->
     {Input, Output} = lists:splitwith(IsNotComment, EntryLines),
     UncommentOutput = [ string:trim(OutputLine, leading, "/")
                         || OutputLine <- Output ],
-    CleanOutput = [ lists:nthtail(min(length(OutputLine), 1), OutputLine)
+    CleanOutput = [ string:trim(OutputLine, leading, unicode_util:whitespace())
                     || OutputLine <- UncommentOutput ],
     #entry{ input  = lists:flatten(lists:join("\n", Input))
           , output = lists:flatten(lists:join("\n", CleanOutput)) }.
