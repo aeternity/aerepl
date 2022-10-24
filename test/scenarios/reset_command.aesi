@@ -1,4 +1,4 @@
-:add test/contracts/c.aes
+:load test/contracts/c.aes
 
 let x = 1
 
@@ -21,24 +21,14 @@ function f(x) = x + 1
 // x : int
 
 :print types
-// al
-// t
+// al : type
+// t : type
 
 :print includes
 // List.aes
+// test/contracts/c.aes
 
 :print files
-// BLS12_381.aes
-// Bitwise.aes
-// Frac.aes
-// Func.aes
-// List.aes
-// ListInternal.aes
-// Option.aes
-// Pair.aes
-// Set.aes
-// String.aes
-// Triple.aes
 // test/contracts/c.aes
 
 :print options
@@ -60,17 +50,7 @@ function f(x) = x + 1
 //
 
 :print files
-// BLS12_381.aes
-// Bitwise.aes
-// Frac.aes
-// Func.aes
-// List.aes
-// ListInternal.aes
-// Option.aes
-// Pair.aes
-// Set.aes
-// String.aes
-// Triple.aes
+//
 
 :print options
 // call_gas = 100000000000000000

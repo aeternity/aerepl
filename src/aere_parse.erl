@@ -44,11 +44,6 @@ commands() ->
         [ "Reloads given files preserving the included scope."
         , "Cleans user variables, functions, types and contracts."]
        }}
-    , {"add",
-       {["a"], {min_args, 1}, "FILENAMES",
-        [ "Loads files into the REPL without unloading previously loaded files."
-        , "Cleans user variables, functions, types and contracts."]
-       }}
     , {"set",
        {["s"], {min_args, 1}, "SETTING [SETTING_ARGS]",
         [ "Configures REPL environment and behavior. "

@@ -74,7 +74,6 @@ scenarios() ->
     , print_command
     , load_command
     , reload_command
-    , add_command
     , all_loading_commands
     , reset_command
     , options_setting

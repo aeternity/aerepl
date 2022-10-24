@@ -12,7 +12,7 @@ function f(x) = x + 1
 // x : int
 
 :print types
-// t
+// t : type
 
 :print includes
 // test/contracts/c.aes

@@ -5,7 +5,7 @@ datatype d = Char
 datatype d = String
 
 :print types
-// d
+// d : type
 
 let x = 'c'
 
