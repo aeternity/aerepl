@@ -7,7 +7,7 @@ load_paths() ->
     Paths = filelib:wildcard(
               "_build/prod/lib/*/ebin/",
               filename:dirname(escript:script_name())),
-    [code:add_pathz(Path) || Path <- Paths],
+    [code:add_pathz(Path) orelse error({not_found, Path}) || Path <- Paths],
     ok.
 
 main(_Args) ->
@@ -22,14 +22,19 @@ start() ->
 
 loop() ->
     Inp = get_input(),
-    {Status, Out} = aere_gen_server:input(Inp),
-    print_msg(Out),
-    case Status of
-        finish -> ok;
-        skip -> loop();
-        ok -> loop();
-        error -> loop();
-        internal_error -> loop()
+    try aere_gen_server:input(Inp) of
+        {Status, Out} ->
+            print_msg(Out),
+            case Status of
+                finish -> ok;
+                skip -> loop();
+                ok -> loop();
+                error -> loop();
+                internal_error -> loop()
+            end
+    catch _:E:Stack ->
+            print_msg(aere_theme:render(aere_msg:internal(E, Stack))),
+            loop()
     end.
 
 print_msg("") -> ok;
