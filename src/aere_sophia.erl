@@ -11,6 +11,26 @@
 
 -include("aere_macros.hrl").
 
+optimizations_off() ->
+    [ {optimize_inliner, false},
+      {optimize_inline_local_functions, false},
+      {optimize_bind_subexpressions, false},
+      {optimize_let_floating, false},
+      {optimize_simplifier, false},
+      {optimize_drop_unused_lets, false},
+      {optimize_push_consume, false},
+      {optimize_one_shot_var, false},
+      {optimize_write_to_dead_var, false},
+      {optimize_inline_switch_target, false},
+      {optimize_swap_push, false},
+      {optimize_swap_pop, false},
+      {optimize_swap_write, false},
+      {optimize_constant_propagation, false},
+      {optimize_prune_impossible_branches, false},
+      {optimize_single_successful_branch, false},
+      {optimize_inline_store, false},
+      {optimize_float_switch_bod, false} ].
+
 process_err(Errs) when is_list(Errs) ->
     throw({repl_error, aere_msg:error(lists:concat([aeso_errors:err_msg(E) || E <- Errs]))});
 process_err(E) -> %% idk, rethrow
@@ -28,10 +48,13 @@ typecheck(Ast, Opts) ->
     end.
 
 compile_contract(TypedAst) ->
-    {#{child_con_env := ChildConEnv}, FCode}
-        = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, [])
+    Opts = [debug_info | optimizations_off()],
+    {#{child_con_env := ChildConEnv, saved_fresh_names := SavedFreshNames}, FCode}
+        = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, Opts)
           catch {error, Ec} -> process_err(Ec) end,
-    try aeso_fcode_to_fate:compile(ChildConEnv, FCode, [])
+    try
+        {ByteCode, _} = aeso_fcode_to_fate:compile(ChildConEnv, FCode, SavedFreshNames, Opts),
+        ByteCode
     catch {error, Ef} -> process_err(Ef) end.
 
 type_of_user_input(TEnv) ->
