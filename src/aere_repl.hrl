@@ -37,6 +37,7 @@
         , included_files = []  :: [string()] % Files included in the context
         , included_code = []   :: aeso_syntax:ast() % Cached AST of the included files
         , query_nonce = 0      :: non_neg_integer()
+        , breakpoints          :: sets:set()  %% TODO: Add the type of the breakpoint
         }).
 -type repl_state() :: #repl_state{}.
 

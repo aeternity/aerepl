@@ -79,6 +79,9 @@ commands() ->
        [ "Prints FATE assembly of a function. Can be an in-REPL function"
        , "or a function defined in a loaded or created contract or namespace."]
        }}
+    , {"break",
+        {["b"], {n_args, 2}, "FILE_NAME LINE_NUM",
+        [ "Set a breakpoint in the specified file and line." ]}}
     ].
 
 resolve_command(Cmd) ->

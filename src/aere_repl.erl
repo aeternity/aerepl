@@ -47,7 +47,8 @@ init_state(Opts) ->
        blockchain_state = {ready, ChainState},
        repl_account     = PK,
        options          = maps:merge(init_options(), Opts),
-       contract_state   = ?DEFAULT_CONTRACT_STATE
+       contract_state   = ?DEFAULT_CONTRACT_STATE,
+       breakpoints      = sets:new()
       },
     S0.
 
@@ -160,6 +161,10 @@ apply_command(print, [What], State) ->
 apply_command(disas, [What], State) ->
     Fate = disassemble(What, State),
     {aere_msg:output(lists:flatten(aeb_fate_asm:pp(Fate))), State};
+apply_command(break, [File, Line], State) ->
+    Breakpoint = {File, list_to_integer(Line)},
+    NewBreakpoints = sets:add_element(Breakpoint, State#repl_state.breakpoints),
+    State#repl_state{breakpoints = NewBreakpoints};
 apply_command(continue, _, State = #repl_state{blockchain_state = BS}) ->
     case BS of
         {ready, _} ->
@@ -197,10 +202,15 @@ eval_expr(Body, S0 = #repl_state{options = #{display_gas  := DisplayGas,
         {false, {tuple, {}}, false} -> S1;
         {false, {tuple, {}}, true} -> {aere_msg:used_gas(UsedGas), S1};
         _ ->
-            Type = aere_sophia:type_of_user_input(TEnv),
-            ResStr = aere_msg:output(format_value(PrintFormat, TEnv, Type, Res)),
-	    GasStr = [aere_msg:used_gas(UsedGas) || DisplayGas],
-            {[ResStr|GasStr], S1}
+            case S1#repl_state.blockchain_state of
+                {ready, _} ->
+                    Type = aere_sophia:type_of_user_input(TEnv),
+                    ResStr = aere_msg:output(format_value(PrintFormat, TEnv, Type, Res)),
+                    GasStr = [aere_msg:used_gas(UsedGas) || DisplayGas],
+                    {[ResStr|GasStr], S1};
+                {breakpoint, _} ->
+                    {aere_msg:output("BREAK"), S1}
+            end
     end.
 
 format_value(fate, _, _, Val) ->
@@ -470,7 +480,11 @@ eval_state(ES0, S = #repl_state{contract_state = {StateType, _}}) ->
          ChainApi  = aefa_engine_state:chain_api(ES2),
          UsedGas   = maps:get(call_gas, S#repl_state.options) - aefa_engine_state:gas(ES2) - 10, %% RETURN(R) costs 10
 
-         {Res, UsedGas, S#repl_state{blockchain_state = {ready, ChainApi},
+         {Res, UsedGas, S#repl_state{blockchain_state =
+                                        case aefa_engine_state:breakpoint_stop(ES2) of
+                                            true -> {breakpoint, ES2};
+                                            false -> {ready, ChainApi}
+                                        end,
                                      contract_state = {StateType, StateVal}
                                     }}
     catch {aefa_fate, revert, ErrMsg, _} ->
@@ -485,7 +499,8 @@ setup_fate_state(
      vars = Vars,
      funs = Funs,
      options = #{call_gas := Gas, call_value := Value},
-     contract_state = {_, StateVal}
+     contract_state = {_, StateVal},
+     breakpoints = Breakpoints
     }) ->
 
     Version = #{ vm => aere_version:vm_version(), abi => aere_version:abi_version() },
@@ -503,20 +518,21 @@ setup_fate_state(
 
     Caller = aeb_fate_data:make_address(Owner),
 
-    setup_fate_state(aect_contracts:pubkey(Contract), ByteCode, Owner, Caller, Function, Vars, Gas, Value, StateVal, Funs, ChainApi).
+    setup_fate_state(aect_contracts:pubkey(Contract), ByteCode, Owner, Caller, Function, Vars, Gas, Value, StateVal, Funs, ChainApi, Breakpoints).
 
-setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, StateVal, Functions0, ChainApi) ->
+setup_fate_state(Contract, ByteCode, Owner, Caller, Function, Vars, Gas, Value, StateVal, Functions0, ChainApi, Breakpoints) ->
     Store = aefa_stores:initial_contract_store(),
     Functions = maps:merge(Functions0, aeb_fate_code:functions(ByteCode)),
     ES0 =
-        aefa_engine_state:new(
+        aefa_engine_state:new_dbg(
           Gas,
           Value,
           #{caller => Owner}, % Spec
           aefa_stores:put_contract_store(Contract, Store, aefa_stores:new()),
           ChainApi,
           #{Contract => {ByteCode, aere_version:vm_version()}}, % Code cache
-          aere_version:vm_version()
+          aere_version:vm_version(),
+          Breakpoints
          ),
     ES1 = aefa_engine_state:update_for_remote_call(Contract, ByteCode, aere_version:vm_version(), Caller, ES0),
     ES2 = aefa_fate:set_local_function(Function, false, ES1),
