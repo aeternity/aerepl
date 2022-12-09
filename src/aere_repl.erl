@@ -287,7 +287,7 @@ register_include(Include, S0 = #repl_state{included_files = IncFiles, included_c
                                             {FName, Code} <- maps:to_list(LdFiles),
                                             lists:member(FName, IncFiles)
                                         ]),
-                         {Ast0, _IncludeSet1} = aere_sophia:parse_file(File, IncludeSet, [keep_included]),
+                         {Ast0, _IncludeSet1} = aere_sophia:parse_file(File, IncludeSet, [keep_included, {src_file, Include}]),
                          S0#repl_state{included_files = [Include|IncFiles], included_code = IncCode ++ Ast0}
                  end,
             Ast = aere_mock:eval_contract([{tuple, aere_mock:ann(), []}], S1),
