@@ -88,7 +88,7 @@ error(Msg) -> aere_theme:error(trim(Msg)).
 abort(Bin, Stack) when is_binary(Bin) -> abort(binary:bin_to_list(Bin), Stack);
 abort(Msg, Stack) ->
     [ aere_theme:error("ABORT: "), aere_theme:output(trim(Msg) ++ "\n")
-    , [ [ aere_theme:info(integer_to_list(I) ++ "\t")
+    , [ [ aere_theme:info(integer_to_list(I) ++ "    ")
         , aere_theme:info(binary:bin_to_list(aeser_api_encoder:encode(contract_pubkey, Con))), aere_theme:info(":")
         , aere_theme:output(binary:bin_to_list(Fun)), aere_theme:info(":")
         , aere_theme:info(integer_to_list(BB) ++ "\n")
