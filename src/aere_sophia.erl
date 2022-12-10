@@ -48,7 +48,7 @@ typecheck(Ast, Opts) ->
     end.
 
 compile_contract(TypedAst) ->
-    Opts = [debug_info | optimizations_off()],
+    Opts = [debug_info, include_child_contract_symbols | optimizations_off()],
     {#{child_con_env := ChildConEnv, saved_fresh_names := SavedFreshNames}, FCode}
         = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, Opts)
           catch {error, Ec} -> process_err(Ec) end,

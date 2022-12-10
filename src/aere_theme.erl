@@ -40,7 +40,7 @@
 
 -type themed_text() :: {themed, theme_context(), string()}.
 
--type renderable() :: themed_text() | [themed_text()].
+-type renderable() :: themed_text() | [renderable()].
 
 -spec ansi_color_no(color()) -> string().
 ansi_color_no(Color) ->
@@ -149,7 +149,7 @@ render(ThemedTxts) ->
 render(Theme, ThemedTxt = {themed, _, _}) ->
     render(Theme, [ThemedTxt]);
 render(Theme, ThemedTxts) when is_list(ThemedTxts) ->
-    AnsiStr = lists:flatten(lists:map(fun(T) -> apply_theme(Theme, T) end, ThemedTxts)),
+    AnsiStr = lists:flatten(lists:map(fun(T) -> apply_theme(Theme, T) end, lists:flatten(ThemedTxts))),
     string:trim(AnsiStr, trailing, unicode_util:whitespace()).
 
 -spec apply_theme(theme(), themed_text()) -> string().

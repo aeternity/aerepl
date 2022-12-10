@@ -98,6 +98,7 @@ scenarios() ->
     , all_loading_commands
     , reset_command
     , options_setting
+    , stack_trace_abort
     ].
 
 %% Split a file into entries

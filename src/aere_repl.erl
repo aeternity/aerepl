@@ -39,7 +39,7 @@ process_input(State, String) ->
         {repl_error, E} ->
             aere_repl_response:new(E, error);
         {revert, Err} ->
-            aere_repl_response:new(aere_msg:abort(Err), error);
+            aere_repl_response:new(aere_msg:error(Err), error);
         {aefa_fate, FateErr, _} ->
             aere_repl_response:new(aere_msg:error("FATE error: " ++ FateErr), error)
     end.
@@ -127,7 +127,13 @@ apply_command(ResumeKind, [], State)
        ResumeKind == step;
        ResumeKind == finish ->
     ES = get_breakpoint_engine_state(State),
-    eval_state(aere_debugger:resume(ES, ResumeKind), State);
+    case eval_state(aere_debugger:resume(ES, ResumeKind), State) of
+        {revert, Err} ->
+            Callback = aere_repl_state:callback(State),
+            Callback({State, Err});
+        Res ->
+            Res
+    end;
 apply_command(location, [], State) ->
     ES = get_breakpoint_engine_state(State),
     {aere_msg:output(aere_debugger:source_location(ES)), State};
@@ -141,6 +147,7 @@ set_state(Body, RS) ->
     {TEnv, TAst} = aere_sophia:typecheck(Contract),
     Type         = aere_sophia:type_of_user_input(TEnv),
     ByteCode     = aere_sophia:compile_contract(TAst),
+    add_fun_symbols_from_code(ByteCode),
 
     Callback = fun(State) -> set_state_callback(Type, State) end,
     NewRS    = aere_repl_state:set_callback(Callback, RS),
@@ -162,11 +169,15 @@ eval_expr(Body, RS) ->
     Ast          = aere_mock:eval_contract(Body, RS),
     {TEnv, TAst} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
     ByteCode     = aere_sophia:compile_contract(TAst),
+    add_fun_symbols_from_code(ByteCode),
 
     Callback = fun(State) -> eval_expr_callback(State, TEnv) end,
     NewRS    = aere_repl_state:set_callback(Callback, RS),
-    run_contract(ByteCode, NewRS).
+    run_contract_debug(ByteCode, NewRS).
 
+eval_expr_callback({S, #{err_msg := ErrMsg, engine_state := ES}}, _) ->
+    StackTrace = get_stack_trace(ES),
+    {aere_msg:abort(ErrMsg, StackTrace), S};
 eval_expr_callback(RS, TEnv) ->
     ChainState        = aere_repl_state:blockchain_state(RS),
     {_, Res, UsedGas} = get_running_chain(ChainState),
@@ -175,16 +186,13 @@ eval_expr_callback(RS, TEnv) ->
        print_unit   := PrintUnit,
        print_format := PrintFormat } = aere_repl_state:options(RS),
 
-    case {PrintUnit, Res, DisplayGas} of
-        {false, {tuple, {}}, false} -> RS;
-        {false, {tuple, {}}, true}  -> {aere_msg:used_gas(UsedGas), RS};
-        _ ->
-            Type = aere_sophia:type_of_user_input(TEnv),
-
-            ResStr = aere_msg:output(format_value(PrintFormat, TEnv, Type, Res)),
-            GasStr = [aere_msg:used_gas(UsedGas) || DisplayGas],
-            {[ResStr|GasStr], make_state_ready(RS)}
-    end.
+    Type     = aere_sophia:type_of_user_input(TEnv),
+    PrintRes = PrintUnit orelse Res =/= {tuple, {}},
+    ResStr   = format_value(PrintFormat, TEnv, Type, Res),
+    {aere_msg:eval_result(
+        if PrintRes -> ResStr; true -> none end,
+        if DisplayGas -> UsedGas; true -> none end),
+     RS}.
 
 %%%------------------
 
@@ -195,6 +203,13 @@ make_state_ready(State) ->
         _ ->
             State
     end.
+
+-spec get_stack_trace(aefa_engine_state:state()) -> [{aec_keys:pubkey(), binary(), non_neg_integer()}].
+get_stack_trace(ES) ->
+    Stack = aefa_engine_state:call_stack(aefa_engine_state:push_call_stack(ES)),
+    [ {Contract, get_fun_symbol(FunHash), BB}
+      || {_, Contract, _, FunHash, _, BB, _, _, _} <- Stack
+    ].
 
 format_value(fate, _, _, Val) ->
     io_lib:format("~p", [Val]);
@@ -247,8 +262,8 @@ clear_context(S0) ->
     S4 = aere_repl_state:set_type_scope([], S3),
     S5 = aere_repl_state:set_included_files([], S4),
     S6 = aere_repl_state:set_included_code([], S5),
-    S6 = aere_repl_state:set_blockchain_state({ready, Chain1}, S6),
-    S6.
+    S7 = aere_repl_state:set_blockchain_state({ready, Chain1}, S6),
+    S7.
 
 register_include(Include, S0) when is_binary(Include) ->
     register_include(binary:bin_to_list(Include), S0);
@@ -464,10 +479,42 @@ parse_fun_ref(What) ->
         _ -> throw({repl_error, aere_msg:bad_fun_ref()})
     end.
 
+-spec run_contract(ByteCode, ReplState) -> {Message, ReplState} | no_return()
+    when ByteCode  :: term(),
+         ReplState :: aere_repl_state:state(),
+         Message   :: aere_theme:renderable().
 run_contract(ByteCode, S) ->
     ES = setup_fate_state(ByteCode, S),
-    eval_state(ES, S).
+    case eval_state(ES, S) of
+        {revert, #{err_msg := ErrMsg, engine_state := ES1}} ->
+            StackTrace = get_stack_trace(ES1),
+            throw({repl_error, aere_msg:abort(ErrMsg, StackTrace)});
+        Res ->
+            Res
+    end.
 
+-spec run_contract_debug(ByteCode, ReplState) -> {Message, ReplState} | {revert, Err}
+    when ByteCode  :: term(),
+         ReplState :: aere_repl_state:state(),
+         Message   :: aere_theme:renderable(),
+         Err       :: #{ err_msg      := binary()
+                       , engine_state := aefa_engine_state:state() }.
+run_contract_debug(ByteCode, S) ->
+    ES = setup_fate_state(ByteCode, S),
+    case eval_state(ES, S) of
+        {revert, Err} ->
+            Callback = aere_repl_state:callback(S),
+            Callback({S, Err});
+        Res ->
+            Res
+    end.
+
+-spec eval_state(EngineState, ReplState) -> {Message, ReplState} | {revert, Err}
+    when EngineState :: aefa_engine_state:state(),
+         ReplState   :: aere_repl_state:state(),
+         Message     :: aere_theme:renderable(),
+         Err         :: #{ err_msg      := binary()
+                         , engine_state := EngineState }.
 eval_state(ES0, S) ->
     try
         ES1             = aefa_fate:execute(ES0),
@@ -495,8 +542,10 @@ eval_state(ES0, S) ->
                 Callback = aere_repl_state:callback(S),
                 Callback(NewReplState)
         end
-    catch {aefa_fate, revert, ErrMsg, _} ->
-        throw({revert, ErrMsg})
+    catch {aefa_fate, revert, ErrMsg, ES} ->
+            {revert, #{err_msg => ErrMsg,
+                       engine_state => ES
+                      }}
     end.
 
 setup_fate_state(ByteCode, RS) ->
@@ -615,3 +664,27 @@ print_state(RS, What) ->
             throw({repl_error, aere_msg:list_unknown(maps:keys(PrintFuns))});
         {Print, Payload} -> Print(Payload)
     end.
+
+-define(AEREPL_FUN_SYMBOLS_ETS, aerepl_fun_smbols).
+ensure_fun_symbols() ->
+    ets:whereis(?AEREPL_FUN_SYMBOLS_ETS) =/= undefined
+        orelse ets:new(?AEREPL_FUN_SYMBOLS_ETS, [named_table, set, public]).
+
+add_fun_symbol(Hash, Name) ->
+    ensure_fun_symbols(),
+    ets:insert(?AEREPL_FUN_SYMBOLS_ETS, {Hash, Name}).
+
+get_fun_symbol(Hash) ->
+    ensure_fun_symbols(),
+    case ets:lookup(?AEREPL_FUN_SYMBOLS_ETS, Hash) of
+        [{_, Name}|_] -> Name;
+        [] -> Hash
+    end.
+
+add_fun_symbols(Dict) ->
+    [ add_fun_symbol(Hash, Name)
+      || {Hash, Name} <- maps:to_list(Dict)
+    ].
+
+add_fun_symbols_from_code(Code) ->
+    add_fun_symbols(aeb_fate_code:symbols(Code)).
