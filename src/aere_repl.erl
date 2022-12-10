@@ -202,15 +202,10 @@ eval_expr(Body, S0 = #repl_state{options = #{display_gas  := DisplayGas,
         {false, {tuple, {}}, false} -> S1;
         {false, {tuple, {}}, true} -> {aere_msg:used_gas(UsedGas), S1};
         _ ->
-            case S1#repl_state.blockchain_state of
-                {ready, _} ->
-                    Type = aere_sophia:type_of_user_input(TEnv),
-                    ResStr = aere_msg:output(format_value(PrintFormat, TEnv, Type, Res)),
-                    GasStr = [aere_msg:used_gas(UsedGas) || DisplayGas],
-                    {[ResStr|GasStr], S1};
-                {breakpoint, _} ->
-                    {aere_msg:output("BREAK"), S1}
-            end
+            Type = aere_sophia:type_of_user_input(TEnv),
+            ResStr = aere_msg:output(format_value(PrintFormat, TEnv, Type, Res)),
+            GasStr = [aere_msg:used_gas(UsedGas) || DisplayGas],
+            {[ResStr|GasStr], S1}
     end.
 
 format_value(fate, _, _, Val) ->
