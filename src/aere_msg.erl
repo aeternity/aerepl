@@ -4,9 +4,10 @@
         , output/1
         , used_gas/1
         , error/1
-        , abort/1
+        , abort/2
         , internal/1
         , internal/2
+        , eval_result/2
         , no_such_command/1
         , bad_command_args/2
         , file_not_loaded/1
@@ -77,14 +78,24 @@ output(Msg) -> aere_theme:output(trim(Msg)).
 
 -spec used_gas(integer()) -> msg().
 used_gas(UsedGas) ->
-    GasMsg = io_lib:format("\nUSED GAS: ~p", [UsedGas]),
+    GasMsg = io_lib:format("USED GAS: ~p", [UsedGas]),
     aere_theme:info(GasMsg).
 
 -spec error(string()) -> msg().
 error(Msg) -> aere_theme:error(trim(Msg)).
 
--spec abort(string()) -> msg().
-abort(Msg) -> [aere_theme:error("ABORT: "), aere_theme:info(trim(Msg))].
+-spec abort(binary() | string(), [{term(), binary(), integer()}]) -> msg().
+abort(Bin, Stack) when is_binary(Bin) -> abort(binary:bin_to_list(Bin), Stack);
+abort(Msg, Stack) ->
+    [ aere_theme:error("ABORT: "), aere_theme:output(trim(Msg) ++ "\n")
+    , [ [ aere_theme:info(integer_to_list(I) ++ "    ")
+        , aere_theme:info(binary:bin_to_list(aeser_api_encoder:encode(contract_pubkey, Con))), aere_theme:info(":")
+        , aere_theme:output(binary:bin_to_list(Fun)), aere_theme:info(":")
+        , aere_theme:info(integer_to_list(BB) ++ "\n")
+        ]
+       || {I, {Con, Fun, BB}} <- lists:zip(lists:seq(1, length(Stack)), Stack)
+      ]
+    ].
 
 -spec internal(term(), erlang:stacktrace()) -> msg().
 internal(Error, Stacktrace) ->
@@ -100,6 +111,16 @@ internal(Error, Stacktrace) ->
 -spec internal(term()) -> msg().
 internal(Error) ->
     internal(Error, []).
+
+-spec eval_result(string() | none, integer() | none) -> msg().
+eval_result(none, none) ->
+    [];
+eval_result(Res, none) ->
+    [aere_theme:output(Res)];
+eval_result(none, Gas) ->
+    [used_gas(Gas)];
+eval_result(Res, Gas) ->
+    [aere_theme:output(Res ++ "\n"), used_gas(Gas)].
 
 -spec no_such_command(string()) -> msg().
 no_such_command(Command) ->

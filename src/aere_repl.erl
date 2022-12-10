@@ -34,7 +34,8 @@ init_state() ->
 -spec init_state(repl_options()) -> repl_state().
 init_state(Opts) ->
     Trees0 = aec_trees:new(),
-    {PK, Trees} = aere_chain:new_account(100000000000000000000000000000, Trees0),
+    {_, Trees} = aere_chain:new_account(100000000000000000000000000000, Trees0),
+    PK = <<0:256>>,
     ChainState = aefa_chain_api:new(
                    #{ gas_price => 1,
                       fee       => 0,
@@ -93,7 +94,7 @@ process_input(State, String) ->
                     };
             {revert, Err} ->
                 #repl_response
-                    { output = aere_msg:abort(Err)
+                    { output = aere_msg:error(Err)
                     , warnings = []
                     , status = error
                     };
@@ -176,7 +177,8 @@ set_state(Body, S0) ->
     {TEnv, TAst} = aere_sophia:typecheck(Contract),
     Type = aere_sophia:type_of_user_input(TEnv),
     ByteCode = aere_sophia:compile_contract(TAst),
-    {StateVal, _, S1} = run_contract(ByteCode, S0),
+    add_fun_symbols_from_code(ByteCode),
+    #{result := StateVal, new_state := S1} = run_contract(ByteCode, S0),
 
     S2 = S1#repl_state{contract_state = {Type, StateVal},
                        vars = [],
@@ -188,20 +190,33 @@ set_state(Body, S0) ->
 eval_expr(Body, S0 = #repl_state{options = #{display_gas  := DisplayGas,
                                              print_unit   := PrintUnit,
                                              print_format := PrintFormat
-                                           }}) ->
+                                            }}) ->
     Ast = aere_mock:eval_contract(Body, S0),
     {TEnv, TAst} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
     ByteCode = aere_sophia:compile_contract(TAst),
-    {Res, UsedGas, S1} = run_contract(ByteCode, S0),
-    case {PrintUnit, Res, DisplayGas} of
-        {false, {tuple, {}}, false} -> S1;
-        {false, {tuple, {}}, true} -> {aere_msg:used_gas(UsedGas), S1};
-        _ ->
+    add_fun_symbols_from_code(ByteCode),
+    case run_contract_debug(ByteCode, S0) of
+        {ok, #{result := Res, used_gas := UsedGas, new_state := S1}} ->
             Type = aere_sophia:type_of_user_input(TEnv),
-            ResStr = aere_msg:output(format_value(PrintFormat, TEnv, Type, Res)),
-	    GasStr = [aere_msg:used_gas(UsedGas) || DisplayGas],
-            {[ResStr|GasStr], S1}
+            PrintRes = PrintUnit orelse Res =/= {tuple, {}},
+            ResStr = format_value(PrintFormat, TEnv, Type, Res),
+            {aere_msg:eval_result(
+               if PrintRes -> ResStr; true -> none end,
+               if DisplayGas -> UsedGas; true -> none end),
+             S1};
+        {revert, #{err_msg := ErrMsg, engine_state := ES}} ->
+            StackTrace = get_stack_trace(ES),
+            {aere_msg:abort(ErrMsg, StackTrace),
+             S0
+            }
     end.
+
+-spec get_stack_trace(aefa_engine_state:state()) -> [{aec_keys:pubkey(), binary(), non_neg_integer()}].
+get_stack_trace(ES) ->
+    Stack = aefa_engine_state:call_stack(aefa_engine_state:push_call_stack(ES)),
+    [ {Contract, get_fun_symbol(FunHash), BB}
+      || {_, Contract, _, FunHash, _, BB, _, _, _} <- Stack
+    ].
 
 format_value(fate, _, _, Val) ->
     io_lib:format("~p", [Val]);
@@ -310,11 +325,11 @@ register_letval(Pat, Expr, S0 = #repl_state{funs = Funs}) ->
         case NewVars of
             [_] ->
                 T = aere_sophia:type_of_user_input(TEnv),
-                {V, _, S} = run_contract(ByteCode, S0),
+                #{result := V, new_state := S} = run_contract(ByteCode, S0),
                 {[V], [T], S};
             _ ->
                 {tuple_t, _, Ts} = aere_sophia:type_of_user_input(TEnv),
-                {{tuple, Vs}, _, S} = run_contract(ByteCode, S0),
+                #{result := {tuple, Vs}, new_state := S} = run_contract(ByteCode, S0),
                 {tuple_to_list(Vs), Ts, S}
         end,
     NameMap = build_fresh_name_map(ByteCode),
@@ -418,7 +433,7 @@ disassemble(What, S0) ->
             Contract = aere_mock:eval_contract(Expr, S0),
             {_, TAst} = aere_sophia:typecheck(Contract),
             MockByteCode = aere_sophia:compile_contract(TAst),
-            {{contract, Pubkey}, _, S1} = run_contract(MockByteCode, S0),
+            #{result := {contract, Pubkey}, new_state := S1} = run_contract(MockByteCode, S0),
             Chain = aere_repl_state:chain_api(S1),
             case aefa_chain_api:contract_fate_bytecode(Pubkey, Chain) of
                 error -> throw({repl_error, aere_msg:contract_not_found()});
@@ -430,9 +445,10 @@ disassemble(What, S0) ->
             Contract = aere_mock:eval_contract(Id, S0),
             {_, TAst} = aere_sophia:typecheck(Contract, [allow_higher_order_entrypoints]),
             MockByteCode = aere_sophia:compile_contract(TAst),
-            {{tuple, {FName, _}}, _, _} = run_contract(MockByteCode, S0),
+            #{result := {tuple, {FName, _}}} = run_contract(MockByteCode, S0),
             extract_fun(MockByteCode, FName);
-        {local, _Name} -> throw(not_supported)
+        {local, _Name} ->
+            error(not_implemented)
     end.
 
 -spec extract_fun(aeb_fate_code:fcode(), binary()) -> aeb_fate_code:fcode().
@@ -458,10 +474,41 @@ parse_fun_ref(What) ->
         _ -> throw({repl_error, aere_msg:bad_fun_ref()})
     end.
 
+-spec run_contract(term(), repl_state()) ->
+          #{result := term()
+          , used_gas := non_neg_integer()
+          , new_state := aefa_engine_state:state()
+          } | no_return().
 run_contract(ByteCode, S) ->
+    ES = setup_fate_state(ByteCode, S),
+    case eval_state(ES, S) of
+        {ok, Res} ->
+            Res;
+        {revert, #{err_msg := ErrMsg, engine_state := ES1}} ->
+            StackTrace = get_stack_trace(ES1),
+            throw({repl_error, aere_msg:abort(ErrMsg, StackTrace)})
+    end.
+
+-spec run_contract_debug(term(), repl_state()) ->
+          {ok, #{result := term()
+               , used_gas := non_neg_integer()
+               , new_state := aefa_engine_state:state()}
+          } |
+          {revert, #{err_msg := binary()
+                   , engine_state := aefa_engine_state:state()}
+          }.
+run_contract_debug(ByteCode, S) ->
     ES = setup_fate_state(ByteCode, S),
     eval_state(ES, S).
 
+-spec eval_state(aefa_engine_state:state(), repl_state()) ->
+          {ok, #{result := term()
+               , used_gas := non_neg_integer()
+               , new_state := aefa_engine_state:state()}
+          } |
+          {revert, #{err_msg := binary()
+                   , engine_state := aefa_engine_state:state()}
+          }.
 eval_state(ES0, S = #repl_state{contract_state = {StateType, _}}) ->
     try ES1 = aefa_fate:execute(ES0),
          {StateVal, ES2} = aefa_fate:lookup_var({var, -1}, ES1),
@@ -470,11 +517,17 @@ eval_state(ES0, S = #repl_state{contract_state = {StateType, _}}) ->
          ChainApi  = aefa_engine_state:chain_api(ES2),
          UsedGas   = maps:get(call_gas, S#repl_state.options) - aefa_engine_state:gas(ES2) - 10, %% RETURN(R) costs 10
 
-         {Res, UsedGas, S#repl_state{blockchain_state = {ready, ChainApi},
-                                     contract_state = {StateType, StateVal}
-                                    }}
-    catch {aefa_fate, revert, ErrMsg, _} ->
-            throw({revert, ErrMsg})
+         {ok, #{result => Res,
+                used_gas => UsedGas,
+                new_state => S#repl_state{blockchain_state = {ready, ChainApi},
+                                          contract_state = {StateType, StateVal}
+                                         }
+               }
+         }
+    catch {aefa_fate, revert, ErrMsg, ES} ->
+            {revert, #{err_msg => ErrMsg,
+                       engine_state => ES
+                      }}
     end.
 
 setup_fate_state(
@@ -582,3 +635,27 @@ print_state(#repl_state{
             throw({repl_error, aere_msg:list_unknown(maps:keys(PrintFuns))});
         {Print, Payload} -> Print(Payload)
     end.
+
+-define(AEREPL_FUN_SYMBOLS_ETS, aerepl_fun_smbols).
+ensure_fun_symbols() ->
+    ets:whereis(?AEREPL_FUN_SYMBOLS_ETS) =/= undefined
+        orelse ets:new(?AEREPL_FUN_SYMBOLS_ETS, [named_table, set, public]).
+
+add_fun_symbol(Hash, Name) ->
+    ensure_fun_symbols(),
+    ets:insert(?AEREPL_FUN_SYMBOLS_ETS, {Hash, Name}).
+
+get_fun_symbol(Hash) ->
+    ensure_fun_symbols(),
+    case ets:lookup(?AEREPL_FUN_SYMBOLS_ETS, Hash) of
+        [{_, Name}|_] -> Name;
+        [] -> Hash
+    end.
+
+add_fun_symbols(Dict) ->
+    [ add_fun_symbol(Hash, Name)
+      || {Hash, Name} <- maps:to_list(Dict)
+    ].
+
+add_fun_symbols_from_code(Code) ->
+    add_fun_symbols(aeb_fate_code:symbols(Code)).
