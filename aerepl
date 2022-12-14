@@ -4,10 +4,11 @@
 -mode(compile).
 
 load_paths() ->
-    Paths = filelib:wildcard(
-              "_build/prod/lib/*/ebin/",
-              filename:dirname(escript:script_name())),
-    [code:add_pathz(Path) orelse error({not_found, Path}) || Path <- Paths],
+    ScriptDir = filename:dirname(escript:script_name()),
+    Paths = filelib:wildcard("_build/prod/lib/*/ebin/", ScriptDir),
+    [code:add_pathz(filename:append(ScriptDir, Path))
+     orelse error({not_found, filename:append(ScriptDir, Path)})
+     || Path <- Paths],
     ok.
 
 main(_Args) ->
