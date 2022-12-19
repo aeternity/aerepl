@@ -11,6 +11,7 @@
         }.
 
 -type chain_state() :: {ready, aefa_chain_api:state()}
+                     | {continue, aefa_chain_api:state(), term(), term()}
                      | {breakpoint, aefa_engine_state:state()}.
 
 -type contract_state() :: {aeso_syntax:type(), aeb_fate_data:fate_type()}.
@@ -38,6 +39,7 @@
         , included_code = []   :: aeso_syntax:ast() % Cached AST of the included files
         , query_nonce = 0      :: non_neg_integer()
         , breakpoints          :: sets:set()  %% TODO: Add the type of the breakpoint
+        , callback             :: term()
         }).
 -type repl_state() :: #repl_state{}.
 

@@ -82,6 +82,9 @@ commands() ->
     , {"break",
         {["b"], {n_args, 2}, "FILE_NAME LINE_NUM",
         [ "Set a breakpoint in the specified file and line." ]}}
+    , {"continue",
+        {["c"], none, "",
+        [ "Resume execution after a breakpoint is hit." ]}}
     ].
 
 resolve_command(Cmd) ->

@@ -44,7 +44,7 @@ init_state(Opts) ->
                    }
                   ),
     S0 = #repl_state{
-       blockchain_state = {ready, ChainState},
+       blockchain_state = {ready, ChainState, none, none},
        repl_account     = PK,
        options          = maps:merge(init_options(), Opts),
        contract_state   = ?DEFAULT_CONTRACT_STATE,
@@ -120,6 +120,13 @@ apply_command(skip, [], State) ->
     State;
 apply_command(reset, [], _) ->
     init_state();
+apply_command(help, Arg, State) ->
+    case Arg of
+        [On] -> {aere_msg:help(On), State};
+        _ -> {aere_msg:help(), State}
+    end;
+apply_command(print, [What], State) ->
+    {print_state(State, What), State};
 apply_command(type, I, State) ->
     Stmts = aere_sophia:parse_body(I),
     Contract = aere_mock:eval_contract(Stmts, State),
@@ -128,6 +135,25 @@ apply_command(type, I, State) ->
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
     TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER ++ "[0-9]*\\.", "", [global, {return, list}]),
     {aere_msg:output(TypeStrClean), State};
+apply_command(disas, Args, State = #repl_state{blockchain_state = {breakpoint, ES}}) ->
+    Chain = aefa_engine_state:chain_api(ES),
+    apply_command(disas, Args, State#repl_state{blockchain_state = {ready, Chain, none, none}});
+apply_command(disas, [What], State) ->
+    Fate = disassemble(What, State),
+    {aere_msg:output(lists:flatten(aeb_fate_asm:pp(Fate))), State};
+apply_command(break, [File, Line], State) ->
+    Breakpoint = {File, list_to_integer(Line)},
+    NewBreakpoints = sets:add_element(Breakpoint, State#repl_state.breakpoints),
+    State#repl_state{breakpoints = NewBreakpoints};
+apply_command(continue, _, State = #repl_state{blockchain_state = BS}) ->
+    case BS of
+        {ready, _, _, _} ->
+            {aere_msg:error("Not at breakpoint!"), State};
+        {breakpoint, ES} ->
+            eval_state(aefa_engine_state:set_breakpoint_stop(false, ES), State#repl_state{blockchain_state = {ready, aefa_engine_state:chain_api(ES), none, none}})
+    end;
+apply_command(_, _, State = #repl_state{blockchain_state = {breakpoint, _}}) ->
+    {aere_msg:output("Currently on a breakpoint"), State};
 apply_command(state, I, State) ->
     set_state(aere_sophia:parse_body(I), State);
 apply_command(eval, I, State) ->
@@ -150,30 +176,7 @@ apply_command(load, Modules, State) ->
 apply_command(reload, [], State) ->
     reload_modules(State);
 apply_command(set, [Option|Args], State) ->
-    set_option(list_to_atom(Option), Args, State);
-apply_command(help, Arg, State) ->
-    case Arg of
-        [On] -> {aere_msg:help(On), State};
-        _ -> {aere_msg:help(), State}
-    end;
-apply_command(print, [What], State) ->
-    {print_state(State, What), State};
-apply_command(disas, [What], State) ->
-    Fate = disassemble(What, State),
-    {aere_msg:output(lists:flatten(aeb_fate_asm:pp(Fate))), State};
-apply_command(break, [File, Line], State) ->
-    Breakpoint = {File, list_to_integer(Line)},
-    NewBreakpoints = sets:add_element(Breakpoint, State#repl_state.breakpoints),
-    State#repl_state{breakpoints = NewBreakpoints};
-apply_command(continue, _, State = #repl_state{blockchain_state = BS}) ->
-    case BS of
-        {ready, _} ->
-            {aere_msg:error("Not at breakpoint!"), State};
-        {breakpoint, ES} ->
-            Stack = aefa_engine_state:accumulator_stack(ES),
-            StackS = io_lib:format("~p", [Stack]),
-            {StackS, State}
-    end.
+    set_option(list_to_atom(Option), Args, State).
 
 -spec set_state([aeso_syntax:stmt()], repl_state()) -> command_res().
 set_state(Body, S0) ->
@@ -181,31 +184,33 @@ set_state(Body, S0) ->
     {TEnv, TAst} = aere_sophia:typecheck(Contract),
     Type = aere_sophia:type_of_user_input(TEnv),
     ByteCode = aere_sophia:compile_contract(TAst),
-    {StateVal, _, S1} = run_contract(ByteCode, S0),
+    run_contract(ByteCode, S0#repl_state{callback = fun(State) -> set_state_callback(Type, State) end}).
 
-    S2 = S1#repl_state{contract_state = {Type, StateVal},
-                       vars = [],
-                       funs = #{}
-                      },
-    S2.
+set_state_callback(Type, State = #repl_state{blockchain_state = {ready, _, StateVal, _}}) ->
+    State#repl_state{ contract_state = {Type, StateVal},
+                      vars = [],
+                      funs = #{} }.
 
 -spec eval_expr([aeso_syntax:stmt()], repl_state()) -> command_res().
-eval_expr(Body, S0 = #repl_state{options = #{display_gas  := DisplayGas,
-                                             print_unit   := PrintUnit,
-                                             print_format := PrintFormat
-                                           }}) ->
+eval_expr(Body, S0) ->
     Ast = aere_mock:eval_contract(Body, S0),
     {TEnv, TAst} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
     ByteCode = aere_sophia:compile_contract(TAst),
-    {Res, UsedGas, S1} = run_contract(ByteCode, S0),
+    run_contract(ByteCode, S0#repl_state{callback = fun(State) -> eval_expr_callback(State, TEnv) end}).
+
+eval_expr_callback(S = #repl_state{blockchain_state = {ready, _, Res, UsedGas},
+                                   options = #{display_gas  := DisplayGas,
+                                               print_unit   := PrintUnit,
+                                               print_format := PrintFormat
+                                             }}, TEnv) ->
     case {PrintUnit, Res, DisplayGas} of
-        {false, {tuple, {}}, false} -> S1;
-        {false, {tuple, {}}, true} -> {aere_msg:used_gas(UsedGas), S1};
+        {false, {tuple, {}}, false} -> S;
+        {false, {tuple, {}}, true} -> {aere_msg:used_gas(UsedGas), S};
         _ ->
             Type = aere_sophia:type_of_user_input(TEnv),
             ResStr = aere_msg:output(format_value(PrintFormat, TEnv, Type, Res)),
             GasStr = [aere_msg:used_gas(UsedGas) || DisplayGas],
-            {[ResStr|GasStr], S1}
+            {[ResStr|GasStr], S}
     end.
 
 format_value(fate, _, _, Val) ->
@@ -275,7 +280,7 @@ clear_context(S0 = #repl_state{vars = Vars}) ->
       type_scope = [],
       included_files = [],
       included_code = [],
-      blockchain_state = {ready, Chain1}}.
+      blockchain_state = {ready, Chain1, none, none}}.
 
 register_include(Include, S0) when is_binary(Include) ->
     register_include(binary:bin_to_list(Include), S0);
@@ -301,7 +306,7 @@ register_include(Include, S0 = #repl_state{included_files = IncFiles, included_c
     end.
 
 -spec register_letval(aeso_syntax:pat(), aeso_syntax:expr(), repl_state()) -> command_res().
-register_letval(Pat, Expr, S0 = #repl_state{funs = Funs}) ->
+register_letval(Pat, Expr, S0) ->
     NewVars = lists:filter(
                 fun(Var) -> Var /= "_" end,
                 aeso_syntax_utils:used_ids([aere_mock:pat_as_decl(Pat)])),
@@ -311,15 +316,17 @@ register_letval(Pat, Expr, S0 = #repl_state{funs = Funs}) ->
     {_, TypedAstUnfolded} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
     ByteCode = aere_sophia:compile_contract(TypedAstUnfolded),
 
+    run_contract(ByteCode, S0#repl_state{callback = fun(State) -> register_letval_callback(NewVars, ByteCode, TEnv, State) end}).
+
+register_letval_callback(NewVars, ByteCode, TEnv, S = #repl_state{funs = Funs, blockchain_state = {ready, _, Res, _}}) -> 
     {Vals, Types, S1} =
         case NewVars of
             [_] ->
                 T = aere_sophia:type_of_user_input(TEnv),
-                {V, _, S} = run_contract(ByteCode, S0),
-                {[V], [T], S};
+                {[Res], [T], S};
             _ ->
                 {tuple_t, _, Ts} = aere_sophia:type_of_user_input(TEnv),
-                {{tuple, Vs}, _, S} = run_contract(ByteCode, S0),
+                {tuple, Vs} = Res,
                 {tuple_to_list(Vs), Ts, S}
         end,
     NameMap = build_fresh_name_map(ByteCode),
@@ -423,21 +430,26 @@ disassemble(What, S0) ->
             Contract = aere_mock:eval_contract(Expr, S0),
             {_, TAst} = aere_sophia:typecheck(Contract),
             MockByteCode = aere_sophia:compile_contract(TAst),
-            {{contract, Pubkey}, _, S1} = run_contract(MockByteCode, S0),
-            Chain = aere_repl_state:chain_api(S1),
+            run_contract(MockByteCode, S0#repl_state{callback = fun(State) -> disassemble_callback(MockByteCode, Name, State) end});
+        {definition, Id} ->
+            Contract = aere_mock:eval_contract(Id, S0),
+            {_, TAst} = aere_sophia:typecheck(Contract, [allow_higher_order_entrypoints]),
+            MockByteCode = aere_sophia:compile_contract(TAst),
+            run_contract(MockByteCode, S0#repl_state{callback = fun(State) -> disassemble_callback(MockByteCode, none, State) end});
+        {local, _Name} -> throw(not_supported)
+    end.
+
+disassemble_callback(MockByteCode, Name, #repl_state{blockchain_state = {ready, Chain, Res, _}}) ->
+    case Res of
+        {contract, Pubkey} ->
             case aefa_chain_api:contract_fate_bytecode(Pubkey, Chain) of
                 error -> throw({repl_error, aere_msg:contract_not_found()});
                 {ok, Code, _, _} ->
                     SerName = aeb_fate_code:symbol_identifier(binary:list_to_bin(Name)),
                     extract_fun(Code, SerName)
             end;
-        {definition, Id} ->
-            Contract = aere_mock:eval_contract(Id, S0),
-            {_, TAst} = aere_sophia:typecheck(Contract, [allow_higher_order_entrypoints]),
-            MockByteCode = aere_sophia:compile_contract(TAst),
-            {{tuple, {FName, _}}, _, _} = run_contract(MockByteCode, S0),
-            extract_fun(MockByteCode, FName);
-        {local, _Name} -> throw(not_supported)
+        {tuple, {FName, _}} ->
+            extract_fun(MockByteCode, FName)
     end.
 
 -spec extract_fun(aeb_fate_code:fcode(), binary()) -> aeb_fate_code:fcode().
@@ -467,7 +479,7 @@ run_contract(ByteCode, S) ->
     ES = setup_fate_state(ByteCode, S),
     eval_state(ES, S).
 
-eval_state(ES0, S = #repl_state{contract_state = {StateType, _}}) ->
+eval_state(ES0, S = #repl_state{contract_state = {StateType, _}, callback = Callback}) ->
     try
         ES1 = aefa_fate:execute(ES0),
         {StateVal, ES2} = aefa_fate:lookup_var({var, -1}, ES1),
@@ -478,12 +490,15 @@ eval_state(ES0, S = #repl_state{contract_state = {StateType, _}}) ->
 
         NewBlockchainState = case aefa_engine_state:breakpoint_stop(ES2) of
                                  true  -> {breakpoint, ES2};
-                                 false -> {ready, ChainApi}
+                                 false -> {ready, ChainApi, Res, UsedGas}
                              end,
         NewReplState = S#repl_state{ blockchain_state = NewBlockchainState,
                                      contract_state = {StateType, StateVal} },
 
-        {Res, UsedGas, NewReplState}
+        case NewBlockchainState of
+            {breakpoint, _} -> {aere_msg:output("Break"), NewReplState};
+            {ready, _, _, _} -> Callback(NewReplState)
+        end
     catch {aefa_fate, revert, ErrMsg, _} ->
         throw({revert, ErrMsg})
     end.
@@ -492,7 +507,7 @@ setup_fate_state(
   ByteCode,
   #repl_state{
      repl_account = Owner,
-     blockchain_state = {ready, ChainApi0},
+     blockchain_state = {ready, ChainApi0, _, _},
      vars = Vars,
      funs = Funs,
      options = #{call_gas := Gas, call_value := Value},
@@ -559,7 +574,7 @@ default_loaded_files() ->
             Files
     end.
 
-get_ready_chain(#repl_state{blockchain_state = {ready, Chain}}) ->
+get_ready_chain(#repl_state{blockchain_state = {ready, Chain, _, _}}) ->
     Chain;
 get_ready_chain(_) ->
     throw({repl_error, aere_msg:chain_not_ready()}).
