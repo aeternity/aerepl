@@ -142,9 +142,11 @@ query_nonce(#repl_state{query_nonce = QueryNonce}) ->
 set_query_nonce(X, S) ->
     S#repl_state{query_nonce = X}.
 
+-spec callback(state()) -> callback().
 callback(#repl_state{callback = Callback}) ->
     Callback.
 
+-spec set_callback(callback(), state()) -> state().
 set_callback(Callback, RS) ->
     RS#repl_state{callback = Callback}.
 
