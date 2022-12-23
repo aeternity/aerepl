@@ -14,6 +14,7 @@
         , state_typedef/0
         , event_typedef/0
         , chain_not_ready/0
+        , chain_not_running/0
         , locked_option/0
         , option_usage/1
         , list_vars/1
@@ -164,6 +165,10 @@ option_usage(Option) ->
 -spec chain_not_ready() -> msg().
 chain_not_ready() ->
     [aere_theme:error("This operation runs only in chain-ready state.")].
+
+-spec chain_not_running() -> msg().
+chain_not_running() ->
+    [aere_theme:error("This operation runs only in chain-running state.")].
 
 -spec list_vars([string()]) -> msg().
 list_vars(Vars) ->

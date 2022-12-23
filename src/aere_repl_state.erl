@@ -23,7 +23,10 @@
         , included_files/1, included_files/2
         , included_code/1, included_code/2
         , query_nonce/1, query_nonce/2
+        , callback/1
         ]).
+
+-export([ set_callback/2 ]).
 
 -export([ chain_api/1
         ]).
@@ -123,6 +126,12 @@ query_nonce(S) ->
 -spec query_nonce(non_neg_integer(), state()) -> state().
 query_nonce(X, S) ->
     S#repl_state{query_nonce = X}.
+
+callback(#repl_state{callback = Callback}) ->
+    Callback.
+
+set_callback(Callback, RS) ->
+    RS#repl_state{callback = Callback}.
 
 %% Advanced getters
 

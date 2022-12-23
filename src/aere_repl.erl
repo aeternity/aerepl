@@ -183,44 +183,63 @@ apply_command(continue, _, State = #repl_state{blockchain_state = BS}) ->
             {aere_msg:error("Not at breakpoint!"), State}
     end.
 
--spec set_state([aeso_syntax:stmt()], repl_state()) -> command_res().
-set_state(Body, S0) ->
-    Contract = aere_mock:eval_contract(Body, S0),
-    {TEnv, TAst} = aere_sophia:typecheck(Contract),
-    Type = aere_sophia:type_of_user_input(TEnv),
-    ByteCode = aere_sophia:compile_contract(TAst),
-    run_contract(ByteCode, S0#repl_state{callback = fun(State) -> set_state_callback(Type, State) end}).
+%%%------------------
 
-set_state_callback(Type, State = #repl_state{blockchain_state = {running, _, StateVal, _}}) ->
-    NewState = State#repl_state{ contract_state = {Type, StateVal},
-                                 vars = [],
-                                 funs = #{} },
-    make_state_ready(NewState).
+-spec set_state([aeso_syntax:stmt()], repl_state()) -> command_res().
+set_state(Body, RS) ->
+    Contract     = aere_mock:eval_contract(Body, RS),
+    {TEnv, TAst} = aere_sophia:typecheck(Contract),
+    Type         = aere_sophia:type_of_user_input(TEnv),
+    ByteCode     = aere_sophia:compile_contract(TAst),
+
+    Callback = fun(State) -> set_state_callback(Type, State) end,
+    NewRS    = aere_repl_state:set_callback(Callback, RS),
+    run_contract(ByteCode, NewRS).
+
+set_state_callback(Type, RS0) ->
+    ChainState       = aere_repl_state:blockchain_state(RS0),
+    {_, StateVal, _} = get_running_chain(ChainState),
+
+    RS1 = aere_repl_state:set_contract_state({Type, StateVal}, RS0),
+    RS2 = aere_repl_state:set_vars([], RS1),
+    RS3 = aere_repl_state:set_funs(#{}, RS2),
+    make_state_ready(RS3).
+
+%%%------------------
 
 -spec eval_expr([aeso_syntax:stmt()], repl_state()) -> command_res().
-eval_expr(Body, S0) ->
-    Ast = aere_mock:eval_contract(Body, S0),
+eval_expr(Body, RS) ->
+    Ast          = aere_mock:eval_contract(Body, RS),
     {TEnv, TAst} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
-    ByteCode = aere_sophia:compile_contract(TAst),
-    run_contract(ByteCode, S0#repl_state{callback = fun(State) -> eval_expr_callback(State, TEnv) end}).
+    ByteCode     = aere_sophia:compile_contract(TAst),
+
+    Callback = fun(State) -> eval_expr_callback(State, TEnv) end,
+    NewRS    = aere_repl_state:set_callback(Callback, RS),
+    run_contract(ByteCode, NewRS).
+
+eval_expr_callback(RS, TEnv) ->
+    ChainState        = aere_repl_state:blockchain_state(RS),
+    {_, Res, UsedGas} = get_running_chain(ChainState),
+
+    #{ display_gas  := DisplayGas,
+       print_unit   := PrintUnit,
+       print_format := PrintFormat } = aere_repl_state:options(RS),
+
+    case {PrintUnit, Res, DisplayGas} of
+        {false, {tuple, {}}, false} -> RS;
+        {false, {tuple, {}}, true}  -> {aere_msg:used_gas(UsedGas), RS};
+        _ ->
+            Type = aere_sophia:type_of_user_input(TEnv),
+
+            ResStr = aere_msg:output(format_value(PrintFormat, TEnv, Type, Res)),
+            GasStr = [aere_msg:used_gas(UsedGas) || DisplayGas],
+            {[ResStr|GasStr], make_state_ready(RS)}
+    end.
+
+%%%------------------
 
 make_state_ready(S = #repl_state{ blockchain_state = {running, Chain, _, _} }) ->
     S#repl_state{ blockchain_state = {ready, Chain} }.
-
-eval_expr_callback(S = #repl_state{blockchain_state = {running, _, Res, UsedGas},
-                                   options = #{display_gas  := DisplayGas,
-                                               print_unit   := PrintUnit,
-                                               print_format := PrintFormat
-                                             }}, TEnv) ->
-    case {PrintUnit, Res, DisplayGas} of
-        {false, {tuple, {}}, false} -> S;
-        {false, {tuple, {}}, true} -> {aere_msg:used_gas(UsedGas), S};
-        _ ->
-            Type = aere_sophia:type_of_user_input(TEnv),
-            ResStr = aere_msg:output(format_value(PrintFormat, TEnv, Type, Res)),
-            GasStr = [aere_msg:used_gas(UsedGas) || DisplayGas],
-            {[ResStr|GasStr], make_state_ready(S)}
-    end.
 
 format_value(fate, _, _, Val) ->
     io_lib:format("~p", [Val]);
@@ -314,6 +333,8 @@ register_include(Include, S0 = #repl_state{included_files = IncFiles, included_c
             S1
     end.
 
+%%%------------------
+
 -spec register_letval(aeso_syntax:pat(), aeso_syntax:expr(), repl_state()) -> command_res().
 register_letval(Pat, Expr, S0) ->
     NewVars = lists:filter(
@@ -347,6 +368,8 @@ register_letval_callback(NewVars, ByteCode, TEnv, S = #repl_state{funs = Funs, b
     S2 = register_vars(Vars1, S1),
 
     make_state_ready(S2#repl_state{funs = maps:merge(Funs, Funs1)}).
+
+%%%------------------
 
 -spec register_letfun(aeso_syntax:id(), [aeso_syntax:pat()], [aeso_syntax:guarded_expr()], repl_state()) -> command_res().
 register_letfun(Id = {id, _, Name}, Args, Body, S0 = #repl_state{funs = Funs}) ->
@@ -587,6 +610,11 @@ get_ready_chain(#repl_state{blockchain_state = {ready, Chain}}) ->
     Chain;
 get_ready_chain(_) ->
     throw({repl_error, aere_msg:chain_not_ready()}).
+
+get_running_chain({running, Chain, Res, Gas}) ->
+    {Chain, Res, Gas};
+get_running_chain(_) ->
+    throw({repl_error, aere_msg:chain_not_running()}).
 
 set_option(Option, Args, S = #repl_state{options = Opts}) ->
     Locked = maps:get(locked_opts, Opts, []),
