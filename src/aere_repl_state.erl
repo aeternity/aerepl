@@ -11,120 +11,135 @@
 
 -export_type([state/0]).
 
--export([ blockchain_state/1, blockchain_state/2
-        , repl_account/1, repl_account/2
-        , options/1, options/2
-        , contract_state/1, contract_state/2
-        , vars/1, vars/2
-        , funs/1, funs/2
-        , typedefs/1, typedefs/2
-        , type_scope/1, type_scope/2
-        , loaded_files/1, loaded_files/2
-        , included_files/1, included_files/2
-        , included_code/1, included_code/2
-        , query_nonce/1, query_nonce/2
+%% Getters
+-export([ blockchain_state/1
+        , repl_account/1
+        , options/1
+        , contract_state/1
+        , vars/1
+        , funs/1
+        , typedefs/1
+        , type_scope/1
+        , loaded_files/1
+        , included_files/1
+        , included_code/1
+        , query_nonce/1
         , callback/1
         ]).
 
--export([ set_callback/2 ]).
+%% Setters
+-export([ set_blockchain_state/2
+        , set_repl_account/2
+        , set_options/2
+        , set_contract_state/2
+        , set_vars/2
+        , set_funs/2
+        , set_typedefs/2
+        , set_type_scope/2
+        , set_loaded_files/2
+        , set_included_files/2
+        , set_included_code/2
+        , set_query_nonce/2
+        , set_callback/2
+        ]).
 
 -export([ chain_api/1
         ]).
 
 -spec blockchain_state(state()) -> chain_state().
-blockchain_state(S) ->
-    S#repl_state.blockchain_state.
+blockchain_state(#repl_state{blockchain_state = BlockchainState}) ->
+    BlockchainState.
 
--spec blockchain_state(chain_state(), state()) -> state().
-blockchain_state(X, S) ->
+-spec set_blockchain_state(chain_state(), state()) -> state().
+set_blockchain_state(X, S) ->
     S#repl_state{blockchain_state = X}.
 
 -spec repl_account(state()) -> binary().
-repl_account(S) ->
-    S#repl_state.repl_account.
+repl_account(#repl_state{repl_account = ReplAccount}) ->
+    ReplAccount.
 
--spec repl_account(binary(), state()) -> state().
-repl_account(X, S) ->
+-spec set_repl_account(binary(), state()) -> state().
+set_repl_account(X, S) ->
     S#repl_state{repl_account = X}.
 
 -spec options(state()) -> repl_options().
-options(S) ->
-    S#repl_state.options.
+options(#repl_state{options = Options}) ->
+    Options.
 
--spec options(repl_options(), state()) -> state().
-options(X, S) ->
+-spec set_options(repl_options(), state()) -> state().
+set_options(X, S) ->
     S#repl_state{options = X}.
 
 -spec contract_state(state()) -> contract_state().
-contract_state(S) ->
-    S#repl_state.contract_state.
+contract_state(#repl_state{contract_state = ContractState}) ->
+    ContractState.
 
--spec contract_state(contract_state(), state()) -> state().
-contract_state(X, S) ->
+-spec set_contract_state(contract_state(), state()) -> state().
+set_contract_state(X, S) ->
     S#repl_state{contract_state = X}.
 
 -spec vars(state()) -> [var()].
-vars(S) ->
-    S#repl_state.vars.
+vars(#repl_state{vars = Vars}) ->
+    Vars.
 
--spec vars([var()], state()) -> state().
-vars(X, S) ->
+-spec set_vars([var()], state()) -> state().
+set_vars(X, S) ->
     S#repl_state{vars = X}.
 
 -spec funs(state()) -> #{binary() => term()}.
-funs(S) ->
-    S#repl_state.funs.
+funs(#repl_state{funs = Funs}) ->
+    Funs.
 
--spec funs(#{binary() => term()}, state()) -> state().
-funs(X, S) ->
+-spec set_funs(#{binary() => term()}, state()) -> state().
+set_funs(X, S) ->
     S#repl_state{funs = X}.
 
 -spec typedefs(state()) -> [type_def()].
-typedefs(S) ->
-    S#repl_state.typedefs.
+typedefs(#repl_state{typedefs = Typedefs}) ->
+    Typedefs.
 
--spec typedefs([type_def()], state()) -> state().
-typedefs(X, S) ->
+-spec set_typedefs([type_def()], state()) -> state().
+set_typedefs(X, S) ->
     S#repl_state{typedefs = X}.
 
 -spec type_scope(state()) -> [type_scope()].
-type_scope(S) ->
-    S#repl_state.type_scope.
+type_scope(#repl_state{type_scope = TypeScope}) ->
+    TypeScope.
 
--spec type_scope([type_scope()], state()) -> state().
-type_scope(X, S) ->
+-spec set_type_scope([type_scope()], state()) -> state().
+set_type_scope(X, S) ->
     S#repl_state{type_scope = X}.
 
 -spec loaded_files(state()) -> #{string() => binary()}.
-loaded_files(S) ->
-    S#repl_state.loaded_files.
+loaded_files(#repl_state{loaded_files = LoadedFiles}) ->
+    LoadedFiles.
 
--spec loaded_files(#{string() => binary()}, state()) -> state().
-loaded_files(X, S) ->
+-spec set_loaded_files(#{string() => binary()}, state()) -> state().
+set_loaded_files(X, S) ->
     S#repl_state{loaded_files = X}.
 
 -spec included_files(state()) -> [string()].
-included_files(S) ->
-    S#repl_state.included_files.
+included_files(#repl_state{included_files = IncludedFiles}) ->
+    IncludedFiles.
 
--spec included_files([string()], state()) -> state().
-included_files(X, S) ->
+-spec set_included_files([string()], state()) -> state().
+set_included_files(X, S) ->
     S#repl_state{included_files = X}.
 
 -spec included_code(state()) -> aeso_syntax:ast().
-included_code(S) ->
-    S#repl_state.included_code.
+included_code(#repl_state{included_code = IncludedCode}) ->
+    IncludedCode.
 
--spec included_code(aeso_syntax:ast(), state()) -> state().
-included_code(X, S) ->
+-spec set_included_code(aeso_syntax:ast(), state()) -> state().
+set_included_code(X, S) ->
     S#repl_state{included_code = X}.
 
 -spec query_nonce(state()) -> non_neg_integer().
-query_nonce(S) ->
-    S#repl_state.query_nonce.
+query_nonce(#repl_state{query_nonce = QueryNonce}) ->
+    QueryNonce.
 
--spec query_nonce(non_neg_integer(), state()) -> state().
-query_nonce(X, S) ->
+-spec set_query_nonce(non_neg_integer(), state()) -> state().
+set_query_nonce(X, S) ->
     S#repl_state{query_nonce = X}.
 
 callback(#repl_state{callback = Callback}) ->
