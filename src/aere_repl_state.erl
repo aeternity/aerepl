@@ -129,7 +129,7 @@ query_nonce(X, S) ->
 -spec chain_api(state()) -> aefa_chain_api:state().
 chain_api(#repl_state{blockchain_state = {ready, Api}}) ->
     Api;
-chain_api(#repl_state{blockchain_state = {executed, Api, _, _}}) ->
+chain_api(#repl_state{blockchain_state = {running, Api, _, _}}) ->
     Api;
 chain_api(#repl_state{blockchain_state = {breakpoint, ES}}) ->
     aefa_engine_state:chain_api(ES).

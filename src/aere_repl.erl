@@ -166,7 +166,7 @@ apply_command(print, [What], State) ->
 apply_command(disas, Args, State = #repl_state{blockchain_state = {breakpoint, ES}}) ->
     Chain = aefa_engine_state:chain_api(ES),
     apply_command(disas, Args, State#repl_state{blockchain_state = {ready, Chain}});
-apply_command(disas, Args, State = #repl_state{blockchain_state = {executed, _, _, _}}) ->
+apply_command(disas, Args, State = #repl_state{blockchain_state = {running, _, _, _}}) ->
     apply_command(disas, Args, make_state_ready(State));
 apply_command(disas, [What], State) ->
     Fate = disassemble(What, State),
@@ -191,7 +191,7 @@ set_state(Body, S0) ->
     ByteCode = aere_sophia:compile_contract(TAst),
     run_contract(ByteCode, S0#repl_state{callback = fun(State) -> set_state_callback(Type, State) end}).
 
-set_state_callback(Type, State = #repl_state{blockchain_state = {executed, _, StateVal, _}}) ->
+set_state_callback(Type, State = #repl_state{blockchain_state = {running, _, StateVal, _}}) ->
     NewState = State#repl_state{ contract_state = {Type, StateVal},
                                  vars = [],
                                  funs = #{} },
@@ -204,10 +204,10 @@ eval_expr(Body, S0) ->
     ByteCode = aere_sophia:compile_contract(TAst),
     run_contract(ByteCode, S0#repl_state{callback = fun(State) -> eval_expr_callback(State, TEnv) end}).
 
-make_state_ready(S = #repl_state{ blockchain_state = {executed, Chain, _, _} }) ->
+make_state_ready(S = #repl_state{ blockchain_state = {running, Chain, _, _} }) ->
     S#repl_state{ blockchain_state = {ready, Chain} }.
 
-eval_expr_callback(S = #repl_state{blockchain_state = {executed, _, Res, UsedGas},
+eval_expr_callback(S = #repl_state{blockchain_state = {running, _, Res, UsedGas},
                                    options = #{display_gas  := DisplayGas,
                                                print_unit   := PrintUnit,
                                                print_format := PrintFormat
@@ -327,7 +327,7 @@ register_letval(Pat, Expr, S0) ->
 
     run_contract(ByteCode, S0#repl_state{callback = fun(State) -> register_letval_callback(NewVars, ByteCode, TEnv, State) end}).
 
-register_letval_callback(NewVars, ByteCode, TEnv, S = #repl_state{funs = Funs, blockchain_state = {executed, _, Res, _}}) -> 
+register_letval_callback(NewVars, ByteCode, TEnv, S = #repl_state{funs = Funs, blockchain_state = {running, _, Res, _}}) -> 
     {Vals, Types, S1} =
         case NewVars of
             [_] ->
@@ -448,7 +448,7 @@ disassemble(What, S0) ->
         {local, _Name} -> throw(not_supported)
     end.
 
-disassemble_callback(MockByteCode, Name, #repl_state{blockchain_state = {executed, Chain, Res, _}}) ->
+disassemble_callback(MockByteCode, Name, #repl_state{blockchain_state = {running, Chain, Res, _}}) ->
     case Res of
         {contract, Pubkey} ->
             case aefa_chain_api:contract_fate_bytecode(Pubkey, Chain) of
@@ -499,14 +499,14 @@ eval_state(ES0, S = #repl_state{contract_state = {StateType, _}, callback = Call
 
         NewBlockchainState = case aefa_engine_state:breakpoint_stop(ES2) of
                                  true  -> {breakpoint, ES2};
-                                 false -> {executed, ChainApi, Res, UsedGas}
+                                 false -> {running, ChainApi, Res, UsedGas}
                              end,
         NewReplState = S#repl_state{ blockchain_state = NewBlockchainState,
                                      contract_state = {StateType, StateVal} },
 
         case NewBlockchainState of
-            {breakpoint, _} -> {aere_msg:output("Break"), NewReplState};
-            {executed, _, _, _} -> Callback(NewReplState)
+            {breakpoint, _}    -> {aere_msg:output("Break"), NewReplState};
+            {running, _, _, _} -> Callback(NewReplState)
         end
     catch {aefa_fate, revert, ErrMsg, _} ->
         throw({revert, ErrMsg})

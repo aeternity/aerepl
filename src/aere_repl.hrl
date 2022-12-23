@@ -11,7 +11,7 @@
         }.
 
 -type chain_state() :: {ready, aefa_chain_api:state()}
-                     | {executed, aefa_chain_api:state(), term(), term()}
+                     | {running, aefa_chain_api:state(), term(), term()}
                      | {breakpoint, aefa_engine_state:state()}.
 
 -type contract_state() :: {aeso_syntax:type(), aeb_fate_data:fate_type()}.
