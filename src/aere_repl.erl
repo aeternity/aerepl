@@ -172,11 +172,12 @@ apply_command(disas, [What], State) ->
     Fate = disassemble(What, State),
     {aere_msg:output(lists:flatten(aeb_fate_asm:pp(Fate))), State};
 apply_command(break, [File, Line], State) ->
-    Breakpoint = {File, list_to_integer(Line)},
-    NewBreakpoints = sets:add_element(Breakpoint, State#repl_state.breakpoints),
-    State#repl_state{breakpoints = NewBreakpoints};
-apply_command(continue, _, State = #repl_state{blockchain_state = BS}) ->
-    case BS of
+    OldBreakpoints = aere_repl_state:breakpoints(State),
+    Breakpoint     = {File, list_to_integer(Line)},
+    NewBreakpoints = sets:add_element(Breakpoint, OldBreakpoints),
+    aere_repl_state:set_breakpoints(NewBreakpoints, State);
+apply_command(continue, [], State) ->
+    case aere_repl_state:blockchain_state(State) of
         {breakpoint, ES} ->
             eval_state(aefa_engine_state:set_breakpoint_stop(false, ES), State);
         _ ->
