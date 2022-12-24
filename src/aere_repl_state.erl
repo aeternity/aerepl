@@ -24,6 +24,7 @@
         , included_files/1
         , included_code/1
         , query_nonce/1
+        , breakpoints/1
         , callback/1
         ]).
 
@@ -40,6 +41,7 @@
         , set_included_files/2
         , set_included_code/2
         , set_query_nonce/2
+        , set_breakpoints/2
         , set_callback/2
         ]).
 
@@ -141,6 +143,14 @@ query_nonce(#repl_state{query_nonce = QueryNonce}) ->
 -spec set_query_nonce(non_neg_integer(), state()) -> state().
 set_query_nonce(X, S) ->
     S#repl_state{query_nonce = X}.
+
+-spec breakpoints(state()) -> term().
+breakpoints(#repl_state{breakpoints = Breakpoints}) ->
+    Breakpoints.
+
+-spec set_breakpoints(term(), state()) -> state().
+set_breakpoints(Breakpoints, RS) ->
+    RS#repl_state{breakpoints = Breakpoints}.
 
 -spec callback(state()) -> callback().
 callback(#repl_state{callback = Callback}) ->
