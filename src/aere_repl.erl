@@ -182,6 +182,19 @@ apply_command(continue, [], State) ->
             eval_state(aefa_engine_state:set_breakpoint_stop(false, ES), State);
         _ ->
             {aere_msg:error("Not at breakpoint!"), State}
+    end;
+apply_command(print_var, [VarName], State) ->
+    case aere_repl_state:blockchain_state(State) of
+        {breakpoint, ES} ->
+            Reg = aefa_engine_state:get_variable_register(VarName, ES),
+            case Reg of
+                undefined -> {aere_msg:error("Undefined var"), State};
+                _         ->
+                    {Val, _} = aefa_fate:lookup_var(Reg, ES),
+                    {aere_msg:output(integer_to_list(Val)), State}
+            end;
+        _ ->
+            {aere_msg:error("Not at breakpoint!"), State}
     end.
 
 %%%------------------

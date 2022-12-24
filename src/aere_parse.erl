@@ -85,6 +85,9 @@ commands() ->
     , {"continue",
         {["c"], none, "",
         [ "Resume execution after a breakpoint is hit." ]}}
+    , {"print_var",
+        {["pv"], {n_args, 1}, "VAR_NAME",
+        [ "Print the value of a variable when a breakpoint is hit." ]}}
     ].
 
 resolve_command(Cmd) ->
