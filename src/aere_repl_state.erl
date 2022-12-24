@@ -144,11 +144,11 @@ query_nonce(#repl_state{query_nonce = QueryNonce}) ->
 set_query_nonce(X, S) ->
     S#repl_state{query_nonce = X}.
 
--spec breakpoints(state()) -> term().
+-spec breakpoints(state()) -> breakpoints().
 breakpoints(#repl_state{breakpoints = Breakpoints}) ->
     Breakpoints.
 
--spec set_breakpoints(term(), state()) -> state().
+-spec set_breakpoints(breakpoints(), state()) -> state().
 set_breakpoints(Breakpoints, RS) ->
     RS#repl_state{breakpoints = Breakpoints}.
 
