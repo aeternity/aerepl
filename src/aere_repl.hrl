@@ -14,7 +14,7 @@
                      | {running, aefa_chain_api:state(), term(), term()}
                      | {breakpoint, aefa_engine_state:state()}.
 
--type breakpoints() :: sets:set({string(), integer()}).
+-type breakpoints() :: [{string(), integer()}].
 
 -type callback() :: fun((repl_state()) -> command_res()).
 

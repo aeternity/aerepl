@@ -48,7 +48,7 @@ init_state(Opts) ->
        repl_account     = PK,
        options          = maps:merge(init_options(), Opts),
        contract_state   = ?DEFAULT_CONTRACT_STATE,
-       breakpoints      = sets:new()
+       breakpoints      = []
       },
     S0.
 
@@ -174,7 +174,7 @@ apply_command(disas, [What], State) ->
 apply_command(break, [File, Line], State) ->
     OldBreakpoints = aere_repl_state:breakpoints(State),
     Breakpoint     = {File, list_to_integer(Line)},
-    NewBreakpoints = sets:add_element(Breakpoint, OldBreakpoints),
+    NewBreakpoints = [Breakpoint | OldBreakpoints],
     aere_repl_state:set_breakpoints(NewBreakpoints, State);
 apply_command(continue, [], State) ->
     case aere_repl_state:blockchain_state(State) of
