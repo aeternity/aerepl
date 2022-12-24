@@ -82,6 +82,12 @@ commands() ->
     , {"break",
         {["b"], {n_args, 2}, "FILE_NAME LINE_NUM",
         [ "Set a breakpoint in the specified file and line." ]}}
+    , {"delete_break",
+        {["db"], {n_args, 1}, "BREAKPOINT_INDEX",
+        [ "Delete a breakpoint." ]}}
+    , {"info_break",
+        {["ib"], none, "",
+        [ "List all breakpoints." ]}}
     , {"continue",
         {["c"], none, "",
         [ "Resume execution after a breakpoint is hit." ]}}
