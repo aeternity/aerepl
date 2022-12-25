@@ -176,9 +176,12 @@ apply_command(break, [File, Line], State) ->
     Breakpoint     = {File, list_to_integer(Line)},
     NewBreakpoints = OldBreakpoints ++ [Breakpoint],
     aere_repl_state:set_breakpoints(NewBreakpoints, State);
-apply_command(delete_break, [Index], State) ->
+apply_command(delete_break, [IndexStr], State) ->
+    Index = list_to_integer(IndexStr),
     Breakpoints = aere_repl_state:breakpoints(State),
-    {Left, [_ | Right]} = lists:split(list_to_integer(Index) - 1, Breakpoints),
+    [ throw({repl_error, aere_msg:error("Breakpoint does not exist")})
+        || Index < 1 orelse Index > length(Breakpoints) ],
+    {Left, [_ | Right]} = lists:split(Index - 1, Breakpoints),
     aere_repl_state:set_breakpoints(Left ++ Right, State);
 apply_command(info_break, _, State) ->
     Breakpoints = aere_repl_state:breakpoints(State),
