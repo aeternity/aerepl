@@ -65,7 +65,29 @@ tests() ->
                     || {A, R} <- lists:zip(Answers, Results)
                   ],
               ?assertEqual(Answers, Results1)
-      end} || TestScenario <- scenarios()].
+      end} || TestScenario <- scenarios()] ++
+    [ { "Testing the uniqueness of long repl commands",
+        fun() ->
+            Commands = [ Long || {Long, _} <- aere_parse:commands() ],
+            io:format("Duplicate long commands found"),
+            ?assertEqual([], duplicated(Commands))
+        end } ] ++
+    [ { "Testing the uniqueness of short repl commands",
+        fun() ->
+            io:format("Duplicate short commands found"),
+            Commands = [ Short || {_, {[Short], _, _, _}} <- aere_parse:commands() ],
+            ?assertEqual([], duplicated(Commands))
+        end } ].
+
+-spec duplicated(list()) -> list().
+duplicated(List) ->
+    Keys  = lists:usort(List),
+    Count = fun(V,L) -> length(lists:filter(fun(E) -> E == V end, L)) end,
+    Freq  = [ { K, Count(K, List) } || K <- Keys ],
+    IsDup = fun({K, F}) when F > 1 -> {true, K};
+               (_)                 -> false
+            end,
+    lists:filtermap(IsDup, Freq).
 
 scenarios() ->
     [ basic_usage
