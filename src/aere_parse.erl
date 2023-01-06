@@ -1,6 +1,6 @@
 -module(aere_parse).
 
--export([ parse/1, words/1, commands/0, resolve_command/1 ]).
+-export([ parse/1, words/1, commands/0, resolve_command/1, assert_unique_commands/1 ]).
 
 -type parse_result() :: {atom(), string() | [string()]}
                       | no_return().
@@ -13,6 +13,26 @@
                         | {max_args, non_neg_integer()}.
 
 -type command_spec() :: {string(), {[string()], command_scheme(), string(), string()}}.
+
+-spec duplicated(list()) -> list().
+duplicated(List) ->
+    Keys  = lists:usort(List),
+    Count = fun(V,L) -> length(lists:filter(fun(E) -> E == V end, L)) end,
+    Freq  = [ { K, Count(K, List) } || K <- Keys ],
+    IsDup = fun({K, F}) when F > 1 -> {true, K};
+               (_)                 -> false
+            end,
+    lists:filtermap(IsDup, Freq).
+
+-spec assert_unique_commands([command_spec()]) -> ok | no_return().
+assert_unique_commands(Commands) ->
+    Longs  = [ Long || {Long, _} <- Commands ],
+    Shorts = [ Short || {_, {[Short], _, _, _}} <- Commands ],
+    DupLongs  = duplicated(Longs),
+    DupShorts = duplicated(Shorts),
+    [ io:format("Duplicate commands found: ~p", DupLongs) || length(DupLongs) > 0 ],
+    [ io:format("Duplicate short commands found: ~p", DupShorts) || length(DupShorts) > 0 ],
+    length(DupLongs ++ DupShorts) == 0 orelse false.
 
 -spec commands() -> [command_spec()].
 commands() ->

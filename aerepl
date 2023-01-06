@@ -17,9 +17,11 @@ main(_Args) ->
     start().
 
 start() ->
-    Banner = aere_gen_server:banner(),
-    io:format(Banner ++ "\n\n"),
-    loop().
+    [ begin
+        Banner = aere_gen_server:banner(),
+        io:format(Banner ++ "\n\n"),
+        loop()
+      end || aere_parse:assert_unique_commands(aere_parse:commands()) ].
 
 loop() ->
     Inp = get_input(),
