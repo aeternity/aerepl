@@ -88,9 +88,15 @@ commands() ->
     , {"info_break",
         {["ib"], none, "",
         [ "List all breakpoints." ]}}
+    , {"step",
+        {["sp"], none, "",
+        [ "Resume execution after a breakpoint is hit, until the next line." ]}}
+    , {"next",
+        {["n"], none, "",
+        [ "Resume execution after a breakpoint is hit, until the next line, skipping over function calls." ]}}
     , {"continue",
         {["c"], none, "",
-        [ "Resume execution after a breakpoint is hit." ]}}
+        [ "Resume execution after a breakpoint is hit, until the next breakpoint." ]}}
     , {"print_var",
         {["pv"], {n_args, 1}, "VAR_NAME",
         [ "Print the value of a variable when a breakpoint is hit." ]}}

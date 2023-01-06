@@ -195,6 +195,24 @@ apply_command(continue, [], State) ->
         _ ->
             {aere_msg:error("Not at breakpoint!"), State}
     end;
+apply_command(next, [], State) ->
+    case aere_repl_state:blockchain_state(State) of
+        {breakpoint, ES} ->
+            ES1 = aefa_engine_state:set_breakpoint_stop(false, ES),
+            ES2 = aefa_engine_state:set_debugger_status(next, ES1),
+            eval_state(ES2, State);
+        _ ->
+            {aere_msg:error("Not at breakpoint!"), State}
+    end;
+apply_command(step, [], State) ->
+    case aere_repl_state:blockchain_state(State) of
+        {breakpoint, ES} ->
+            ES1 = aefa_engine_state:set_breakpoint_stop(false, ES),
+            ES2 = aefa_engine_state:set_debugger_status(step, ES1),
+            eval_state(ES2, State);
+        _ ->
+            {aere_msg:error("Not at breakpoint!"), State}
+    end;
 apply_command(print_var, [VarName], State) ->
     case aere_repl_state:blockchain_state(State) of
         {breakpoint, ES} ->
