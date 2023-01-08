@@ -188,27 +188,14 @@ apply_command(info_break, _, State) ->
     Msg = [ io_lib:format("~p    Breakpoint in the file '~s' at line ~p\n", [Index, File, Line]) 
             || {Index, {File, Line}} <- lists:zip(lists:seq(1, length(Breakpoints)), Breakpoints) ],
     {aere_msg:output(lists:flatten(Msg)), State};
-apply_command(continue, [], State) ->
-    case aere_repl_state:blockchain_state(State) of
-        {breakpoint, ES} ->
-            eval_state(aefa_engine_state:set_breakpoint_stop(false, ES), State);
-        _ ->
-            {aere_msg:error("Not at breakpoint!"), State}
-    end;
-apply_command(next, [], State) ->
+apply_command(DebugRun, [], State)
+  when DebugRun == continue;
+       DebugRun == next;
+       DebugRun == step ->
     case aere_repl_state:blockchain_state(State) of
         {breakpoint, ES} ->
             ES1 = aefa_engine_state:set_breakpoint_stop(false, ES),
-            ES2 = aefa_engine_state:set_debugger_status(next, ES1),
-            eval_state(ES2, State);
-        _ ->
-            {aere_msg:error("Not at breakpoint!"), State}
-    end;
-apply_command(step, [], State) ->
-    case aere_repl_state:blockchain_state(State) of
-        {breakpoint, ES} ->
-            ES1 = aefa_engine_state:set_breakpoint_stop(false, ES),
-            ES2 = aefa_engine_state:set_debugger_status(step, ES1),
+            ES2 = aefa_engine_state:set_debugger_status(DebugRun, ES1),
             eval_state(ES2, State);
         _ ->
             {aere_msg:error("Not at breakpoint!"), State}
