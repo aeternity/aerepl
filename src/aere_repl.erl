@@ -213,6 +213,14 @@ apply_command(step, [], State) ->
         _ ->
             {aere_msg:error("Not at breakpoint!"), State}
     end;
+apply_command(location, [], State) ->
+    case aere_repl_state:blockchain_state(State) of
+        {breakpoint, ES} ->
+            {FileName, Line} = aefa_engine_state:debugger_location(ES),
+            {aere_msg:output(exec_location(FileName, Line)), State};
+        _ ->
+            {aere_msg:error("Not at breakpoint!"), State}
+    end;
 apply_command(print_var, [VarName], State) ->
     case aere_repl_state:blockchain_state(State) of
         {breakpoint, ES} ->
@@ -226,6 +234,24 @@ apply_command(print_var, [VarName], State) ->
         _ ->
             {aere_msg:error("Not at breakpoint!"), State}
     end.
+
+%%%------------------
+
+%% Return the source code with a mark on the currently executing line
+-spec exec_location(string(), integer()) -> string().
+exec_location(FileName, CurrentLine) ->
+    {ok, File} = read_file(FileName),
+    Lines      = string:split(File, "\n", all),
+    LineSign   =
+        fun(Id) when Id == CurrentLine -> ">";
+           (_)                         -> "|"
+        end,
+    MaxDigits     = length(integer_to_list(length(Lines))),
+    FormatLineNum = fun(Num) -> string:right(integer_to_list(Num), MaxDigits) end,
+    FormatLine    = fun(N, Ln) -> [LineSign(N), " ", FormatLineNum(N), " ", Ln] end,
+    Enumerate     = fun(List) -> lists:zip(lists:seq(1, length(List)), List) end,
+    NewLines      = [ FormatLine(Idx, Line) || {Idx, Line} <- Enumerate(Lines) ],
+    lists:join("\n", NewLines).
 
 %%%------------------
 

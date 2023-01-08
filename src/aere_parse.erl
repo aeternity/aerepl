@@ -100,6 +100,9 @@ commands() ->
     , {"print_var",
         {["pv"], {n_args, 1}, "VAR_NAME",
         [ "Print the value of a variable when a breakpoint is hit." ]}}
+    , {"location",
+        {["loc"], none, "",
+        [ "Print the Sophia source file with a mark on the currently executing line." ]}}
     ].
 
 resolve_command(Cmd) ->
