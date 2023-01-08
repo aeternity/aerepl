@@ -195,15 +195,15 @@ apply_command(DebugRun, [], State)
        DebugRun == finish ->
     case aere_repl_state:blockchain_state(State) of
         {breakpoint, ES} ->
-            ES1 = aefa_engine_state:set_breakpoint_stop(false, ES),
-            ES2 = aefa_engine_state:set_debugger_status(DebugRun, ES1),
-            ES3 =
+            CurFun = aefa_engine_state:current_function(ES),
+            Status =
                 case DebugRun of
-                    finish -> aefa_engine_state:set_finish_function(aefa_engine_state:current_function(ES2), ES2);
-                    next   -> aefa_engine_state:set_next_function(aefa_engine_state:current_function(ES2), ES2);
-                    _      -> ES2
+                    S when S == next; S == finish -> {S, CurFun};
+                    _                             -> DebugRun
                 end,
-            eval_state(ES3, State);
+            ES1 = aefa_engine_state:set_breakpoint_stop(false, ES),
+            ES2 = aefa_engine_state:set_debugger_status(Status, ES1),
+            eval_state(ES2, State);
         _ ->
             {aere_msg:error("Not at breakpoint!"), State}
     end;
