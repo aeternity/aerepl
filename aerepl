@@ -19,7 +19,7 @@ main(_Args) ->
 start() ->
     Banner = aere_gen_server:banner(),
     io:format(Banner ++ "\n\n"),
-    loop()
+    loop().
 
 loop() ->
     Inp = get_input(),
