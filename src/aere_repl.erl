@@ -191,12 +191,19 @@ apply_command(info_break, _, State) ->
 apply_command(DebugRun, [], State)
   when DebugRun == continue;
        DebugRun == next;
-       DebugRun == step ->
+       DebugRun == step;
+       DebugRun == finish ->
     case aere_repl_state:blockchain_state(State) of
         {breakpoint, ES} ->
             ES1 = aefa_engine_state:set_breakpoint_stop(false, ES),
             ES2 = aefa_engine_state:set_debugger_status(DebugRun, ES1),
-            eval_state(ES2, State);
+            ES3 =
+                case DebugRun of
+                    finish -> aefa_engine_state:set_finish_function(aefa_engine_state:current_function(ES2), ES2);
+                    next   -> aefa_engine_state:set_next_function(aefa_engine_state:current_function(ES2), ES2);
+                    _      -> ES2
+                end,
+            eval_state(ES3, State);
         _ ->
             {aere_msg:error("Not at breakpoint!"), State}
     end;

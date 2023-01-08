@@ -94,6 +94,9 @@ commands() ->
     , {"next",
         {["n"], none, "",
         [ "Resume execution after a breakpoint is hit, until the next line, skipping over function calls." ]}}
+    , {"finish",
+        {["f"], none, "",
+        [ "Resume execution after a breakpoint is hit, until the current function is finished" ]}}
     , {"continue",
         {["c"], none, "",
         [ "Resume execution after a breakpoint is hit, until the next breakpoint." ]}}
