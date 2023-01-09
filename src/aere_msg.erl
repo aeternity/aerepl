@@ -176,7 +176,7 @@ list_vars(Vars) ->
              || {Var, Type, _} <- Vars],
     aere_theme:output(string:join(VarsS, "\n")).
 
--spec list_types([type_def()]) -> msg().
+-spec list_types([aere_repl_state:type_def()]) -> msg().
 list_types(Types) ->
     TypesS = [ TName ++
                case TArgs of
@@ -187,7 +187,7 @@ list_types(Types) ->
     UniqTypesS = lists:usort(TypesS),
     aere_theme:output(string:join(UniqTypesS, "\n")).
 
--spec list_options(repl_options()) -> msg().
+-spec list_options(aere_repl_state:repl_options()) -> msg().
 list_options(Opts) ->
     ExclOpts = [theme],
     OptsS =

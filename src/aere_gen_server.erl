@@ -23,7 +23,8 @@ init(Args) ->
 handle_call({input, Input}, _From, State) ->
     {Output, State1} = process_input(Input, State),
     {reply, Output, State1};
-handle_call(banner, _From, State = #repl_state{options = #{theme := Theme}}) ->
+handle_call(banner, _From, State) ->
+    #{ theme := Theme } = aere_repl_state:options(State),
     {reply, aere_theme:render(Theme, aere_msg:banner()), State};
 handle_call(_, _, State) ->
     {noreply, State}.
@@ -52,16 +53,17 @@ new_state() ->
     new_state([]).
 new_state(Args) ->
     Opts = proplists:get_value(options, Args, #{}),
-    aere_repl:init_state(Opts).
+    aere_repl_state:init_state(Opts).
 
-process_input(Input, State = #repl_state{options = #{theme := Theme}}) ->
+process_input(Input, State) ->
+    #{ theme := Theme } = aere_repl_state:options(State),
     #repl_response{
        output = Output,
        status = Status
       } = aere_repl:process_input(State, Input),
     {RetStatus, NewState} =
         case Status of
-            {Status1, State1 = #repl_state{}} -> {Status1, State1};
-            Status1                           -> {Status1, State}
+            {ok, State1} -> {ok, State1};
+            Status1      -> {Status1, State}
         end,
     {{RetStatus, aere_theme:render(Theme, Output)}, NewState}.

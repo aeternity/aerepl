@@ -4,12 +4,50 @@
 %%%-------------------------------------------------------------------
 -module(aere_repl_state).
 
-%% We want to keep the record definition available for internal use.
 -include("aere_repl.hrl").
 
--type state() :: repl_state().
+-type print_format() :: sophia | fate | json.
+-type repl_options() ::
+        #{ theme       := aere_theme:theme()
+        , display_gas  := boolean()
+        , call_gas     := pos_integer()
+        , call_value   := non_neg_integer()
+        , print_format := print_format()
+        , print_unit   := boolean()
+        , locked_opts  => [atom()]
+        }.
+-type command_res() :: finish | {aere_theme:renderable(), state()} | state() | no_return().
+-type breakpoints() :: [{string(), integer()}].
+-type callback() :: fun((state()) -> command_res()).
+-type var() :: {string(), aeso_syntax:type(), term()}.
+-type contract_state() :: {aeso_syntax:type(), aeb_fate_data:fate_type()}.
+-type type_def() :: {string(), string(), [aeso_syntax:tvar()], aeso_syntax:typedef()}.
+-type type_scope() :: {string(), {string(), non_neg_integer()}}.
+-type chain_state() :: {ready, aefa_chain_api:state()}
+                     | {running, aefa_chain_api:state(), term(), term()}
+                     | {breakpoint, aefa_engine_state:state()}.
 
--export_type([state/0]).
+-record(rs, { blockchain_state     :: chain_state()
+            , repl_account         :: binary()
+            , options              :: repl_options()
+            , contract_state       :: contract_state()
+            , vars           = []  :: [var()]
+            , funs           = #{} :: #{binary() => term()}
+            , typedefs       = []  :: [type_def()]
+            , type_scope     = []  :: [type_scope()]
+            , loaded_files   = #{} :: #{string() => binary()} % Loaded files ready to be included
+            , included_files = []  :: [string()] % Files included in the context
+            , included_code  = []  :: aeso_syntax:ast() % Cached AST of the included files
+            , query_nonce    = 0   :: non_neg_integer()
+            , breakpoints          :: breakpoints()
+            , callback             :: callback()
+            }).
+
+-opaque state() :: #rs{}.
+
+-export_type([state/0, type_scope/0, type_def/0, repl_options/0, command_res/0]).
+
+-export([init_state/0, init_state/1]).
 
 %% Getters
 -export([ blockchain_state/1
@@ -46,126 +84,165 @@
         ]).
 
 -export([ chain_api/1
+        , bump_nonce/1
         ]).
 
+-spec init_options() -> repl_options().
+init_options() ->
+    #{ theme => aere_theme:default_theme()
+    , display_gas => false
+    , call_gas => 100000000000000000
+    , call_value => 0
+    , print_format => sophia
+    , print_unit => false
+    }.
+
+-spec init_state() -> state().
+init_state() ->
+    init_state(init_options()).
+
+-spec init_state(repl_options()) -> state().
+init_state(Opts) ->
+    Trees0 = aec_trees:new(),
+    {PK, Trees} = aere_chain:new_account(100000000000000000000000000000, Trees0),
+    ChainState = aefa_chain_api:new(
+                   #{ gas_price => 1,
+                      fee       => 0,
+                      trees     => Trees,
+                      origin    => PK,
+                      tx_env    => aere_chain:default_tx_env(1)
+                   }
+                  ),
+    S0 = #rs{
+       blockchain_state = {ready, ChainState},
+       repl_account     = PK,
+       options          = maps:merge(init_options(), Opts),
+       contract_state   = ?DEFAULT_CONTRACT_STATE,
+       breakpoints      = []
+      },
+    S0.
+
 -spec blockchain_state(state()) -> chain_state().
-blockchain_state(#repl_state{blockchain_state = BlockchainState}) ->
+blockchain_state(#rs{blockchain_state = BlockchainState}) ->
     BlockchainState.
 
 -spec set_blockchain_state(chain_state(), state()) -> state().
 set_blockchain_state(X, S) ->
-    S#repl_state{blockchain_state = X}.
+    S#rs{blockchain_state = X}.
 
 -spec repl_account(state()) -> binary().
-repl_account(#repl_state{repl_account = ReplAccount}) ->
+repl_account(#rs{repl_account = ReplAccount}) ->
     ReplAccount.
 
 -spec set_repl_account(binary(), state()) -> state().
 set_repl_account(X, S) ->
-    S#repl_state{repl_account = X}.
+    S#rs{repl_account = X}.
 
 -spec options(state()) -> repl_options().
-options(#repl_state{options = Options}) ->
+options(#rs{options = Options}) ->
     Options.
 
 -spec set_options(repl_options(), state()) -> state().
 set_options(X, S) ->
-    S#repl_state{options = X}.
+    S#rs{options = X}.
 
 -spec contract_state(state()) -> contract_state().
-contract_state(#repl_state{contract_state = ContractState}) ->
+contract_state(#rs{contract_state = ContractState}) ->
     ContractState.
 
 -spec set_contract_state(contract_state(), state()) -> state().
 set_contract_state(X, S) ->
-    S#repl_state{contract_state = X}.
+    S#rs{contract_state = X}.
 
 -spec vars(state()) -> [var()].
-vars(#repl_state{vars = Vars}) ->
+vars(#rs{vars = Vars}) ->
     Vars.
 
 -spec set_vars([var()], state()) -> state().
 set_vars(X, S) ->
-    S#repl_state{vars = X}.
+    S#rs{vars = X}.
 
 -spec funs(state()) -> #{binary() => term()}.
-funs(#repl_state{funs = Funs}) ->
+funs(#rs{funs = Funs}) ->
     Funs.
 
 -spec set_funs(#{binary() => term()}, state()) -> state().
 set_funs(X, S) ->
-    S#repl_state{funs = X}.
+    S#rs{funs = X}.
 
 -spec typedefs(state()) -> [type_def()].
-typedefs(#repl_state{typedefs = Typedefs}) ->
+typedefs(#rs{typedefs = Typedefs}) ->
     Typedefs.
 
 -spec set_typedefs([type_def()], state()) -> state().
 set_typedefs(X, S) ->
-    S#repl_state{typedefs = X}.
+    S#rs{typedefs = X}.
 
 -spec type_scope(state()) -> [type_scope()].
-type_scope(#repl_state{type_scope = TypeScope}) ->
+type_scope(#rs{type_scope = TypeScope}) ->
     TypeScope.
 
 -spec set_type_scope([type_scope()], state()) -> state().
 set_type_scope(X, S) ->
-    S#repl_state{type_scope = X}.
+    S#rs{type_scope = X}.
 
 -spec loaded_files(state()) -> #{string() => binary()}.
-loaded_files(#repl_state{loaded_files = LoadedFiles}) ->
+loaded_files(#rs{loaded_files = LoadedFiles}) ->
     LoadedFiles.
 
 -spec set_loaded_files(#{string() => binary()}, state()) -> state().
 set_loaded_files(X, S) ->
-    S#repl_state{loaded_files = X}.
+    S#rs{loaded_files = X}.
 
 -spec included_files(state()) -> [string()].
-included_files(#repl_state{included_files = IncludedFiles}) ->
+included_files(#rs{included_files = IncludedFiles}) ->
     IncludedFiles.
 
 -spec set_included_files([string()], state()) -> state().
 set_included_files(X, S) ->
-    S#repl_state{included_files = X}.
+    S#rs{included_files = X}.
 
 -spec included_code(state()) -> aeso_syntax:ast().
-included_code(#repl_state{included_code = IncludedCode}) ->
+included_code(#rs{included_code = IncludedCode}) ->
     IncludedCode.
 
 -spec set_included_code(aeso_syntax:ast(), state()) -> state().
 set_included_code(X, S) ->
-    S#repl_state{included_code = X}.
+    S#rs{included_code = X}.
 
 -spec query_nonce(state()) -> non_neg_integer().
-query_nonce(#repl_state{query_nonce = QueryNonce}) ->
+query_nonce(#rs{query_nonce = QueryNonce}) ->
     QueryNonce.
 
 -spec set_query_nonce(non_neg_integer(), state()) -> state().
 set_query_nonce(X, S) ->
-    S#repl_state{query_nonce = X}.
+    S#rs{query_nonce = X}.
 
 -spec breakpoints(state()) -> breakpoints().
-breakpoints(#repl_state{breakpoints = Breakpoints}) ->
+breakpoints(#rs{breakpoints = Breakpoints}) ->
     Breakpoints.
 
 -spec set_breakpoints(breakpoints(), state()) -> state().
 set_breakpoints(Breakpoints, RS) ->
-    RS#repl_state{breakpoints = Breakpoints}.
+    RS#rs{breakpoints = Breakpoints}.
 
 -spec callback(state()) -> callback().
-callback(#repl_state{callback = Callback}) ->
+callback(#rs{callback = Callback}) ->
     Callback.
 
 -spec set_callback(callback(), state()) -> state().
 set_callback(Callback, RS) ->
-    RS#repl_state{callback = Callback}.
+    RS#rs{callback = Callback}.
 
 %% Advanced getters
 
 -spec chain_api(state()) -> aefa_chain_api:state().
-chain_api(#repl_state{blockchain_state = {ready, Api}}) ->
+chain_api(#rs{blockchain_state = {ready, Api}}) ->
     Api;
-chain_api(#repl_state{blockchain_state = {running, Api, _, _}}) ->
+chain_api(#rs{blockchain_state = {running, Api, _, _}}) ->
     Api;
-chain_api(#repl_state{blockchain_state = {breakpoint, ES}}) ->
+chain_api(#rs{blockchain_state = {breakpoint, ES}}) ->
     aefa_engine_state:chain_api(ES).
+
+bump_nonce(S = #rs{query_nonce = N}) ->
+    S#rs{query_nonce = N + 1}.

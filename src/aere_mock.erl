@@ -33,6 +33,8 @@
 -type decl()         :: aeso_syntax:decl().
 -type guarded_expr() :: aeso_syntax:guarded_expr().
 
+-type repl_state() :: aere_repl_state:state().
+
 %%% --- Mocks --- %%%
 
 %% Mock to validate and evaluate Sophia expression
@@ -67,10 +69,10 @@ typedef_contract(Name, Args, Def, State) ->
 
 %% Mock for unfolding type aliases in type definitions
 -spec type_unfold_contract(repl_state()) -> ast().
-type_unfold_contract(State = #repl_state{type_scope = TypeScope}) ->
-    type_unfold_contract(TypeScope, State).
+type_unfold_contract(State) ->
+    type_unfold_contract(aere_repl_state:type_scope(State), State).
 
--spec type_unfold_contract([type_scope()], repl_state()) -> ast().
+-spec type_unfold_contract([aere_repl_state:type_scope()], repl_state()) -> ast().
 type_unfold_contract(Types, State) ->
     Aliases =
         [ begin
@@ -99,24 +101,24 @@ pat_as_decl(Pat) ->
 %%% --- Entities extracted from REPL state
 
 -spec args(repl_state()) -> [pat()].
-args(#repl_state{vars = Vars}) ->
-    [{typed, ann(), {id, ann(), Arg}, ArgT} || {Arg, ArgT, _} <- Vars].
+args(State) ->
+    [{typed, ann(), {id, ann(), Arg}, ArgT} || {Arg, ArgT, _} <- aere_repl_state:vars(State)].
 
 -spec typedef_namespaces(repl_state()) -> ast().
-typedef_namespaces(#repl_state{typedefs = Typedefs}) ->
+typedef_namespaces(State) ->
     Namespaces =
         [ namespace(Ns, [type_def(Name, Args, Def)])
-          || {Ns, Name, Args, Def} <- Typedefs
+          || {Ns, Name, Args, Def} <- aere_repl_state:typedefs(State)
         ],
     lists:reverse(Namespaces).
 
 -spec includes(repl_state()) -> ast().
-includes(#repl_state{included_code = IncFiles}) ->
-    un_main(IncFiles).
+includes(State) ->
+    un_main(aere_repl_state:included_files(State)).
 
 -spec type_scope_usings(repl_state()) -> [decl()].
-type_scope_usings(#repl_state{type_scope = TypeScope}) ->
-    [using(Namespace) || {_, {Namespace, _}} <- TypeScope].
+type_scope_usings(State) ->
+    [using(Namespace) || {_, {Namespace, _}} <- aere_repl_state:type_scope(State)].
 
 -spec with_state_decls(repl_state(), [decl()]) -> [decl()].
 with_state_decls(State, Decls) ->
@@ -130,7 +132,8 @@ with_state_ast(State, Ast) ->
     Inc ++ Ns ++ Ast.
 
 -spec mock_contract(repl_state(), [decl()]) -> ast().
-mock_contract(State = #repl_state{contract_state = {StateT, _}}, Decls) ->
+mock_contract(State, Decls) ->
+    {StateT, _} = aere_repl_state:contract_state(State),
     with_state_ast(
       State,
       [contract(?MOCK_CONTRACT, StateT, with_state_decls(State, Decls))]).

@@ -156,7 +156,7 @@ eval_inputs(State, Inputs) ->
     eval_inputs(State, Inputs, []).
 
 eval(I) ->
-    State = aere_repl:init_state(),
+    State = aere_repl_state:init_state(),
     Entries = split_file(I),
     Expected = [ Output || #entry{output = Output} <- Entries],
     Inputs = [ Input || #entry{input = Input} <- Entries ],
