@@ -103,8 +103,8 @@ apply_command(print, [What], State) ->
     {print_state(State, What), State};
 apply_command(disas, Args, State) ->
     case aere_repl_state:blockchain_state(State) of
-        {breakpoint, ES} ->
-            Chain = aefa_engine_state:chain_api(ES),
+        {breakpoint, _} ->
+            Chain = aere_repl_state:chain_api(State),
             NewState = aere_repl_state:set_blockchain_state({ready, Chain}, State),
             apply_command(disas, Args, NewState);
         {running, _, _, _} ->
