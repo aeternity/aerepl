@@ -8,19 +8,23 @@
         , source_location/1
         ]).
 
+
 -spec add_breakpoint(FileName, Line, State) -> State
     when FileName :: string(),
          Line     :: integer(),
          State    :: aere_repl_state:state().
+
 add_breakpoint(FileName, Line, State) ->
     OldBPs = aere_repl_state:breakpoints(State),
     BP     = {FileName, list_to_integer(Line)},
     NewBPs = OldBPs ++ [BP],
     aere_repl_state:set_breakpoints(NewBPs, State).
 
+
 -spec delete_breakpoint(Index, State) -> State | no_return()
     when Index :: integer(),
          State :: aere_repl_state:state().
+
 delete_breakpoint(Index, State) ->
     BPs = aere_repl_state:breakpoints(State),
     [ throw({repl_error, aere_msg:error("Breakpoint does not exist")})
@@ -28,17 +32,21 @@ delete_breakpoint(Index, State) ->
     {Left, [_ | Right]} = lists:split(Index - 1, BPs),
     aere_repl_state:set_breakpoints(Left ++ Right, State).
 
+
 -spec list_breakpoints(State) -> string()
     when State :: aere_repl_state:state().
+
 list_breakpoints(State) ->
     BPs  = aere_repl_state:breakpoints(State),
     Enum = fun(List) -> lists:zip(lists:seq(1, length(List)), List) end,
     Msg  = "~p    Breakpoint in the file '~s' at line ~p\n",
     lists:flatten([ io_lib:format(Msg, [I, F, L])  || {I, {F, L}} <- Enum(BPs) ]).
 
+
 -spec resume(EngineState, ResumeKind) -> EngineState
     when EngineState :: aefa_engine_state:state(),
          ResumeKind  :: step | next | continue | finish.
+
 resume(ES, Kind) ->
     CurFun = aefa_engine_state:current_function(ES),
     Status =
@@ -50,9 +58,11 @@ resume(ES, Kind) ->
     ES2 = aefa_engine_state:set_debugger_status(Status, ES1),
     ES2.
 
+
 -spec lookup_variable(EngineState, VariableName) -> string() | no_return()
     when EngineState  :: aefa_engine_state:state(),
          VariableName :: string().
+
 lookup_variable(ES, VarName) ->
     case aefa_engine_state:get_variable_register(VarName, ES) of
         undefined ->
@@ -62,9 +72,11 @@ lookup_variable(ES, VarName) ->
             io_lib:format("~p", [Val])
     end.
 
+
 -spec source_location(EngineState) -> Source
     when EngineState :: aefa_engine_state:state(),
          Source      :: string().
+
 source_location(ES) ->
     {FileName, CurrentLine} = aefa_engine_state:debugger_location(ES),
 
