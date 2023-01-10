@@ -28,12 +28,10 @@ typecheck(Ast, Opts) ->
     end.
 
 compile_contract(TypedAst) ->
-    {#{child_con_env := ChildConEnv
-     } = FCodeEnv, FCode} = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, [])
-                 catch {error, Ec} -> process_err(Ec) end,
-    SavedFreshNames = maps:get(saved_fresh_names, FCodeEnv, #{}),
-    try aeso_fcode_to_fate:compile(ChildConEnv, FCode, SavedFreshNames, [include_child_contract_symbols]) of
-        {Code, _} -> Code
+    {#{child_con_env := ChildConEnv}, FCode}
+        = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, [])
+          catch {error, Ec} -> process_err(Ec) end,
+    try aeso_fcode_to_fate:compile(ChildConEnv, FCode, [])
     catch {error, Ef} -> process_err(Ef) end.
 
 type_of_user_input(TEnv) ->

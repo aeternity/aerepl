@@ -11,7 +11,7 @@ start_link() ->
 
 init(_Args) ->
     Flags = #{strategy => one_for_one,
-              intensity => 5,
+              intensity => 1,
               period => 3
             },
     ChildSpecs =
