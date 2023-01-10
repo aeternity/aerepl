@@ -115,82 +115,37 @@ apply_command(disas, Args, State) ->
             {aere_msg:output(lists:flatten(aeb_fate_asm:pp(Fate))), State}
     end;
 apply_command(break, [File, Line], State) ->
-    OldBreakpoints = aere_repl_state:breakpoints(State),
-    Breakpoint     = {File, list_to_integer(Line)},
-    NewBreakpoints = OldBreakpoints ++ [Breakpoint],
-    aere_repl_state:set_breakpoints(NewBreakpoints, State);
+    aere_debugger:add_breakpoint(File, Line, State);
 apply_command(delete_break, [IndexStr], State) ->
     Index = list_to_integer(IndexStr),
-    Breakpoints = aere_repl_state:breakpoints(State),
-    [ throw({repl_error, aere_msg:error("Breakpoint does not exist")})
-        || Index < 1 orelse Index > length(Breakpoints) ],
-    {Left, [_ | Right]} = lists:split(Index - 1, Breakpoints),
-    aere_repl_state:set_breakpoints(Left ++ Right, State);
+    aere_debugger:delete_breakpoint(Index, State);
 apply_command(info_break, _, State) ->
-    Breakpoints = aere_repl_state:breakpoints(State),
-    Msg = [ io_lib:format("~p    Breakpoint in the file '~s' at line ~p\n", [Index, File, Line]) 
-            || {Index, {File, Line}} <- lists:zip(lists:seq(1, length(Breakpoints)), Breakpoints) ],
-    {aere_msg:output(lists:flatten(Msg)), State};
-apply_command(DebugRun, [], State)
-  when DebugRun == continue;
-       DebugRun == next;
-       DebugRun == step;
-       DebugRun == finish ->
+    {aere_msg:output(aere_debugger:list_breakpoints(State)), State};
+apply_command(ResumeKind, [], State)
+  when ResumeKind == continue;
+       ResumeKind == next;
+       ResumeKind == step;
+       ResumeKind == finish ->
     case aere_repl_state:blockchain_state(State) of
         {breakpoint, ES} ->
-            CurFun = aefa_engine_state:current_function(ES),
-            Status =
-                case DebugRun of
-                    S when S == next; S == finish -> {S, CurFun};
-                    _                             -> DebugRun
-                end,
-            ES1 = aefa_engine_state:set_breakpoint_stop(false, ES),
-            ES2 = aefa_engine_state:set_debugger_status(Status, ES1),
-            eval_state(ES2, State);
+            eval_state(aere_debugger:resume(ES, ResumeKind), State);
         _ ->
             {aere_msg:error("Not at breakpoint!"), State}
     end;
 apply_command(location, [], State) ->
     case aere_repl_state:blockchain_state(State) of
         {breakpoint, ES} ->
-            {FileName, Line} = aefa_engine_state:debugger_location(ES),
-            {aere_msg:output(exec_location(FileName, Line)), State};
+            {aere_msg:output(aere_debugger:source_location(ES)), State};
         _ ->
             {aere_msg:error("Not at breakpoint!"), State}
     end;
 apply_command(print_var, [VarName], State) ->
     case aere_repl_state:blockchain_state(State) of
         {breakpoint, ES} ->
-            Reg = aefa_engine_state:get_variable_register(VarName, ES),
-            case Reg of
-                undefined -> {aere_msg:error("Undefined var"), State};
-                _         ->
-                    {Val, _} = aefa_fate:lookup_var(Reg, ES),
-                    {aere_msg:output(integer_to_list(Val)), State}
-            end;
+            aere_msg:output(aere_debugger:lookup_variable(ES, VarName), State);
         _ ->
             {aere_msg:error("Not at breakpoint!"), State}
     end.
-
-%%%------------------
-
-%% Return the source code with a mark on the currently executing line
--spec exec_location(string(), integer()) -> string().
-exec_location(FileName, CurrentLine) ->
-    {ok, File} = read_file(FileName),
-    Lines      = string:split(File, "\n", all),
-    LineSign   =
-        fun(Id) when Id == CurrentLine -> ">";
-           (_)                         -> "|"
-        end,
-    MaxDigits     = length(integer_to_list(length(Lines))),
-    FormatLineNum = fun(Num) -> string:right(integer_to_list(Num), MaxDigits) end,
-    FormatLine    = fun(N, Ln) -> [LineSign(N), " ", FormatLineNum(N), " ", Ln] end,
-    Enumerate     = fun(List) -> lists:zip(lists:seq(1, length(List)), List) end,
-    NewLines      = [ FormatLine(Idx, Line) || {Idx, Line} <- Enumerate(Lines) ],
-    lists:join("\n", NewLines).
-
-%%%------------------
 
 -spec set_state([aeso_syntax:stmt()], repl_state()) -> aere_repl_state:command_res().
 set_state(Body, RS) ->
@@ -263,7 +218,7 @@ format_value(json, TEnv, Type, Val) ->
 load_modules([], S0) ->
     S0;
 load_modules(Filenames, S0) ->
-    Modules = read_files(Filenames),
+    Modules = aere_utils:read_files(Filenames),
     S1 = register_modules(Modules, S0),
     S2 = register_include(element(1, lists:last(Modules)), S1),
     S2.
@@ -271,29 +226,11 @@ load_modules(Filenames, S0) ->
 reload_modules(RS) ->
     LdFiles  = aere_repl_state:loaded_files(RS), 
     IncFiles = aere_repl_state:included_files(RS),
-    Modules  = read_files(maps:keys(LdFiles)),
+    Modules  = aere_utils:read_files(maps:keys(LdFiles)),
 
     RS1 = register_modules(Modules, RS),
     RS2 = lists:foldl(fun register_include/2, RS1, IncFiles),
     RS2.
-
-% Reads files either from working dir or stdlib
-read_file(Filename) ->
-    case file:read_file(Filename) of
-        {error, enoent} ->
-            file:read_file(filename:join(aeso_stdlib:stdlib_include_path(), Filename));
-        Res -> Res
-    end.
-
-read_files(Filenames) ->
-    Files = [read_file(F) || F <- Filenames],
-
-    case [{File, file:format_error(Err)} || {File, {error, Err}} <- lists:zip(Filenames, Files)] of
-        []     -> ok;
-        Failed -> throw({repl_error, aere_msg:files_load_error(Failed)})
-    end,
-
-    lists:zip(Filenames, [File || {ok, File} <- Files]).
 
 -spec register_modules([{string(), binary()}], repl_state()) -> aere_repl_state:command_res().
 register_modules(Modules, S0) ->
@@ -632,7 +569,7 @@ default_loaded_files() ->
                     File <- element(2, file:list_dir(StdlibDir)),
                     filename:extension(File) =:= ".aes"
                 ],
-            FileMap = maps:from_list(read_files(Files)),
+            FileMap = maps:from_list(aere_utils:read_files(Files)),
             put(aere_default_loaded_files, FileMap),
             FileMap;
         Files ->
