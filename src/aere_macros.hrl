@@ -6,6 +6,9 @@
 
 -define(IS_REPL_ENTRYPOINT(X), lists:member(X, [<<?USER_INPUT>>, <<"init">>])).
 
+-define(DEFAULT_CONTRACT_STATE_T, {tuple_t, aere_mock:ann(), []}).
+-define(DEFAULT_CONTRACT_STATE, {?DEFAULT_CONTRACT_STATE_T, {tuple, {}}}).
+
 -define(LAZY(C), fun() -> C end).
 -define(IF(C, T, E),
         case C of

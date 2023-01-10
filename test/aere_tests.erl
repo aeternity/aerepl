@@ -2,7 +2,6 @@
 
 -compile([export_all, nowarn_export_all]).
 
--include("../src/aere_repl.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -record(entry,
@@ -140,12 +139,13 @@ split_raw_entry({raw_entry, EntryLines}) ->
 eval_inputs(_State, [], Outputs) ->
     lists:reverse(Outputs);
 eval_inputs(State, [Input | Rest], Outputs) ->
-    case aere_repl:process_input(State, Input) of
-        #repl_response{output = Received, status = {ok, NewState}} ->
+    Response = aere_repl:process_input(State, Input),
+    Received = aere_repl_response:output(Response),
+    case aere_repl_response:status(Response) of
+        {ok, NewState} ->
             Rendered = aere_theme:render(Received),
             eval_inputs(NewState, Rest, [Rendered  | Outputs]);
-        #repl_response{output = Received, status = Err}
-          when Err == error orelse Err == internal_error ->
+        Err when Err == error orelse Err == internal_error ->
             Rendered = aere_theme:render(Received),
             eval_inputs(State, Rest, [Rendered | Outputs]);
         _ ->

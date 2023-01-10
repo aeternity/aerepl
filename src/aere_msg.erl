@@ -30,8 +30,6 @@
         , bye/0
         ]).
 
--include("aere_repl.hrl").
-
 -type msg() :: aere_theme:renderable().
 
 -spec banner() -> msg().

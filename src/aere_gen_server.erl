@@ -7,8 +7,6 @@
         , reset/0
         ]).
 
--include("aere_repl.hrl").
-
 %%% --- GEN SERVER ---
 
 start(Args) ->
@@ -57,13 +55,10 @@ new_state(Args) ->
 
 process_input(Input, State) ->
     #{ theme := Theme } = aere_repl_state:options(State),
-    #repl_response{
-       output = Output,
-       status = Status
-      } = aere_repl:process_input(State, Input),
+    Response = aere_repl:process_input(State, Input),
     {RetStatus, NewState} =
-        case Status of
+        case aere_repl_response:status(Response) of
             {ok, State1} -> {ok, State1};
-            Status1      -> {Status1, State}
+            Status       -> {Status, State}
         end,
-    {{RetStatus, aere_theme:render(Theme, Output)}, NewState}.
+    {{RetStatus, aere_theme:render(Theme, aere_repl_response:output(Response))}, NewState}.

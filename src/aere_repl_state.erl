@@ -4,7 +4,7 @@
 %%%-------------------------------------------------------------------
 -module(aere_repl_state).
 
--include("aere_repl.hrl").
+-include("aere_macros.hrl").
 
 -type print_format() :: sophia | fate | json.
 -type repl_options() ::

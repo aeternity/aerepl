@@ -9,7 +9,6 @@
         , register_modules/2, default_loaded_files/0
         ]).
 
--include("aere_repl.hrl").
 -include("aere_macros.hrl").
 
 -type repl_state() :: aere_repl_state:state().
@@ -20,7 +19,7 @@
 
 %% Process an input string in the current state of the repl and respond accordingly
 %% This is supposed to be called after each input to the repl
--spec process_input(repl_state(), binary() | string()) -> repl_response().
+-spec process_input(repl_state(), binary() | string()) -> aere_repl_response:response().
 process_input(State, String) when is_binary(String) ->
     process_input(State, binary_to_list(String));
 process_input(State, String) ->
@@ -29,47 +28,20 @@ process_input(State, String) ->
         apply_command(Command, Args, aere_repl_state:bump_nonce(State))
     of
         finish ->
-            #repl_response
-                { output = aere_msg:bye()
-                , warnings = []
-                , status = finish
-                };
+            aere_repl_response:new(aere_msg:bye(), finish);
         {Out, State1} ->
-            #repl_response
-                { output = Out
-                , warnings = []
-                , status = {ok, State1}
-                };
+            aere_repl_response:new(Out, {ok, State1});
         State1 ->
-            #repl_response
-                { output = []
-                , warnings = []
-                , status = {ok, State1}
-                }
-    catch error:E:Stacktrace ->
-            #repl_response
-                { output = aere_msg:internal(E, Stacktrace)
-                , warnings = []
-                , status = internal_error
-                };
-            {repl_error, E} ->
-                #repl_response
-                    { output = E
-                    , warnings = []
-                    , status = error
-                    };
-            {revert, Err} ->
-                #repl_response
-                    { output = aere_msg:abort(Err)
-                    , warnings = []
-                    , status = error
-                    };
-            {aefa_fate, FateErr, _} ->
-                #repl_response
-                    { output = aere_msg:error("FATE error: " ++ FateErr)
-                    , warnings = []
-                    , status = error
-                    }
+            aere_repl_response:new([], {ok, State1})
+    catch
+        error:E:Stacktrace ->
+            aere_repl_response:new(aere_msg:internal(E, Stacktrace), internal_error);
+        {repl_error, E} ->
+            aere_repl_response:new(E, error);
+        {revert, Err} ->
+            aere_repl_response:new(aere_msg:abort(Err), error);
+        {aefa_fate, FateErr, _} ->
+            aere_repl_response:new(aere_msg:error("FATE error: " ++ FateErr), error)
     end.
 
 %% Easter egg, don't ask.

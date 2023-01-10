@@ -6,7 +6,6 @@
 -module(aere_mock).
 
 -include("aere_macros.hrl").
--include("aere_repl.hrl").
 
 -export([ eval_contract/2
         , letval_contract/4
