@@ -126,26 +126,14 @@ apply_command(ResumeKind, [], State)
        ResumeKind == next;
        ResumeKind == step;
        ResumeKind == finish ->
-    case aere_repl_state:blockchain_state(State) of
-        {breakpoint, ES} ->
-            eval_state(aere_debugger:resume(ES, ResumeKind), State);
-        _ ->
-            {aere_msg:error("Not at breakpoint!"), State}
-    end;
+    ES = get_breakpoint_engine_state(State),
+    eval_state(aere_debugger:resume(ES, ResumeKind), State);
 apply_command(location, [], State) ->
-    case aere_repl_state:blockchain_state(State) of
-        {breakpoint, ES} ->
-            {aere_msg:output(aere_debugger:source_location(ES)), State};
-        _ ->
-            {aere_msg:error("Not at breakpoint!"), State}
-    end;
+    ES = get_breakpoint_engine_state(State),
+    {aere_msg:output(aere_debugger:source_location(ES)), State};
 apply_command(print_var, [VarName], State) ->
-    case aere_repl_state:blockchain_state(State) of
-        {breakpoint, ES} ->
-            aere_msg:output(aere_debugger:lookup_variable(ES, VarName), State);
-        _ ->
-            {aere_msg:error("Not at breakpoint!"), State}
-    end.
+    ES = get_breakpoint_engine_state(State),
+    aere_msg:output(aere_debugger:lookup_variable(ES, VarName), State).
 
 -spec set_state([aeso_syntax:stmt()], repl_state()) -> aere_repl_state:command_res().
 set_state(Body, RS) ->
@@ -588,6 +576,12 @@ get_running_chain({running, Chain, Res, Gas}) ->
     {Chain, Res, Gas};
 get_running_chain(_) ->
     throw({repl_error, aere_msg:chain_not_running()}).
+
+get_breakpoint_engine_state(RS) ->
+    case aere_repl_state:blockchain_state(RS) of
+        {breakpoint, ES} -> ES;
+        _                -> {aere_msg:not_at_breakpoint(), RS}
+    end.
 
 set_option(Option, Args, RS) ->
     Opts = aere_repl_state:options(RS),

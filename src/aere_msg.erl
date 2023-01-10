@@ -26,6 +26,7 @@
         , bad_fun_ref/0
         , contract_not_found/0
         , function_not_found_in/1
+        , not_at_breakpoint/0
         , help/0, help/1
         , bye/0
         ]).
@@ -218,6 +219,10 @@ contract_not_found() ->
 -spec function_not_found_in(binary()) -> msg().
 function_not_found_in(Name) ->
     aere_theme:error("This contract does not have a function of hash name " ++ binary:bin_to_list(Name) ++ ".").
+
+-spec not_at_breakpoint() -> msg().
+not_at_breakpoint() ->
+    aere_theme:error("Not at breakpoint!").
 
 -spec bye() -> msg().
 bye() -> aere_theme:output("bye!").
