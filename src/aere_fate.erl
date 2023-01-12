@@ -3,14 +3,11 @@
 -export([ run_contract/2
         , run_contract_debug/2
         , eval_state/2
-        , add_fun_symbols_from_code/1
-        , get_stack_trace/1
+        , add_fun_symbols_from_code/2
+        , get_stack_trace/2
         ]).
 
 -include("aere_macros.hrl").
-
-
--define(AEREPL_FUN_SYMBOLS_ETS, aerepl_fun_smbols).
 
 
 -spec run_contract(FateCode, ReplState) -> {Message, ReplState} | no_return()
@@ -22,7 +19,7 @@ run_contract(FateCode, S) ->
     ES = setup_fate_state(FateCode, S),
     case eval_state(ES, S) of
         {revert, #{err_msg := ErrMsg, engine_state := ES1}} ->
-            StackTrace = get_stack_trace(ES1),
+            StackTrace = get_stack_trace(S, ES1),
             throw({repl_error, aere_msg:abort(ErrMsg, StackTrace)});
         Res ->
             Res
@@ -141,57 +138,51 @@ setup_fate_state(FateCode, RS) ->
     ES5.
 
 
--spec get_stack_trace(EngineState) -> [{Contract, FunHash, BasicBlock}]
-    when EngineState :: aefa_engine_state:state(),
+-spec get_stack_trace(ReplState, EngineState) -> [{Contract, FunHash, BasicBlock}]
+    when ReplState   :: aefa_engine_state:state(),
+         EngineState :: aefa_engine_state:state(),
          Contract    :: aec_keys:pubkey(),
          FunHash     :: binary(),
          BasicBlock  :: non_neg_integer().
 
-get_stack_trace(ES) ->
+get_stack_trace(RS, ES) ->
     Stack = aefa_engine_state:call_stack(aefa_engine_state:push_call_stack(ES)),
-    [ {Contract, get_fun_symbol(FunHash), BB}
+    [ {Contract, get_fun_symbol(RS, FunHash), BB}
       || {_, Contract, _, FunHash, _, BB, _, _, _} <- Stack
     ].
 
 
--spec ensure_fun_symbols() -> true | ets:table().
+-spec add_fun_symbol(ReplState, Hash, FunName) -> ReplState
+    when ReplState :: aere_repl_state:state(),
+         Hash      :: binary(),
+         FunName   :: binary().
 
-ensure_fun_symbols() ->
-    ets:whereis(?AEREPL_FUN_SYMBOLS_ETS) =/= undefined
-        orelse ets:new(?AEREPL_FUN_SYMBOLS_ETS, [named_table, set, public]).
-
-
--spec add_fun_symbol(Hash, FunName) -> true
-    when Hash    :: binary(),
-         FunName :: binary().
-
-add_fun_symbol(Hash, Name) ->
-    ensure_fun_symbols(),
-    ets:insert(?AEREPL_FUN_SYMBOLS_ETS, {Hash, Name}).
+add_fun_symbol(RS, Hash, Name) ->
+    Symbols = aere_repl_state:function_symbols(RS),
+    aere_repl_state:set_function_symbols(Symbols#{Hash => Name}, RS).
 
 
--spec get_fun_symbol(Hash) -> FunName | Hash
-    when Hash    :: binary(),
-         FunName :: binary().
+-spec get_fun_symbol(ReplState, Hash) -> FunName
+    when ReplState :: aere_repl_state:state(),
+         Hash      :: binary(),
+         FunName   :: binary().
 
-get_fun_symbol(Hash) ->
-    ensure_fun_symbols(),
-    case ets:lookup(?AEREPL_FUN_SYMBOLS_ETS, Hash) of
-        [{_, Name}|_] -> Name;
-        [] -> Hash
-    end.
+get_fun_symbol(RS, Hash) ->
+    maps:get(Hash, aere_repl_state:function_symbols(RS), Hash).
 
 
--spec add_fun_symbols(Symbols) -> ok
-    when Symbols :: map().
+-spec add_fun_symbols(ReplState, Symbols) -> ReplState
+    when ReplState :: aere_repl_state:state(),
+         Symbols   :: aere_repl_state:function_symbols().
 
-add_fun_symbols(Dict) ->
-    [ add_fun_symbol(Hash, Name) || {Hash, Name} <- maps:to_list(Dict) ],
-    ok.
+add_fun_symbols(RS0, Dict) ->
+    F = fun({Hash, Name}, RS) -> add_fun_symbol(RS, Hash, Name) end,
+    lists:foldl(F, RS0, maps:to_list(Dict)).
 
 
--spec add_fun_symbols_from_code(FateCode) -> ok
-    when FateCode :: aeb_fate_code:fcode().
+-spec add_fun_symbols_from_code(ReplState, FateCode) -> ReplState
+    when FateCode  :: aeb_fate_code:fcode(),
+         ReplState :: aere_repl_state:state().
 
-add_fun_symbols_from_code(Code) ->
-    add_fun_symbols(aeb_fate_code:symbols(Code)).
+add_fun_symbols_from_code(RS, Code) ->
+    add_fun_symbols(RS, aeb_fate_code:symbols(Code)).

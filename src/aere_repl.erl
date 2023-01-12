@@ -147,11 +147,10 @@ set_state(Body, RS) ->
     {TEnv, TAst} = aere_sophia:typecheck(Contract),
     Type         = aere_sophia:type_of_user_input(TEnv),
     ByteCode     = aere_sophia:compile_contract(TAst),
-    aere_fate:add_fun_symbols_from_code(ByteCode),
-
-    Callback = fun(State) -> set_state_callback(Type, State) end,
-    NewRS    = aere_repl_state:set_callback(Callback, RS),
-    aere_fate:run_contract(ByteCode, NewRS).
+    Callback     = fun(State) -> set_state_callback(Type, State) end,
+    RS1          = aere_fate:add_fun_symbols_from_code(RS, ByteCode),
+    RS2          = aere_repl_state:set_callback(Callback, RS1),
+    aere_fate:run_contract(ByteCode, RS2).
 
 set_state_callback(Type, RS0) ->
     ChainState       = aere_repl_state:blockchain_state(RS0),
@@ -169,14 +168,13 @@ eval_expr(Body, RS) ->
     Ast          = aere_mock:eval_contract(Body, RS),
     {TEnv, TAst} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
     ByteCode     = aere_sophia:compile_contract(TAst),
-    aere_fate:add_fun_symbols_from_code(ByteCode),
-
-    Callback = fun(State) -> eval_expr_callback(State, TEnv) end,
-    NewRS    = aere_repl_state:set_callback(Callback, RS),
-    aere_fate:run_contract_debug(ByteCode, NewRS).
+    Callback     = fun(State) -> eval_expr_callback(State, TEnv) end,
+    RS1          = aere_fate:add_fun_symbols_from_code(RS, ByteCode),
+    RS2          = aere_repl_state:set_callback(Callback, RS1),
+    aere_fate:run_contract_debug(ByteCode, RS2).
 
 eval_expr_callback({S, #{err_msg := ErrMsg, engine_state := ES}}, _) ->
-    StackTrace = aere_fate:get_stack_trace(ES),
+    StackTrace = aere_fate:get_stack_trace(S, ES),
     {aere_msg:abort(ErrMsg, StackTrace), S};
 eval_expr_callback(RS, TEnv) ->
     ChainState        = aere_repl_state:blockchain_state(RS),

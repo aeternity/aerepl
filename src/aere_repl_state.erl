@@ -19,6 +19,7 @@
 -type command_res() :: finish | {aere_theme:renderable(), state()} | state() | no_return().
 -type breakpoints() :: [{string(), integer()}].
 -type callback() :: fun((state()) -> command_res()).
+-type function_symbols() :: #{binary() => binary()}.
 -type var() :: {string(), aeso_syntax:type(), term()}.
 -type contract_state() :: {aeso_syntax:type(), aeb_fate_data:fate_type()}.
 -type type_def() :: {string(), string(), [aeso_syntax:tvar()], aeso_syntax:typedef()}.
@@ -27,25 +28,26 @@
                      | {running, aefa_chain_api:state(), term(), term()}
                      | {breakpoint, aefa_engine_state:state()}.
 
--record(rs, { blockchain_state     :: chain_state()
-            , repl_account         :: binary()
-            , options              :: repl_options()
-            , contract_state       :: contract_state()
-            , vars           = []  :: [var()]
-            , funs           = #{} :: #{binary() => term()}
-            , typedefs       = []  :: [type_def()]
-            , type_scope     = []  :: [type_scope()]
-            , loaded_files   = #{} :: #{string() => binary()} % Loaded files ready to be included
-            , included_files = []  :: [string()] % Files included in the context
-            , included_code  = []  :: aeso_syntax:ast() % Cached AST of the included files
-            , query_nonce    = 0   :: non_neg_integer()
-            , breakpoints          :: breakpoints()
-            , callback             :: callback()
+-record(rs, { blockchain_state       :: chain_state()
+            , repl_account           :: binary()
+            , options                :: repl_options()
+            , contract_state         :: contract_state()
+            , vars           = []    :: [var()]
+            , funs           = #{}   :: #{binary() => term()}
+            , typedefs       = []    :: [type_def()]
+            , type_scope     = []    :: [type_scope()]
+            , loaded_files   = #{}   :: #{string() => binary()} % Loaded files ready to be included
+            , included_files = []    :: [string()] % Files included in the context
+            , included_code  = []    :: aeso_syntax:ast() % Cached AST of the included files
+            , query_nonce    = 0     :: non_neg_integer()
+            , breakpoints    = []    :: breakpoints()
+            , callback               :: callback()
+            , function_symbols = #{} :: #{binary() => binary()}
             }).
 
 -opaque state() :: #rs{}.
 
--export_type([state/0, type_scope/0, type_def/0, repl_options/0, command_res/0]).
+-export_type([state/0, type_scope/0, type_def/0, repl_options/0, command_res/0, function_symbols/0]).
 
 -export([init_state/0, init_state/1]).
 
@@ -64,6 +66,7 @@
         , query_nonce/1
         , breakpoints/1
         , callback/1
+        , function_symbols/1
         ]).
 
 %% Setters
@@ -81,6 +84,7 @@
         , set_query_nonce/2
         , set_breakpoints/2
         , set_callback/2
+        , set_function_symbols/2
         ]).
 
 -export([ chain_api/1
@@ -118,8 +122,7 @@ init_state(Opts) ->
        blockchain_state = {ready, ChainState},
        repl_account     = PK,
        options          = maps:merge(init_options(), Opts),
-       contract_state   = ?DEFAULT_CONTRACT_STATE,
-       breakpoints      = []
+       contract_state   = ?DEFAULT_CONTRACT_STATE
       },
     S0.
 
@@ -234,6 +237,14 @@ callback(#rs{callback = Callback}) ->
 -spec set_callback(callback(), state()) -> state().
 set_callback(Callback, RS) ->
     RS#rs{callback = Callback}.
+
+-spec function_symbols(state()) -> function_symbols().
+function_symbols(#rs{function_symbols = Symbols}) ->
+    Symbols.
+
+-spec set_function_symbols(function_symbols(), state()) -> state().
+set_function_symbols(Symbols, RS) ->
+    RS#rs{function_symbols = Symbols}.
 
 %% Advanced getters
 
