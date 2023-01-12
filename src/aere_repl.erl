@@ -437,27 +437,9 @@ disassemble_callback(MockByteCode, Name, RS) ->
     {running, Chain, Res, _} = aere_repl_state:blockchain_state(RS),
     case Res of
         {contract, Pubkey} ->
-            case aefa_chain_api:contract_fate_bytecode(Pubkey, Chain) of
-                error -> throw({repl_error, aere_msg:contract_not_found()});
-                {ok, Code, _, _} ->
-                    SerName = aeb_fate_code:symbol_identifier(binary:list_to_bin(Name)),
-                    extract_fun(Code, SerName)
-            end;
+            aere_fate:extract_fun_from_contract(Pubkey, Chain, Name);
         {tuple, {FName, _}} ->
-            extract_fun(MockByteCode, FName)
-    end.
-
--spec extract_fun(aeb_fate_code:fcode(), binary()) -> aeb_fate_code:fcode().
-extract_fun(Code, Name) ->
-    Functions = aeb_fate_code:functions(Code),
-    case maps:get(Name, Functions, not_found) of
-        not_found -> throw({repl_error, aere_msg:function_not_found_in(Name)});
-        _ ->
-            Functions1 = maps:filter(fun(F, _) -> F == Name end, Functions),
-            Code0 = aeb_fate_code:new(),
-            Code1 = aeb_fate_code:update_symbols(Code0, aeb_fate_code:symbols(Code)),
-            Code2 = aeb_fate_code:update_functions(Code1, Functions1),
-            Code2
+            aere_fate:extract_fun_from_bytecode(MockByteCode, FName)
     end.
 
 -spec parse_fun_ref(string()) -> fun_ref().

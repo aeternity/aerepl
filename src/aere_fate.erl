@@ -5,6 +5,8 @@
         , eval_state/2
         , add_fun_symbols_from_code/2
         , get_stack_trace/2
+        , extract_fun_from_contract/3
+        , extract_fun_from_bytecode/2
         ]).
 
 -include("aere_macros.hrl").
@@ -186,3 +188,37 @@ add_fun_symbols(RS0, Dict) ->
 
 add_fun_symbols_from_code(RS, Code) ->
     add_fun_symbols(RS, aeb_fate_code:symbols(Code)).
+
+
+-spec extract_fun_from_contract(Pubkey, Chain, FunName) -> FateCode
+    when Pubkey   :: <<_:256>>,
+         Chain    :: aefa_chain_api:state(),
+         FunName  :: binary(),
+         FateCode :: aeb_fate_code:fcode().
+
+extract_fun_from_contract(Pubkey, Chain, Name) ->
+    case aefa_chain_api:contract_fate_bytecode(Pubkey, Chain) of
+        {ok, Code, _, _} ->
+            SerName = aeb_fate_code:symbol_identifier(binary:list_to_bin(Name)),
+            extract_fun_from_bytecode(Code, SerName);
+        error ->
+            throw({repl_error, aere_msg:contract_not_found()})
+    end.
+
+
+-spec extract_fun_from_bytecode(FateCode, FunName) -> FateCode
+    when FateCode :: aeb_fate_code:fcode(),
+         FunName  :: binary().
+
+extract_fun_from_bytecode(Code, Name) ->
+    Functions = aeb_fate_code:functions(Code),
+    case maps:get(Name, Functions, not_found) of
+        not_found ->
+            throw({repl_error, aere_msg:function_not_found_in(Name)});
+        _ ->
+            Functions1 = maps:filter(fun(F, _) -> F == Name end, Functions),
+            Code0 = aeb_fate_code:new(),
+            Code1 = aeb_fate_code:update_symbols(Code0, aeb_fate_code:symbols(Code)),
+            Code2 = aeb_fate_code:update_functions(Code1, Functions1),
+            Code2
+    end.
