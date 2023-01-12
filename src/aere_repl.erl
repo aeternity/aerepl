@@ -115,10 +115,9 @@ apply_command(disas, Args, State) ->
             {aere_msg:output(lists:flatten(aeb_fate_asm:pp(Fate))), State}
     end;
 apply_command(break, [File, Line], State) ->
-    aere_debugger:add_breakpoint(File, Line, State);
-apply_command(delete_break, [IndexStr], State) ->
-    Index = list_to_integer(IndexStr),
-    aere_debugger:delete_breakpoint(Index, State);
+    aere_debugger:add_breakpoint(File, list_to_integer(Line), State);
+apply_command(delete_break, Index, State) ->
+    aere_debugger:delete_breakpoint(list_to_integer(Index), State);
 apply_command(info_break, _, State) ->
     {aere_msg:output(aere_debugger:list_breakpoints(State)), State};
 apply_command(ResumeKind, [], State)
@@ -139,7 +138,7 @@ apply_command(location, [], State) ->
     {aere_msg:output(aere_debugger:source_location(ES)), State};
 apply_command(print_var, [VarName], State) ->
     ES = get_breakpoint_engine_state(State),
-    aere_msg:output(aere_debugger:lookup_variable(ES, VarName), State).
+    {aere_msg:output(aere_debugger:lookup_variable(ES, VarName)), State}.
 
 -spec set_state([aeso_syntax:stmt()], repl_state()) -> aere_repl_state:command_res().
 set_state(Body, RS) ->

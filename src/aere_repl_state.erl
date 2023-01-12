@@ -18,7 +18,7 @@
         }.
 -type command_res() :: finish | {aere_theme:renderable(), state()} | state() | no_return().
 -type breakpoints() :: [{string(), integer()}].
--type callback() :: fun((state()) -> command_res()).
+-type callback() :: fun((state()) -> command_res()) | none.
 -type function_symbols() :: #{binary() => binary()}.
 -type var() :: {string(), aeso_syntax:type(), term()}.
 -type contract_state() :: {aeso_syntax:type(), aeb_fate_data:fate_type()}.
@@ -41,7 +41,7 @@
             , included_code  = []    :: aeso_syntax:ast() % Cached AST of the included files
             , query_nonce    = 0     :: non_neg_integer()
             , breakpoints    = []    :: breakpoints()
-            , callback               :: callback()
+            , callback       = none  :: callback()
             , function_symbols = #{} :: #{binary() => binary()}
             }).
 
@@ -256,5 +256,6 @@ chain_api(#rs{blockchain_state = {running, Api, _, _}}) ->
 chain_api(#rs{blockchain_state = {breakpoint, ES}}) ->
     aefa_engine_state:chain_api(ES).
 
+-spec bump_nonce(state()) -> state().
 bump_nonce(S = #rs{query_nonce = N}) ->
     S#rs{query_nonce = N + 1}.

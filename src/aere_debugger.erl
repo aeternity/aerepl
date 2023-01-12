@@ -16,7 +16,7 @@
 
 add_breakpoint(FileName, Line, State) ->
     OldBPs = aere_repl_state:breakpoints(State),
-    BP     = {FileName, list_to_integer(Line)},
+    BP     = {FileName, Line},
     NewBPs = OldBPs ++ [BP],
     aere_repl_state:set_breakpoints(NewBPs, State).
 
