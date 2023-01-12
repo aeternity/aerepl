@@ -11,8 +11,8 @@
 2 + 1 + 1
 // 4
 
-:b 121
-// No such command "b"
+:bq 121
+// No such command "bq"
 
 :
 //
