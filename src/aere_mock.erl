@@ -113,7 +113,7 @@ typedef_namespaces(State) ->
 
 -spec includes(repl_state()) -> ast().
 includes(State) ->
-    un_main(aere_repl_state:included_files(State)).
+    un_main(aere_repl_state:included_code(State)).
 
 -spec type_scope_usings(repl_state()) -> [decl()].
 type_scope_usings(State) ->

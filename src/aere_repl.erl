@@ -276,7 +276,7 @@ register_include(Include, S0) ->
                                         ]),
                          {Ast0, _IncludeSet1} = aere_sophia:parse_file(File, IncludeSet, [keep_included, {src_file, Include}]),
                          SX = aere_repl_state:set_included_files([Include|IncFiles], S0),
-                         SY = aere_repl_state:set_included_files(IncCode ++ Ast0, SX),
+                         SY = aere_repl_state:set_included_code(IncCode ++ Ast0, SX),
                          SY
                  end,
             Ast = aere_mock:eval_contract([{tuple, aere_mock:ann(), []}], S1),
@@ -518,5 +518,6 @@ print_state(RS, What) ->
     case maps:get(What, PrintFuns, unknown) of
         unknown ->
             throw({repl_error, aere_msg:list_unknown(maps:keys(PrintFuns))});
-        {Print, Payload} -> Print(Payload)
+        {Print, Payload} ->
+            Print(Payload)
     end.
