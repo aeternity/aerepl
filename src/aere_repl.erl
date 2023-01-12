@@ -175,7 +175,7 @@ eval_expr(Body, RS) ->
 
 eval_expr_callback({S, #{err_msg := ErrMsg, engine_state := ES}}, _) ->
     StackTrace = aere_fate:get_stack_trace(S, ES),
-    {aere_msg:abort(ErrMsg, StackTrace), S};
+    {aere_msg:abort(ErrMsg, StackTrace), make_state_ready(S)};
 eval_expr_callback(RS, TEnv) ->
     ChainState        = aere_repl_state:blockchain_state(RS),
     {_, Res, UsedGas} = get_running_chain(ChainState),
@@ -190,7 +190,7 @@ eval_expr_callback(RS, TEnv) ->
     {aere_msg:eval_result(
         if PrintRes -> ResStr; true -> none end,
         if DisplayGas -> UsedGas; true -> none end),
-     RS}.
+     make_state_ready(RS)}.
 
 %%%------------------
 
