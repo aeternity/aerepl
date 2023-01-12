@@ -47,7 +47,7 @@
 
 -opaque state() :: #rs{}.
 
--export_type([state/0, type_scope/0, type_def/0, repl_options/0, command_res/0, function_symbols/0]).
+-export_type([state/0, type_scope/0, type_def/0, repl_options/0, command_res/0, function_symbols/0, breakpoints/0]).
 
 -export([init_state/0, init_state/1]).
 

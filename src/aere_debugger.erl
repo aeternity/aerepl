@@ -2,7 +2,6 @@
 
 -export([ add_breakpoint/3
         , delete_breakpoint/2
-        , list_breakpoints/1
         , resume/2
         , lookup_variable/2
         , source_location/1
@@ -31,16 +30,6 @@ delete_breakpoint(Index, State) ->
         || Index < 1 orelse Index > length(BPs) ],
     {Left, [_ | Right]} = lists:split(Index - 1, BPs),
     aere_repl_state:set_breakpoints(Left ++ Right, State).
-
-
--spec list_breakpoints(State) -> string()
-    when State :: aere_repl_state:state().
-
-list_breakpoints(State) ->
-    BPs  = aere_repl_state:breakpoints(State),
-    Enum = fun(List) -> lists:zip(lists:seq(1, length(List)), List) end,
-    Msg  = "~p    Breakpoint in the file '~s' at line ~p\n",
-    lists:flatten([ io_lib:format(Msg, [I, F, L])  || {I, {F, L}} <- Enum(BPs) ]).
 
 
 -spec resume(EngineState, ResumeKind) -> EngineState

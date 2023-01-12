@@ -23,6 +23,7 @@
         , list_options/1
         , list_loaded_files/1
         , list_includes/1
+        , list_breakpoints/1
         , list_unknown/1
         , bad_fun_ref/0
         , contract_not_found/0
@@ -229,6 +230,14 @@ list_loaded_files(Files) ->
 -spec list_includes([string()]) -> msg().
 list_includes(Incs) ->
     aere_theme:output(string:join(Incs, "\n")).
+
+-spec list_breakpoints(aere_repl_state:breakpoints()) -> msg().
+list_breakpoints(BPs) ->
+    Enum = fun(List) -> lists:zip(lists:seq(1, length(List)), List) end,
+    Msg  = "Breakpoint in the file '~s' at line ~p\n",
+    [ [ aere_theme:info(io_lib:format("~p    ", [I]))
+      , aere_theme:output(io_lib:format(Msg, [F, L]))
+      ] || {I, {F, L}} <- Enum(BPs) ].
 
 -spec list_unknown([string()]) -> msg().
 list_unknown(ToList) ->

@@ -118,8 +118,6 @@ apply_command(break, [File, Line], State) ->
     aere_debugger:add_breakpoint(File, list_to_integer(Line), State);
 apply_command(delete_break, Index, State) ->
     aere_debugger:delete_breakpoint(list_to_integer(Index), State);
-apply_command(info_break, _, State) ->
-    {aere_msg:output(aere_debugger:list_breakpoints(State)), State};
 apply_command(ResumeKind, [], State)
   when ResumeKind == continue;
        ResumeKind == next;
@@ -509,13 +507,15 @@ print_state(RS, What) ->
     Opts  = aere_repl_state:options(RS),
     Files = aere_repl_state:loaded_files(RS),
     Incs  = aere_repl_state:included_files(RS),
+    BPs   = aere_repl_state:breakpoints(RS),
     PrintFuns =
-        #{ "vars" => {fun aere_msg:list_vars/1, Vars},
-           %% "funs" => {fun aere_msg:list_funs/1, Funs},
-           "types" => {fun aere_msg:list_types/1, Types},
-           "options" => {fun aere_msg:list_options/1, Opts},
-           "files" => {fun aere_msg:list_loaded_files/1, Files},
-           "includes" => {fun aere_msg:list_includes/1, Incs}
+        #{ "vars"        => {fun aere_msg:list_vars/1, Vars},
+           %% "funs"        => {fun aere_msg:list_funs/1, Funs},
+           "types"       => {fun aere_msg:list_types/1, Types},
+           "options"     => {fun aere_msg:list_options/1, Opts},
+           "files"       => {fun aere_msg:list_loaded_files/1, Files},
+           "includes"    => {fun aere_msg:list_includes/1, Incs},
+           "breakpoints" => {fun aere_msg:list_breakpoints/1, BPs}
         },
     case maps:get(What, PrintFuns, unknown) of
         unknown ->
