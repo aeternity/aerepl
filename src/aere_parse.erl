@@ -106,6 +106,9 @@ commands() ->
     , {"location",
         {["loc"], none, "",
         [ "Print the Sophia source file with a mark on the currently executing line." ]}}
+    , {"stacktrace",
+        {["bt"], none, "",
+        [ "Print the stacktrace at the current point of execution." ]}}
     ].
 
 resolve_command(Cmd) ->

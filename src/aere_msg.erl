@@ -28,6 +28,7 @@
         , contract_not_found/0
         , function_not_found_in/1
         , not_at_breakpoint/0
+        , stacktrace/1
         , help/0, help/1
         , bye/0
         ]).
@@ -87,14 +88,18 @@ error(Msg) -> aere_theme:error(trim(Msg)).
 -spec abort(binary() | string(), [{term(), binary(), integer()}]) -> msg().
 abort(Bin, Stack) when is_binary(Bin) -> abort(binary:bin_to_list(Bin), Stack);
 abort(Msg, Stack) ->
-    [ aere_theme:error("ABORT: "), aere_theme:output(trim(Msg) ++ "\n")
-    , [ [ aere_theme:info(integer_to_list(I) ++ "    ")
-        , aere_theme:info(binary:bin_to_list(aeser_api_encoder:encode(contract_pubkey, Con))), aere_theme:info(":")
-        , aere_theme:output(binary:bin_to_list(Fun)), aere_theme:info(":")
-        , aere_theme:info(integer_to_list(BB) ++ "\n")
-        ]
-       || {I, {Con, Fun, BB}} <- lists:zip(lists:seq(1, length(Stack)), Stack)
+    [ aere_theme:error("ABORT: ")
+    , aere_theme:output(trim(Msg) ++ "\n")
+    , stacktrace(Stack) ].
+
+-spec stacktrace([{term(), binary(), integer()}]) -> msg().
+stacktrace(Stack) ->
+    [ [ aere_theme:info(integer_to_list(I) ++ "    ")
+      , aere_theme:info(binary:bin_to_list(aeser_api_encoder:encode(contract_pubkey, Con))), aere_theme:info(":")
+      , aere_theme:output(binary:bin_to_list(Fun)), aere_theme:info(":")
+      , aere_theme:info(integer_to_list(BB) ++ "\n")
       ]
+     || {I, {Con, Fun, BB}} <- lists:zip(lists:seq(1, length(Stack)), Stack)
     ].
 
 -spec internal(term(), erlang:stacktrace()) -> msg().

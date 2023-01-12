@@ -138,7 +138,10 @@ apply_command(location, [], State) ->
     {aere_msg:output(aere_debugger:source_location(ES)), State};
 apply_command(print_var, [VarName], State) ->
     ES = get_breakpoint_engine_state(State),
-    {aere_msg:output(aere_debugger:lookup_variable(ES, VarName)), State}.
+    {aere_msg:output(aere_debugger:lookup_variable(ES, VarName)), State};
+apply_command(stacktrace, [], State) ->
+    ES = get_breakpoint_engine_state(State),
+    {aere_msg:stacktrace(aere_fate:get_stack_trace(State, ES)), State}.
 
 -spec set_state([aeso_syntax:stmt()], repl_state()) -> aere_repl_state:command_res().
 set_state(Body, RS) ->
