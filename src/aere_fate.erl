@@ -7,6 +7,7 @@
         , get_stack_trace/2
         , extract_fun_from_contract/3
         , extract_fun_from_bytecode/2
+        , remove_contracts_from_chain/2
         ]).
 
 -include("aere_macros.hrl").
@@ -222,3 +223,11 @@ extract_fun_from_bytecode(Code, Name) ->
             Code2 = aeb_fate_code:update_functions(Code1, Functions1),
             Code2
     end.
+
+
+-spec remove_contracts_from_chain(Chain, Pubkeys) -> Chain
+    when Chain   :: aefa_chain_api:state(),
+         Pubkeys :: [<<_:256>>].
+
+remove_contracts_from_chain(Chain, Pubkeys) ->
+    lists:foldl(fun aefa_chain_api:remove_contract/2, Chain, Pubkeys).

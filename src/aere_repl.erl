@@ -245,7 +245,7 @@ register_modules(Modules, S0) ->
 clear_context(S0) ->
     Contracts = [PK || {_Name, _Type, {contract, PK}} <- aere_repl_state:vars(S0)],
     Chain0 = get_ready_chain(S0),
-    Chain1 = lists:foldl(fun aefa_chain_api:remove_contract/2, Chain0, Contracts),
+    Chain1 = aere_fate:remove_contracts_from_chain(Chain0, Contracts),
     put(contract_code_cache, undefined),
     S1 = aere_repl_state:set_vars([], S0),
     S2 = aere_repl_state:set_funs(#{}, S1),
