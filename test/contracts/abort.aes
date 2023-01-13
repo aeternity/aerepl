@@ -1,7 +1,12 @@
 include "String.aes"
 
 contract C =
-    entrypoint q(x) = abort(String.concat("x = ", Int.to_str(x)))
-    entrypoint h(x) = q(x) - 5
-    entrypoint g(x) = h(x) + 1
-    entrypoint f(x) = g(x) * 2
+    entrypoint q(x) =
+        abort(String.concat("x = ", Int.to_str(x)))
+        x * x
+    entrypoint h(x) =
+        q(x) - 5
+    entrypoint g(x) =
+        h(x) + 1
+    entrypoint f(x) =
+        g(x) * 2

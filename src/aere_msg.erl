@@ -95,12 +95,13 @@ abort(Msg, Stack) ->
 
 -spec stacktrace([{term(), binary(), integer()}]) -> msg().
 stacktrace(Stack) ->
+    NonEmpty = fun("") -> "aerepl"; (F) -> F end,
     [ [ aere_theme:info(integer_to_list(I) ++ "    ")
       , aere_theme:info(binary:bin_to_list(aeser_api_encoder:encode(contract_pubkey, Con))), aere_theme:info(":")
       , aere_theme:output(binary:bin_to_list(Fun)), aere_theme:info(":")
-      , aere_theme:info(integer_to_list(BB) ++ "\n")
+      , aere_theme:info(NonEmpty(File) ++ ":" ++ integer_to_list(Line) ++ "\n")
       ]
-     || {I, {Con, Fun, BB}} <- lists:zip(lists:seq(1, length(Stack)), Stack)
+     || {I, {Con, Fun, File, Line}} <- lists:zip(lists:seq(1, length(Stack)), Stack)
     ].
 
 -spec internal(term(), erlang:stacktrace()) -> msg().

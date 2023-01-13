@@ -148,11 +148,14 @@ setup_fate_state(FateCode, RS) ->
          FunHash     :: binary(),
          BasicBlock  :: non_neg_integer().
 
-get_stack_trace(RS, ES) ->
-    Stack = aefa_engine_state:call_stack(aefa_engine_state:push_call_stack(ES)),
-    [ {Contract, get_fun_symbol(RS, FunHash), BB}
-      || {_, Contract, _, FunHash, _, BB, _, _, _} <- Stack
-    ].
+get_stack_trace(RS, ES0) ->
+    ES       = aefa_engine_state:push_call_stack(ES0),
+    Stack    = aefa_engine_state:call_stack(ES),
+    DbgStack = aefa_engine_state:dbg_call_stack(ES),
+    Calls    = [ {Contract, get_fun_symbol(RS, FunHash)}
+                   || {_, Contract, _, FunHash, _, _, _, _, _} <- Stack ],
+    [ {Contract, Symbol, File, Line}
+        || {{Contract, Symbol}, {File, Line}} <- lists:zip(Calls, DbgStack) ].
 
 
 -spec add_fun_symbol(ReplState, Hash, FunName) -> ReplState

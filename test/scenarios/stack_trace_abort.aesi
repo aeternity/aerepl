@@ -4,8 +4,8 @@ let c = Chain.create() : C
 
 c.f(5)
 // ABORT: x = 5
-// 1    ct_2JUHsCB1NnQjkFqEFLCeLWsqykutscr6hRRxkpWPttouRAmgMz:q:2
-// 2    ct_2JUHsCB1NnQjkFqEFLCeLWsqykutscr6hRRxkpWPttouRAmgMz:h:1
-// 3    ct_2JUHsCB1NnQjkFqEFLCeLWsqykutscr6hRRxkpWPttouRAmgMz:g:1
-// 4    ct_2JUHsCB1NnQjkFqEFLCeLWsqykutscr6hRRxkpWPttouRAmgMz:f:1
-// 5    ct_2eNrUWisXS4FsbEfmd8AyzxgdzS22YGQBnR7NXNnzWC4ZZwDkb:#user_input#INTERNAL_REPL:1
+// 1    ct_2JUHsCB1NnQjkFqEFLCeLWsqykutscr6hRRxkpWPttouRAmgMz:q:test/contracts/abort.aes:5
+// 2    ct_2JUHsCB1NnQjkFqEFLCeLWsqykutscr6hRRxkpWPttouRAmgMz:h:test/contracts/abort.aes:8
+// 3    ct_2JUHsCB1NnQjkFqEFLCeLWsqykutscr6hRRxkpWPttouRAmgMz:g:test/contracts/abort.aes:10
+// 4    ct_2JUHsCB1NnQjkFqEFLCeLWsqykutscr6hRRxkpWPttouRAmgMz:f:test/contracts/abort.aes:12
+// 5    ct_2eNrUWisXS4FsbEfmd8AyzxgdzS22YGQBnR7NXNnzWC4ZZwDkb:#user_input#INTERNAL_REPL:aerepl:1
