@@ -79,5 +79,7 @@ source_location(ES) ->
     FormatLineNum = fun(Num) -> string:right(integer_to_list(Num), MaxDigits) end,
     FormatLine    = fun(N, Ln) -> [LineSign(N), " ", FormatLineNum(N), " ", Ln] end,
     Enumerate     = fun(List) -> lists:zip(lists:seq(1, length(List)), List) end,
-    NewLines      = [ FormatLine(Idx, Line) || {Idx, Line} <- Enumerate(Lines) ],
+    NewLines      = [ FormatLine(Idx, Line)
+                        || {Idx, Line} <- Enumerate(Lines)
+                         , Idx < CurrentLine + 5, Idx > CurrentLine - 5 ],
     lists:join("\n", NewLines).
