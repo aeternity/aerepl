@@ -59,32 +59,13 @@ apply_command(skip, [], State) ->
 apply_command(reset, [], _) ->
     aere_repl_state:init_state();
 apply_command(type, I, State) ->
-    Stmts = aere_sophia:parse_body(I),
-    Contract = aere_mock:eval_contract(Stmts, State),
-    {TEnv, _} = aere_sophia:typecheck(Contract, [dont_unfold, allow_higher_order_entrypoints]),
-    Type = aere_sophia:type_of_user_input(TEnv),
-    TypeStr = aeso_ast_infer_types:pp_type("", Type),
-    TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER ++ "[0-9]*\\.", "", [global, {return, list}]),
-    {aere_msg:output(TypeStrClean), State};
+    infer_type(I, State);
 apply_command(state, I, State) ->
     get_ready_chain(State),
     set_state(aere_sophia:parse_body(I), State);
 apply_command(eval, I, State) ->
     get_ready_chain(State),
-    Parse = aere_sophia:parse_top(I),
-    case Parse of
-        {body, Body} ->
-            eval_expr(Body, State);
-        [{include, _, {string, _, Inc}}] ->
-            register_include(Inc, State);
-        [{letval, _, Pat, Expr}] ->
-            register_letval(Pat, Expr, State);
-        [{letfun, _, FName, Args, _, Body}] ->
-            register_letfun(FName, Args, Body, State);
-        [{type_def, _, Name, Args, Body}] ->
-            register_typedef(Name, Args, Body, State);
-        _ -> error(too_much_stuff) %% FIXME
-    end;
+    eval_code(I, State);
 apply_command(load, Modules, State) ->
     get_ready_chain(State),
     load_modules(Modules, State);
@@ -94,11 +75,10 @@ apply_command(reload, [], State) ->
 apply_command(set, [Option|Args], State) ->
     get_ready_chain(State),
     set_option(list_to_atom(Option), Args, State);
-apply_command(help, Arg, State) ->
-    case Arg of
-        [On] -> {aere_msg:help(On), State};
-        _ -> {aere_msg:help(), State}
-    end;
+apply_command(help, [On], State) ->
+    {aere_msg:help(On), State};
+apply_command(help, _, State) ->
+    {aere_msg:help(), State};
 apply_command(print, [What], State) ->
     {print_state(State, What), State};
 apply_command(disas, Args, State) ->
@@ -140,6 +120,31 @@ apply_command(print_var, [VarName], State) ->
 apply_command(stacktrace, [], State) ->
     ES = get_breakpoint_engine_state(State),
     {aere_msg:stacktrace(aere_fate:get_stack_trace(State, ES)), State}.
+
+infer_type(I, State) ->
+    Stmts = aere_sophia:parse_body(I),
+    Contract = aere_mock:eval_contract(Stmts, State),
+    {TEnv, _} = aere_sophia:typecheck(Contract, [dont_unfold, allow_higher_order_entrypoints]),
+    Type = aere_sophia:type_of_user_input(TEnv),
+    TypeStr = aeso_ast_infer_types:pp_type("", Type),
+    TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER ++ "[0-9]*\\.", "", [global, {return, list}]),
+    {aere_msg:output(TypeStrClean), State}.
+
+eval_code(I, State) ->
+    Parse = aere_sophia:parse_top(I),
+    case Parse of
+        {body, Body} ->
+            eval_expr(Body, State);
+        [{include, _, {string, _, Inc}}] ->
+            register_include(Inc, State);
+        [{letval, _, Pat, Expr}] ->
+            register_letval(Pat, Expr, State);
+        [{letfun, _, FName, Args, _, Body}] ->
+            register_letfun(FName, Args, Body, State);
+        [{type_def, _, Name, Args, Body}] ->
+            register_typedef(Name, Args, Body, State);
+        _ -> error(too_much_stuff) %% FIXME
+    end.
 
 -spec set_state([aeso_syntax:stmt()], repl_state()) -> aere_repl_state:command_res().
 set_state(Body, RS) ->
