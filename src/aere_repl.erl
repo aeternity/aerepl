@@ -81,17 +81,9 @@ apply_command(help, _, State) ->
     {aere_msg:help(), State};
 apply_command(print, [What], State) ->
     {print_state(State, What), State};
-apply_command(disas, Args, State) ->
-    case aere_repl_state:blockchain_state(State) of
-        {breakpoint, _} ->
-            Chain = aere_repl_state:chain_api(State),
-            NewState = aere_repl_state:set_blockchain_state({ready, Chain}, State),
-            apply_command(disas, Args, NewState);
-        _ ->
-            [What] = Args,
-            Fate = disassemble(What, State),
-            {aere_msg:output(lists:flatten(aeb_fate_asm:pp(Fate))), State}
-    end;
+apply_command(disas, [What], State) ->
+    Fate = disassemble(What, State),
+    {aere_msg:output(lists:flatten(aeb_fate_asm:pp(Fate))), State};
 apply_command(break, [File, Line], State) ->
     aere_debugger:add_breakpoint(File, list_to_integer(Line), State);
 apply_command(delete_break, Index, State) ->
@@ -410,19 +402,21 @@ unfold_types_in_type(T, S0) ->
 
 -spec disassemble(string(), repl_state()) -> term(). %% -> bytecode
 disassemble(What, S0) ->
+    Chain0 = aere_repl_state:chain_api(S0),
+    S1 = aere_repl_state:set_blockchain_state({ready, Chain0}, S0),
     case parse_fun_ref(What) of
         {deployed, Expr, Name} ->
-            Contract = aere_mock:eval_contract(Expr, S0),
+            Contract = aere_mock:eval_contract(Expr, S1),
             {_, TAst} = aere_sophia:typecheck(Contract),
             MockByteCode = aere_sophia:compile_contract(TAst),
-            #{result := {contract, Pubkey}, new_state := S1} = aere_fate:run_contract(MockByteCode, S0),
-            Chain = aere_repl_state:chain_api(S1),
+            #{result := {contract, Pubkey}, new_state := S2} = aere_fate:run_contract(MockByteCode, S1),
+            Chain = aere_repl_state:chain_api(S2),
             aere_fate:extract_fun_from_contract(Pubkey, Chain, Name);
         {definition, Id} ->
-            Contract = aere_mock:eval_contract(Id, S0),
+            Contract = aere_mock:eval_contract(Id, S1),
             {_, TAst} = aere_sophia:typecheck(Contract, [allow_higher_order_entrypoints]),
             MockByteCode = aere_sophia:compile_contract(TAst),
-            #{result := {tuple, {FName, _}}} = aere_fate:run_contract(MockByteCode, S0),
+            #{result := {tuple, {FName, _}}} = aere_fate:run_contract(MockByteCode, S1),
             aere_fate:extract_fun_from_bytecode(MockByteCode, FName);
         {local, _Name} ->
             throw(not_supported)
