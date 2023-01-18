@@ -13,10 +13,13 @@
 -include("aere_macros.hrl").
 
 
--spec run_contract(FateCode, ReplState) -> {Message, ReplState} | no_return()
+-spec run_contract(FateCode, ReplState) -> Res | no_return()
     when FateCode  :: aeb_fate_code:fcode(),
          ReplState :: aere_repl_state:state(),
-         Message   :: aere_theme:renderable().
+         Res       :: #{ result    := term()
+                       , used_gas  := non_neg_integer()
+                       , new_state := aefa_engine_state:state()
+                       }.
 
 run_contract(FateCode, RS) ->
     ES0 = setup_fate_state(FateCode, RS),
@@ -155,12 +158,13 @@ setup_fate_state(FateCode, RS) ->
     ES5.
 
 
--spec get_stack_trace(ReplState, EngineState) -> [{Contract, FunHash, BasicBlock}]
+-spec get_stack_trace(ReplState, EngineState) -> [{Contract, FunHash, File, Line}]
     when ReplState   :: aefa_engine_state:state(),
          EngineState :: aefa_engine_state:state(),
          Contract    :: aec_keys:pubkey(),
          FunHash     :: binary(),
-         BasicBlock  :: non_neg_integer().
+         File        :: string(),
+         Line        :: non_neg_integer().
 
 get_stack_trace(RS, ES0) ->
     ES       = aefa_engine_state:push_call_stack(ES0),
@@ -208,10 +212,10 @@ add_fun_symbols_from_code(RS, Code) ->
     add_fun_symbols(RS, aeb_fate_code:symbols(Code)).
 
 
--spec extract_fun_from_contract(Pubkey, Chain, FunName) -> FateCode
+-spec extract_fun_from_contract(Pubkey, Chain, FunName) -> FateCode | no_return()
     when Pubkey   :: <<_:256>>,
          Chain    :: aefa_chain_api:state(),
-         FunName  :: binary(),
+         FunName  :: string(),
          FateCode :: aeb_fate_code:fcode().
 
 extract_fun_from_contract(Pubkey, Chain, Name) ->
@@ -224,7 +228,7 @@ extract_fun_from_contract(Pubkey, Chain, Name) ->
     end.
 
 
--spec extract_fun_from_bytecode(FateCode, FunName) -> FateCode
+-spec extract_fun_from_bytecode(FateCode, FunName) -> FateCode | no_return()
     when FateCode :: aeb_fate_code:fcode(),
          FunName  :: binary().
 
