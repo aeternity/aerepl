@@ -2,7 +2,7 @@
 
 -export([ run_contract/2
         , run_contract_debug/2
-        , eval_state/2
+        , resume_contract_debug/2
         , add_fun_symbols_from_code/2
         , get_stack_trace/2
         , extract_fun_from_contract/3
@@ -18,73 +18,87 @@
          ReplState :: aere_repl_state:state(),
          Message   :: aere_theme:renderable().
 
-run_contract(FateCode, S) ->
-    ES = setup_fate_state(FateCode, S),
-    case eval_state(ES, S) of
+run_contract(FateCode, RS) ->
+    ES0 = setup_fate_state(FateCode, RS),
+    ES1 = aefa_engine_state:set_debugger_status(disabled, ES0),
+    case eval_state(ES1, RS) of
+        {ok, Res} ->
+            Res;
         {revert, #{err_msg := ErrMsg, engine_state := ES1}} ->
-            StackTrace = get_stack_trace(S, ES1),
+            StackTrace = get_stack_trace(RS, ES1),
             throw({repl_error, aere_msg:abort(ErrMsg, StackTrace)});
-        Res ->
-            Res
+        {break, _} ->
+            throw({repl_error, aere_msg:error("Breakpoint found outside of debug mode")})
     end.
 
 
--spec run_contract_debug(FateCode, ReplState) -> {Message, ReplState} | {revert, Err}
+-spec run_contract_debug(FateCode, ReplState) -> {ok, Res} | {break, ReplState} | {revert, Err}
     when FateCode  :: aeb_fate_code:fcode(),
          ReplState :: aere_repl_state:state(),
-         Message   :: aere_theme:renderable(),
+         Res         :: #{ result    := term()
+                         , used_gas  := non_neg_integer()
+                         , new_state := aefa_engine_state:state()
+                         },
          Err       :: #{ err_msg      := binary()
                        , engine_state := aefa_engine_state:state() }.
 
-run_contract_debug(FateCode, S) ->
-    ES = setup_fate_state(FateCode, S),
-    case eval_state(ES, S) of
-        {revert, Err} ->
-            Callback = aere_repl_state:callback(S),
-            Callback({S, Err});
-        Res ->
-            Res
-    end.
+run_contract_debug(FateCode, RS) ->
+    ES0 = setup_fate_state(FateCode, RS),
+    ES1 = aefa_engine_state:set_debugger_status(continue, ES0),
+    eval_state(ES1, RS).
 
 
--spec eval_state(EngineState, ReplState) -> {Message, ReplState} | {revert, Err}
+-spec resume_contract_debug(EngineState, ReplState) -> {ok, Res} | {break, ReplState} | {revert, Err}
     when EngineState :: aefa_engine_state:state(),
          ReplState   :: aere_repl_state:state(),
-         Message     :: aere_theme:renderable(),
+         Res         :: #{ result    := term()
+                         , used_gas  := non_neg_integer()
+                         , new_state := aefa_engine_state:state()
+                         },
+         Err       :: #{ err_msg      := binary()
+                       , engine_state := aefa_engine_state:state() }.
+
+resume_contract_debug(ES, RS) ->
+    eval_state(ES, RS).
+
+
+-spec eval_state(EngineState, ReplState) -> {ok, Res} | {break, ReplState} | {revert, Err}
+    when EngineState :: aefa_engine_state:state(),
+         ReplState   :: aere_repl_state:state(),
+         Res         :: #{ result    := term()
+                         , used_gas  := non_neg_integer()
+                         , new_state := EngineState
+                         },
          Err         :: #{ err_msg      := binary()
                          , engine_state := EngineState }.
 
-eval_state(ES0, S) ->
+eval_state(ES0, RS0) ->
     try
         ES1             = aefa_fate:execute(ES0),
         {StateVal, ES2} = aefa_fate:lookup_var({var, -1}, ES1),
+        {StateType, _}  = aere_repl_state:contract_state(RS0),
+        ContractState   = {StateType, StateVal},
+        RS1             = aere_repl_state:set_contract_state(ContractState, RS0),
 
         Res      = aefa_engine_state:accumulator(ES2),
         ChainApi = aefa_engine_state:chain_api(ES2),
-        Opts     = aere_repl_state:options(S),
+        Opts     = aere_repl_state:options(RS1),
         UsedGas  = maps:get(call_gas, Opts) - aefa_engine_state:gas(ES2) - 10, %% RETURN(R) costs 10
 
-        NewBlockchainState = case aefa_engine_state:breakpoint_stop(ES2) of
-                                 true  -> {breakpoint, ES2};
-                                 false -> {running, ChainApi, Res, UsedGas}
-                             end,
-        {StateType, _} = aere_repl_state:contract_state(S),
-        NewContractState = {StateType, StateVal},
-
-        NewReplState0 = aere_repl_state:set_blockchain_state(NewBlockchainState, S),
-        NewReplState = aere_repl_state:set_contract_state(NewContractState, NewReplState0),
-
-        case NewBlockchainState of
-            {breakpoint, _} ->
-                {aere_msg:output("Break"), NewReplState};
-            {running, _, _, _} ->
-                Callback = aere_repl_state:callback(S),
-                Callback(NewReplState)
+        case aefa_engine_state:breakpoint_stop(ES2) of
+            false ->
+                RS2 = aere_repl_state:set_blockchain_state({ready, ChainApi}, RS1),
+                {ok, #{result    => Res,
+                       used_gas  => UsedGas,
+                       new_state => RS2}};
+            true ->
+                RS2 = aere_repl_state:set_blockchain_state({breakpoint, ES2}, RS1),
+                {break, RS2}
         end
-    catch {aefa_fate, revert, ErrMsg, ES} ->
-            {revert, #{err_msg => ErrMsg,
-                       engine_state => ES
-                      }}
+    catch
+        {aefa_fate, revert, ErrMsg, ES} ->
+            {revert, #{err_msg      => ErrMsg,
+                       engine_state => ES}}
     end.
 
 

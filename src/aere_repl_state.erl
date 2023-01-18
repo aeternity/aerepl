@@ -18,14 +18,12 @@
         }.
 -type command_res() :: finish | {aere_theme:renderable(), state()} | state() | no_return().
 -type breakpoints() :: [{string(), integer()}].
--type callback() :: fun((state()) -> command_res()) | none.
 -type function_symbols() :: #{binary() => binary()}.
 -type var() :: {string(), aeso_syntax:type(), term()}.
 -type contract_state() :: {aeso_syntax:type(), aeb_fate_data:fate_type()}.
 -type type_def() :: {string(), string(), [aeso_syntax:tvar()], aeso_syntax:typedef()}.
 -type type_scope() :: {string(), {string(), non_neg_integer()}}.
 -type chain_state() :: {ready, aefa_chain_api:state()}
-                     | {running, aefa_chain_api:state(), term(), term()}
                      | {breakpoint, aefa_engine_state:state()}.
 
 -record(rs, { blockchain_state       :: chain_state()
@@ -41,8 +39,8 @@
             , included_code  = []    :: aeso_syntax:ast() % Cached AST of the included files
             , query_nonce    = 0     :: non_neg_integer()
             , breakpoints    = []    :: breakpoints()
-            , callback       = none  :: callback()
             , function_symbols = #{} :: #{binary() => binary()}
+            , type_env = none        :: none | term()
             }).
 
 -opaque state() :: #rs{}.
@@ -65,8 +63,8 @@
         , included_code/1
         , query_nonce/1
         , breakpoints/1
-        , callback/1
         , function_symbols/1
+        , type_env/1
         ]).
 
 %% Setters
@@ -83,8 +81,8 @@
         , set_included_code/2
         , set_query_nonce/2
         , set_breakpoints/2
-        , set_callback/2
         , set_function_symbols/2
+        , set_type_env/2
         ]).
 
 -export([ chain_api/1
@@ -190,6 +188,14 @@ type_scope(#rs{type_scope = TypeScope}) ->
 set_type_scope(X, S) ->
     S#rs{type_scope = X}.
 
+-spec type_env(state()) -> term().
+type_env(#rs{type_env = TypeEnv}) ->
+    TypeEnv.
+
+-spec set_type_env(term(), state()) -> state().
+set_type_env(X, S) ->
+    S#rs{type_env = X}.
+
 -spec loaded_files(state()) -> #{string() => binary()}.
 loaded_files(#rs{loaded_files = LoadedFiles}) ->
     LoadedFiles.
@@ -230,14 +236,6 @@ breakpoints(#rs{breakpoints = Breakpoints}) ->
 set_breakpoints(Breakpoints, RS) ->
     RS#rs{breakpoints = Breakpoints}.
 
--spec callback(state()) -> callback().
-callback(#rs{callback = Callback}) ->
-    Callback.
-
--spec set_callback(callback(), state()) -> state().
-set_callback(Callback, RS) ->
-    RS#rs{callback = Callback}.
-
 -spec function_symbols(state()) -> function_symbols().
 function_symbols(#rs{function_symbols = Symbols}) ->
     Symbols.
@@ -250,8 +248,6 @@ set_function_symbols(Symbols, RS) ->
 
 -spec chain_api(state()) -> aefa_chain_api:state().
 chain_api(#rs{blockchain_state = {ready, Api}}) ->
-    Api;
-chain_api(#rs{blockchain_state = {running, Api, _, _}}) ->
     Api;
 chain_api(#rs{blockchain_state = {breakpoint, ES}}) ->
     aefa_engine_state:chain_api(ES).
