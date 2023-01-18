@@ -466,7 +466,7 @@ get_ready_chain(RS) ->
 get_breakpoint_engine_state(RS) ->
     case aere_repl_state:blockchain_state(RS) of
         {breakpoint, ES} -> ES;
-        _                -> {aere_msg:not_at_breakpoint(), RS}
+        _                -> throw({repl_error, aere_msg:not_at_breakpoint()})
     end.
 
 set_option(Option, Args, RS) ->
