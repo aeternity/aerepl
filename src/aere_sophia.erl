@@ -53,8 +53,7 @@ compile_contract(TypedAst) ->
         = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, Opts)
           catch {error, Ec} -> process_err(Ec) end,
     try
-        {ByteCode, _} = aeso_fcode_to_fate:compile(ChildConEnv, FCode, SavedFreshNames, Opts),
-        ByteCode
+        aeso_fcode_to_fate:compile(ChildConEnv, FCode, SavedFreshNames, Opts)
     catch {error, Ef} -> process_err(Ef) end.
 
 type_of_user_input(TEnv) ->
