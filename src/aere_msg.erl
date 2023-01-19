@@ -95,7 +95,11 @@ abort(Msg, Stack) ->
 
 -spec stacktrace([{term(), binary(), integer()}]) -> msg().
 stacktrace(Stack) ->
-    NonEmpty = fun("") -> "aerepl"; (F) -> F end,
+    NonEmpty =
+        fun("") -> "aerepl";
+           (F) when is_binary(F) -> binary_to_list(F);
+           (F) -> F
+        end,
     [ [ aere_theme:info(integer_to_list(I) ++ "    ")
       , aere_theme:info(binary:bin_to_list(aeser_api_encoder:encode(contract_pubkey, Con))), aere_theme:info(":")
       , aere_theme:output(binary:bin_to_list(Fun)), aere_theme:info(":")

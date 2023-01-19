@@ -2,7 +2,8 @@ include "String.aes"
 
 contract C =
     entrypoint q(x) =
-        abort(String.concat("x = ", Int.to_str(x)))
+        let abort_str = String.concat("x = ", Int.to_str(x))
+        abort(abort_str)
         x * x
     entrypoint h(x) =
         q(x) - 5
