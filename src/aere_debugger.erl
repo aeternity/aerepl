@@ -2,29 +2,30 @@
 
 -export([ add_breakpoint/3
         , delete_breakpoint/2
-        , resume/2
+        , resume_eval/2
         , lookup_variable/2
         , source_location/1
+        , stacktrace/1
         ]).
 
 
--spec add_breakpoint(FileName, Line, State) -> State
-    when FileName :: string(),
-         Line     :: integer(),
-         State    :: aere_repl_state:state().
+-spec add_breakpoint(ReplState, FileName, Line) -> ReplState
+    when ReplState :: aere_repl_state:state(),
+         FileName  :: string(),
+         Line      :: integer().
 
-add_breakpoint(FileName, Line, State) ->
+add_breakpoint(State, FileName, Line) ->
     OldBPs = aere_repl_state:breakpoints(State),
     BP     = {FileName, Line},
     NewBPs = OldBPs ++ [BP],
     aere_repl_state:set_breakpoints(NewBPs, State).
 
 
--spec delete_breakpoint(Index, State) -> State | no_return()
-    when Index :: integer(),
-         State :: aere_repl_state:state().
+-spec delete_breakpoint(ReplState, Index) -> ReplState | no_return()
+    when ReplState :: aere_repl_state:state(),
+         Index     :: integer().
 
-delete_breakpoint(Index, State) ->
+delete_breakpoint(State, Index) ->
     BPs = aere_repl_state:breakpoints(State),
     [ throw({repl_error, aere_msg:error("Breakpoint does not exist")})
         || Index < 1 orelse Index > length(BPs) ],
@@ -32,46 +33,60 @@ delete_breakpoint(Index, State) ->
     aere_repl_state:set_breakpoints(Left ++ Right, State).
 
 
+-spec resume_eval(ReplState, ResumeKind) -> EngineState | no_return()
+    when ReplState   :: aere_repl_state:state(),
+         EngineState :: aefa_engine_state:state(),
+         ResumeKind  :: step | next | continue | finish.
+
+resume_eval(RS, Kind) ->
+    ES0 = breakpoint_engine_state(RS),
+    ES1 = resume(ES0, Kind),
+    aere_repl:eval_handler(RS, aere_fate:resume_contract_debug(ES1, RS)).
+
+
 -spec resume(EngineState, ResumeKind) -> EngineState
     when EngineState :: aefa_engine_state:state(),
          ResumeKind  :: step | next | continue | finish.
 
-resume(ES, Kind) ->
-    CurFun = aefa_engine_state:current_function(ES),
+resume(ES0, Kind) ->
+    CurFun = aefa_engine_state:current_function(ES0),
     Status =
         case Kind of
             K when K == next; K == finish -> {K, CurFun};
             _                             -> Kind
         end,
-    ES1 = aefa_engine_state:set_breakpoint_stop(false, ES),
+    ES1 = aefa_engine_state:set_breakpoint_stop(false, ES0),
     ES2 = aefa_engine_state:set_debugger_status(Status, ES1),
     ES2.
 
 
--spec lookup_variable(EngineState, VariableName) -> string() | no_return()
-    when EngineState  :: aefa_engine_state:state(),
-         VariableName :: string().
+-spec lookup_variable(ReplState, VariableName) -> string() | no_return()
+    when ReplState    :: aere_repl_state:state(),
+         VariableName :: aere_theme:renderable().
 
-lookup_variable(ES, VarName) ->
+lookup_variable(RS, VarName) ->
+    ES = breakpoint_engine_state(RS),
     case aefa_engine_state:get_variable_register(VarName, ES) of
         undefined ->
             throw({repl_error, aere_msg:error("Undefined variable " ++ VarName)});
         Reg ->
             {Val, _} = aefa_fate:lookup_var(Reg, ES),
-            io_lib:format("~p", [Val])
+            aere_msg:output(io_lib:format("~p", [Val]))
     end.
 
 
--spec source_location(EngineState) -> Source
-    when EngineState :: aefa_engine_state:state(),
-         Source      :: string().
+-spec source_location(ReplState) -> Source | no_return()
+    when ReplState :: aere_repl_state:state(),
+         Source    :: aere_theme:renderable().
 
-source_location(ES) ->
+source_location(RS) ->
+    ES = breakpoint_engine_state(RS),
+
     {FileName, CurrentLine} = aefa_engine_state:debugger_location(ES),
 
-    {ok, File} = aere_utils:read_file(FileName),
-    Lines      = string:split(File, "\n", all),
-    LineSign   =
+    File     = aere_utils:read_file(FileName),
+    Lines    = string:split(File, "\n", all),
+    LineSign =
         fun(Id) when Id == CurrentLine -> ">";
            (_)                         -> "|"
         end,
@@ -82,4 +97,24 @@ source_location(ES) ->
     NewLines      = [ FormatLine(Idx, Line)
                         || {Idx, Line} <- Enumerate(Lines)
                          , Idx < CurrentLine + 5, Idx > CurrentLine - 5 ],
-    lists:join("\n", NewLines).
+    aere_msg:output(lists:join("\n", NewLines)).
+
+
+-spec stacktrace(ReplState) -> Message | no_return()
+    when ReplState :: aere_repl_state:state(),
+         Message   :: aere_theme:renderable().
+
+stacktrace(RS) ->
+    ES = breakpoint_engine_state(RS),
+    aere_msg:stacktrace(aere_fate:get_stack_trace(RS, ES)).
+
+
+-spec breakpoint_engine_state(ReplState) -> EngineState | no_return()
+    when ReplState   :: aere_repl_state:state(),
+         EngineState :: aefa_engine_state:state().
+
+breakpoint_engine_state(RS) ->
+    case aere_repl_state:blockchain_state(RS) of
+        {breakpoint, ES} -> ES;
+        _                -> throw({repl_error, aere_msg:not_at_breakpoint()})
+    end.
