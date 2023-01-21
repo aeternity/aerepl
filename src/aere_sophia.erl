@@ -1,9 +1,14 @@
 -module(aere_sophia).
 
--export([ typecheck/2, typecheck/1, parse_file/2, parse_file/3, compile_contract/1
-        , parse_body/1, parse_top/2
-        , parse_decl/1, parse_top/1, parse_type/1, type_of_user_input/1
-        , process_err/1, format_value/4
+-export([ compile_contract/1
+        , typecheck/2
+        , typecheck/1
+        , type_of_user_input/1
+        , parse_file/2
+        , parse_file/3
+        , parse_body/1
+        , parse_top/1
+        , format_value/4
         ]).
 
 -include("../_build/default/lib/aesophia/src/aeso_parse_lib.hrl").
