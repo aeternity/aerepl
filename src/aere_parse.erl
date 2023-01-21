@@ -1,6 +1,6 @@
 -module(aere_parse).
 
--export([ parse/1, words/1, commands/0, resolve_command/1 ]).
+-export([ parse/1, commands/0, resolve_command/1 ]).
 
 -type parse_result() :: {atom(), string() | [string()]}
                       | no_return().
