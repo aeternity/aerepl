@@ -89,16 +89,12 @@ parse_top(I, Opts) ->
                       end)
              ]),
     ?with_error_handle(aeso_parser:run_parser(Top, I, Opts)).
-parse_decl(I) ->
-    ?with_error_handle(aeso_parser:run_parser(aeso_parser:decl(), I)).
 parse_body(I) ->
     ?with_error_handle(
        case aeso_parser:run_parser(aeso_parser:body(), I) of
            {block, _, Stmts} when is_list(Stmts) -> Stmts;
            Other -> [Other]
        end).
-parse_type(I) ->
-    ?with_error_handle(aeso_parser:run_parser(aeso_parser:type(), I)).
 parse_file(I, Opts) ->
     parse_file(I, sets:new(), Opts).
 parse_file(I, Includes, Opts) when is_binary(I) ->
