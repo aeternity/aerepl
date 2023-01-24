@@ -5,8 +5,15 @@
 
 -module(aere_repl).
 
--export([ process_input/2
-        , register_modules/2, default_loaded_files/0
+-export([ register_modules/2
+        , infer_type/2
+        , set_state/2
+        , set_option/3
+        , eval_code/2
+        , load_modules/2
+        , reload_modules/1
+        , print_state/2
+        , disassemble/2
         ]).
 
 -include("aere_macros.hrl").
@@ -17,95 +24,6 @@
                  | {local, aeso_syntax:name()}
                  | {deployed, aeso_syntax:expr(), aeso_syntax:name()}.
 
-%% Process an input string in the current state of the repl and respond accordingly
-%% This is supposed to be called after each input to the repl
--spec process_input(repl_state(), binary() | string()) -> aere_repl_response:response().
-process_input(State, String) when is_binary(String) ->
-    process_input(State, binary_to_list(String));
-process_input(State, String) ->
-    check_wololo(String),
-    try {Command, Args} = aere_parse:parse(String),
-        apply_command(Command, Args, aere_repl_state:bump_nonce(State))
-    of
-        finish ->
-            aere_repl_response:new(aere_msg:bye(), finish);
-        {Out, State1} ->
-            aere_repl_response:new(Out, {ok, State1});
-        State1 ->
-            aere_repl_response:new([], {ok, State1})
-    catch
-        error:E:Stacktrace ->
-            aere_repl_response:new(aere_msg:internal(E, Stacktrace), internal_error);
-        {repl_error, E} ->
-            aere_repl_response:new(E, error);
-        {revert, Err} ->
-            aere_repl_response:new(aere_msg:error(Err), error);
-        {aefa_fate, FateErr, _} ->
-            aere_repl_response:new(aere_msg:error("FATE error: " ++ FateErr), error)
-    end.
-
-%% Easter egg, don't ask.
--spec check_wololo(string()) -> ok.
-check_wololo(String) ->
-    string:find(String, "wololo") =:= nomatch orelse put(wololo, wololo),
-    ok.
-
-%% Return the result of applying a repl command to the given argument
--spec apply_command(aere_parse:command(), string() | [string()], repl_state()) -> aere_repl_state:command_res().
-apply_command(quit, [], _) ->
-    finish;
-apply_command(skip, [], State) ->
-    State;
-apply_command(reset, [], _) ->
-    aere_repl_state:init_state();
-apply_command(type, I, State) ->
-    infer_type(I, State);
-apply_command(state, I, State) ->
-    get_ready_chain(State),
-    set_state(aere_sophia:parse_body(I), State);
-apply_command(eval, I, State) ->
-    get_ready_chain(State),
-    eval_code(I, State);
-apply_command(load, Modules, State) ->
-    get_ready_chain(State),
-    load_modules(Modules, State);
-apply_command(reload, [], State) ->
-    get_ready_chain(State),
-    reload_modules(State);
-apply_command(set, [Option|Args], State) ->
-    get_ready_chain(State),
-    set_option(list_to_atom(Option), Args, State);
-apply_command(help, [On], State) ->
-    {aere_msg:help(On), State};
-apply_command(help, _, State) ->
-    {aere_msg:help(), State};
-apply_command(print, [What], State) ->
-    {print_state(State, What), State};
-apply_command(disas, [What], State) ->
-    Fate = disassemble(What, State),
-    {aere_msg:output(lists:flatten(aeb_fate_asm:pp(Fate))), State};
-apply_command(break, [File, Line], State) ->
-    aere_debugger:add_breakpoint(File, list_to_integer(Line), State);
-apply_command(delete_break, Index, State) ->
-    aere_debugger:delete_breakpoint(list_to_integer(Index), State);
-apply_command(ResumeKind, [], State)
-  when ResumeKind == continue;
-       ResumeKind == next;
-       ResumeKind == step;
-       ResumeKind == finish ->
-    ES0 = get_breakpoint_engine_state(State),
-    ES1 = aere_debugger:resume(ES0, ResumeKind),
-    eval_handler(State, aere_fate:resume_contract_debug(ES1, State));
-apply_command(location, [], State) ->
-    ES = get_breakpoint_engine_state(State),
-    {aere_msg:output(aere_debugger:source_location(ES)), State};
-apply_command(print_var, [VarName], State) ->
-    ES = get_breakpoint_engine_state(State),
-    {aere_msg:output(aere_debugger:lookup_variable(ES, VarName)), State};
-apply_command(stacktrace, [], State) ->
-    ES = get_breakpoint_engine_state(State),
-    {aere_msg:stacktrace(aere_fate:get_stack_trace(State, ES)), State}.
-
 infer_type(I, State) ->
     Stmts = aere_sophia:parse_body(I),
     Contract = aere_mock:eval_contract(Stmts, State),
@@ -113,7 +31,7 @@ infer_type(I, State) ->
     Type = aere_sophia:type_of_user_input(TEnv),
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
     TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER ++ "[0-9]*\\.", "", [global, {return, list}]),
-    {aere_msg:output(TypeStrClean), State}.
+    aere_msg:output(TypeStrClean).
 
 eval_code(I, State) ->
     Parse = aere_sophia:parse_top(I),
@@ -132,7 +50,8 @@ eval_code(I, State) ->
     end.
 
 -spec set_state([aeso_syntax:stmt()], repl_state()) -> aere_repl_state:command_res().
-set_state(Body, RS) ->
+set_state(BodyStr, RS) ->
+    Body         = aere_sophia:parse_body(BodyStr),
     Contract     = aere_mock:eval_contract(Body, RS),
     {TEnv, TAst} = aere_sophia:typecheck(Contract),
     Type         = aere_sophia:type_of_user_input(TEnv),
@@ -196,19 +115,26 @@ format_value(json, TEnv, Type, Val) ->
 load_modules([], S0) ->
     S0;
 load_modules(Filenames, S0) ->
-    Modules = aere_utils:read_files(Filenames),
-    S1 = register_modules(Modules, S0),
-    S2 = register_include(element(1, lists:last(Modules)), S1),
-    S2.
+    case aere_utils:read_files(Filenames) of
+        {ok, Modules} ->
+            S1 = register_modules(Modules, S0),
+            S2 = register_include(element(1, lists:last(Modules)), S1),
+            S2;
+        {error, Failed} ->
+            throw({repl_error, aere_msg:files_load_error(Failed)})
+    end.
 
 reload_modules(RS) ->
-    LdFiles  = aere_repl_state:loaded_files(RS), 
-    IncFiles = aere_repl_state:included_files(RS),
-    Modules  = aere_utils:read_files(maps:keys(LdFiles)),
-
-    RS1 = register_modules(Modules, RS),
-    RS2 = lists:foldl(fun register_include/2, RS1, IncFiles),
-    RS2.
+    LdFiles  = aere_repl_state:loaded_files(RS),
+    case aere_utils:read_files(maps:keys(LdFiles)) of
+        {ok, Modules} ->
+            IncFiles = aere_repl_state:included_files(RS),
+            RS1 = register_modules(Modules, RS),
+            RS2 = lists:foldl(fun register_include/2, RS1, IncFiles),
+            RS2;
+        {error, Failed} ->
+            throw({repl_error, aere_msg:files_load_error(Failed)})
+    end.
 
 -spec register_modules([{string(), binary()}], repl_state()) -> aere_repl_state:command_res().
 register_modules(Modules, S0) ->
@@ -400,8 +326,12 @@ unfold_types_in_type(T, S0) ->
     T1 = aeso_ast_infer_types:unfold_types_in_type(TEnv1, T),
     T1.
 
--spec disassemble(string(), repl_state()) -> term(). %% -> bytecode
-disassemble(What, S0) ->
+disassemble(What, State) ->
+    Fate = disassemble1(What, State),
+    aere_msg:output(lists:flatten(aeb_fate_asm:pp(Fate))).
+
+-spec disassemble1(string(), repl_state()) -> term() | no_return(). %% -> bytecode
+disassemble1(What, S0) ->
     Chain0 = aere_repl_state:chain_api(S0),
     S1 = aere_repl_state:set_blockchain_state({ready, Chain0}, S0),
     case parse_fun_ref(What) of
@@ -419,20 +349,22 @@ disassemble(What, S0) ->
             #{result := {tuple, {FName, _}}} = aere_fate:run_contract(MockByteCode, S1),
             aere_fate:extract_fun_from_bytecode(MockByteCode, FName);
         {local, _Name} ->
-            throw(not_supported)
+            throw({repl_error, aere_msg:error("Not supported")});
+        error ->
+            throw({repl_error, aere_msg:bad_fun_ref()})
     end.
 
--spec parse_fun_ref(string()) -> fun_ref().
+-spec parse_fun_ref(string()) -> fun_ref() | error.
 parse_fun_ref(What) ->
-    What1 = aere_sophia:parse_body(What),
-    case What1 of
-        [{qid, _, _} = Qid] -> {definition, Qid};
-        [{id, _, Name}] -> {local, Name};
+    case aere_sophia:parse_body(What) of
+        [{qid, _, _} = Qid]               -> {definition, Qid};
+        [{id, _, Name}]                   -> {local, Name};
         [{proj, _, Contr, {id, _, Name}}] -> {deployed, Contr, Name};
-        _ -> throw({repl_error, aere_msg:bad_fun_ref()})
+        _                                 -> error
     end.
 
--spec default_loaded_files() -> #{string() => binary()}.
+-spec default_loaded_files() -> {ok, #{string() => binary()}} | {error, Reason}
+    when Reason :: aere_theme:renderable().
 default_loaded_files() ->
     case get(aere_default_loaded_files) of
         undefined ->
@@ -442,11 +374,16 @@ default_loaded_files() ->
                     File <- element(2, file:list_dir(StdlibDir)),
                     filename:extension(File) =:= ".aes"
                 ],
-            FileMap = maps:from_list(aere_utils:read_files(Files)),
-            put(aere_default_loaded_files, FileMap),
-            FileMap;
+            case aere_utils:read_files(Files) of
+                {ok, FileList} ->
+                    FileMap = maps:from_list(FileList),
+                    put(aere_default_loaded_files, FileMap),
+                    {ok, FileMap};
+                {error, Failed} ->
+                    throw({repl_error, aere_msg:files_load_error(Failed)})
+            end;
         Files ->
-            Files
+            {ok, Files}
     end.
 
 get_ready_chain(RS) ->
@@ -455,12 +392,6 @@ get_ready_chain(RS) ->
             Chain;
         _ ->
             throw({repl_error, aere_msg:chain_not_ready()})
-    end.
-
-get_breakpoint_engine_state(RS) ->
-    case aere_repl_state:blockchain_state(RS) of
-        {breakpoint, ES} -> ES;
-        _                -> throw({repl_error, aere_msg:not_at_breakpoint()})
     end.
 
 set_option(Option, Args, RS) ->
