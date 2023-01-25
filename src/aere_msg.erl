@@ -30,6 +30,8 @@
         , function_not_found_in/1
         , not_at_breakpoint/0
         , stacktrace/1
+        , breakpoint_out_of_range/1
+        , undefined_variable/1
         , help/0, help/1
         , bye/0
         ]).
@@ -263,6 +265,14 @@ function_not_found_in(Name) ->
 -spec not_at_breakpoint() -> msg().
 not_at_breakpoint() ->
     aere_theme:error("Not at breakpoint!").
+
+-spec breakpoint_out_of_range(pos_integer()) -> msg().
+breakpoint_out_of_range(Index) ->
+    aere_theme:error(io_lib:format("A breakpoint with the index ~p does not exist", [Index])).
+
+-spec undefined_variable(string()) -> msg().
+undefined_variable(VarName) ->
+    aere_theme:error(io_lib:format("Undefined variable `~s`", [VarName])).
 
 -spec bye() -> msg().
 bye() -> aere_theme:output("bye!").

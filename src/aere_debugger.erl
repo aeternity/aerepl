@@ -27,7 +27,7 @@ add_breakpoint(State, FileName, Line) ->
 
 delete_breakpoint(State, Index) ->
     BPs = aere_repl_state:breakpoints(State),
-    [ throw({repl_error, aere_msg:error("Breakpoint does not exist")})
+    [ throw({repl_error, aere_msg:breakpoint_out_of_range(Index)})
         || Index < 1 orelse Index > length(BPs) ],
     {Left, [_ | Right]} = lists:split(Index - 1, BPs),
     aere_repl_state:set_breakpoints(Left ++ Right, State).
@@ -68,7 +68,7 @@ lookup_variable(RS, VarName) ->
     ES = breakpoint_engine_state(RS),
     case aefa_engine_state:get_variable_register(VarName, ES) of
         undefined ->
-            throw({repl_error, aere_msg:error("Undefined variable " ++ VarName)});
+            throw({repl_error, aere_msg:undefined_variable(VarName)});
         Reg ->
             {Val, _} = aefa_fate:lookup_var(Reg, ES),
             aere_msg:output(io_lib:format("~p", [Val]))

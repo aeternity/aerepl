@@ -89,7 +89,7 @@ print_eval_stacktrace(RS, ES, ErrMsg) ->
     {aere_msg:abort(ErrMsg, StackTrace), RS}.
 
 print_eval_res(_RS, _Res, _UsedGas, none) ->
-    throw({repl_error, aere_msg:error("TypeEnv not found")});
+    error("TypeEnv not found");
 print_eval_res(RS, Res, UsedGas, TypeEnv) ->
     #{ display_gas  := DisplayGas,
        print_unit   := PrintUnit,
@@ -341,7 +341,7 @@ disassemble1(What, S0) ->
             #{result := {tuple, {FName, _}}} = aere_fate:run_contract(MockByteCode, S1),
             aere_fate:extract_fun_from_bytecode(MockByteCode, FName);
         {local, _Name} ->
-            throw({repl_error, aere_msg:error("Not supported")});
+            error(not_supported);
         error ->
             throw({repl_error, aere_msg:bad_fun_ref()})
     end.

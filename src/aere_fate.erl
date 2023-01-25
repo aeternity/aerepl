@@ -31,7 +31,7 @@ run_contract(FateCode, RS) ->
             StackTrace = get_stack_trace(RS, ES1),
             throw({repl_error, aere_msg:abort(ErrMsg, StackTrace)});
         {break, _} ->
-            throw({repl_error, aere_msg:error("Breakpoint found outside of debug mode")})
+            throw({internal_error, "Breakpoint found outside of debug mode"})
     end.
 
 
