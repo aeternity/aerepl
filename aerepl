@@ -24,10 +24,10 @@ start() ->
 loop() ->
     try aere_gen_server:input(get_input()) of
         {ok, Msg} ->
-            print_msg(Msg),
+            print_msg(aere_gen_server:render(Msg)),
             loop();
         {error, Err} ->
-            print_msg(Err),
+            print_msg(aere_gen_server:render(Err)),
             loop();
         no_output ->
             loop();

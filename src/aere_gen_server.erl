@@ -10,7 +10,9 @@
 -export([ start/1
         , start_link/1
         , input/1
+        , render/1
         , banner/0
+        , restart/0
         ]).
 
 
@@ -40,6 +42,9 @@ handle_call(skip, _From, State) ->
 
 handle_call(reset, _From, _State) ->
     {reply, no_output, aere_repl_state:init_state()};
+
+handle_call(bump_nonce, _From, State) ->
+    {reply, ok, aere_repl_state:bump_nonce(State)};
 
 handle_call(theme, _From, State) ->
     #{ theme := Theme } = aere_repl_state:options(State),
@@ -130,34 +135,42 @@ ready_or_error(State) ->
     end.
 
 
--spec server_error(ReplState, ErrMsg) -> {reply, {error, ErrMsg}, ReplState}
+-spec server_error(ReplState, Err) -> {reply, {error, Msg}, ReplState}
     when ReplState :: aere_repl_state:state(),
-         ErrMsg    :: aere_theme:renderable().
+         Err       :: {repl_error, Msg} | Msg,
+         Msg       :: aere_theme:renderable().
+
+server_error(State, {repl_error, E}) ->
+    throw({reply, {error, E}, State});
 
 server_error(State, E) ->
-    {reply, {error, E}, State}.
+    throw({reply, {error, E}, State}).
 
 
--spec input(string()) -> {ok, string()} | {error, string()} | no_output | finish.
+-spec input(string()) -> {ok, Message} | {error, Message} | no_output | finish
+    when Message :: aere_theme:renderable().
 
 input(Input) ->
-    Res =
-        case aere_parse:parse(Input) of
-            {error, _} = Err -> Err;
-            Command          -> gen_server:call(?MODULE, Command)
-        end,
-    case Res of
-        {ok, Msg}    -> {ok, render_message(Msg)};
-        {error, Msg} -> {error, render_message(Msg)};
-        Out          -> Out
+    case aere_parse:parse(Input) of
+        Err = {error, _} ->
+            Err;
+        Command ->
+            gen_server:call(?MODULE, bump_nonce),
+            gen_server:call(?MODULE, Command)
     end.
 
 
--spec render_message(aere_theme:renderable()) -> string().
+-spec render(aere_theme:renderable()) -> string().
 
-render_message(Message) ->
+render(Message) ->
     {theme, Theme} = gen_server:call(?MODULE, theme),
     aere_theme:render(Theme, Message).
+
+
+-spec restart() -> ok.
+
+restart() ->
+    gen_server:call(?MODULE, reset).
 
 
 banner() ->

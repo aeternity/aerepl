@@ -115,26 +115,18 @@ format_value(json, TEnv, Type, Val) ->
 load_modules([], S0) ->
     S0;
 load_modules(Filenames, S0) ->
-    case aere_utils:read_files(Filenames) of
-        {ok, Modules} ->
-            S1 = register_modules(Modules, S0),
-            S2 = register_include(element(1, lists:last(Modules)), S1),
-            S2;
-        {error, Failed} ->
-            throw({repl_error, aere_msg:files_load_error(Failed)})
-    end.
+    Modules = aere_utils:read_files(Filenames),
+    S1 = register_modules(Modules, S0),
+    S2 = register_include(element(1, lists:last(Modules)), S1),
+    S2.
 
 reload_modules(RS) ->
     LdFiles  = aere_repl_state:loaded_files(RS),
-    case aere_utils:read_files(maps:keys(LdFiles)) of
-        {ok, Modules} ->
-            IncFiles = aere_repl_state:included_files(RS),
-            RS1 = register_modules(Modules, RS),
-            RS2 = lists:foldl(fun register_include/2, RS1, IncFiles),
-            RS2;
-        {error, Failed} ->
-            throw({repl_error, aere_msg:files_load_error(Failed)})
-    end.
+    Modules = aere_utils:read_files(maps:keys(LdFiles)),
+    IncFiles = aere_repl_state:included_files(RS),
+    RS1 = register_modules(Modules, RS),
+    RS2 = lists:foldl(fun register_include/2, RS1, IncFiles),
+    RS2.
 
 -spec register_modules([{string(), binary()}], repl_state()) -> aere_repl_state:command_res().
 register_modules(Modules, S0) ->
@@ -363,8 +355,7 @@ parse_fun_ref(What) ->
         _                                 -> error
     end.
 
--spec default_loaded_files() -> {ok, #{string() => binary()}} | {error, Reason}
-    when Reason :: aere_theme:renderable().
+-spec default_loaded_files() -> #{string() => binary()} | no_return().
 default_loaded_files() ->
     case get(aere_default_loaded_files) of
         undefined ->
@@ -374,16 +365,11 @@ default_loaded_files() ->
                     File <- element(2, file:list_dir(StdlibDir)),
                     filename:extension(File) =:= ".aes"
                 ],
-            case aere_utils:read_files(Files) of
-                {ok, FileList} ->
-                    FileMap = maps:from_list(FileList),
-                    put(aere_default_loaded_files, FileMap),
-                    {ok, FileMap};
-                {error, Failed} ->
-                    throw({repl_error, aere_msg:files_load_error(Failed)})
-            end;
+            FileMap = maps:from_list(aere_utils:read_files(Files)),
+            put(aere_default_loaded_files, FileMap),
+            FileMap;
         Files ->
-            {ok, Files}
+            Files
     end.
 
 get_ready_chain(RS) ->
@@ -401,7 +387,7 @@ set_option(Option, Args, RS) ->
     LockedOption andalso throw({repl_error, aere_msg:locked_option()}),
     case aere_options:parse_option(Option, Args) of
         error ->
-            {aere_msg:option_usage(Option), RS};
+            throw({repl_error, aere_msg:option_usage(Option)});
         Val ->
             NewOpts = Opts#{Option => Val},
             aere_repl_state:set_options(NewOpts, RS)

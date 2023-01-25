@@ -5,7 +5,7 @@
 -type parse_result() :: {atom(), string() | [string()]}
                       | no_return().
 
--type arg_type() :: integer | atom | any.
+-type arg_type() :: integer | atom | string.
 
 -type command_scheme() :: none
                         | consume
@@ -84,7 +84,7 @@ commands() ->
        , "or a function defined in a loaded or created contract or namespace."]
        }}
     , {"break",
-        {["b"], {n_args, [any, integer], 2}, "FILE_NAME LINE_NUM",
+        {["b"], {n_args, [string, integer], 2}, "FILE_NAME LINE_NUM",
         [ "Set a breakpoint in the specified file and line." ]}}
     , {"delete_break",
         {["db"], {n_args, [integer], 1}, "BREAKPOINT_INDEX",
@@ -142,7 +142,7 @@ parse(Input) ->
                                     list_to_tuple([Command | Args]);
                                 {n_args, _, _} ->
                                     list_to_tuple([Command | Args]);
-                                {min_args, N} ->
+                                {min_args, N} when Command =/= load ->
                                     Rest = lists:nthtail(N, Args),
                                     list_to_tuple([Command | lists:sublist(Args, N)] ++ [Rest]);
                                 {min_args, _, N} ->
@@ -170,7 +170,7 @@ parse_args(none, Str) ->
 parse_args(many_args, Str) ->
     {ok, words(Str)};
 parse_args({n_args, N}, Str) ->
-    parse_args({n_args, lists:duplicate(N, any), N}, Str);
+    parse_args({n_args, lists:duplicate(N, string), N}, Str);
 parse_args({n_args, Types, N}, Str) ->
     Words = words(Str),
     case length(Words) == N of
@@ -185,7 +185,7 @@ parse_args({n_args, Types, N}, Str) ->
             error
     end;
 parse_args({min_args, N}, Str) ->
-    parse_args({min_args, lists:duplicate(N, any), N}, Str);
+    parse_args({min_args, lists:duplicate(N, string), N}, Str);
 parse_args({min_args, Types, N}, Str) ->
     Words = words(Str),
     case length(Words) >= N of
@@ -211,7 +211,7 @@ apply_types(Xs, Ts) ->
 
 apply_type(X, integer) -> list_to_integer(X);
 apply_type(X, atom)    -> list_to_atom(X);
-apply_type(X, any)     -> X;
+apply_type(X, string)  -> X;
 apply_type(_, T)       -> throw({parse_error, io_lib:format("Unrecognized arg type: ~p", [T])}).
 
 words(String) ->

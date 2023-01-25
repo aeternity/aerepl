@@ -45,6 +45,7 @@ eval_test_() ->
     {setup, fun load_deps/0, [{generator, fun tests/0}]}.
 
 tests() ->
+    aere_gen_server:start_link([]),
     [{"Testing the " ++ atom_to_list(TestScenario) ++ " scenario",
       fun() ->
               File = "test/scenarios/" ++ atom_to_list(TestScenario) ++ ".aesi",
@@ -54,6 +55,7 @@ tests() ->
                       end,
 
               {Answers, Results} = eval(binary_to_list(Input)),
+              aere_gen_server:restart(),
 
               ?IF(length(Answers) /= length(Results), ?assertEqual(Answers, Results), ok),
               Results1 =
@@ -137,29 +139,26 @@ split_raw_entry({raw_entry, EntryLines}) ->
     #entry{ input  = lists:flatten(lists:join("\n", Input))
           , output = lists:flatten(lists:join("\n", CleanOutput)) }.
 
-eval_inputs(_State, [], Outputs) ->
+eval_inputs([], Outputs) ->
     lists:reverse(Outputs);
-eval_inputs(State, [Input | Rest], Outputs) ->
-    Response = aere_repl:process_input(State, Input),
-    Received = aere_repl_response:output(Response),
-    case aere_repl_response:status(Response) of
-        {ok, NewState} ->
-            Rendered = aere_theme:render(Received),
-            eval_inputs(NewState, Rest, [Rendered  | Outputs]);
-        Err when Err == error orelse Err == internal_error ->
-            Rendered = aere_theme:render(Received),
-            eval_inputs(State, Rest, [Rendered | Outputs]);
-        _ ->
-            eval_inputs(State, Rest, Outputs)
+eval_inputs([Input | Rest], Outputs) ->
+    case aere_gen_server:input(Input) of
+        {ok, Msg} ->
+            eval_inputs(Rest, [aere_theme:render(Msg) | Outputs]);
+        {error, ErrMsg} ->
+            eval_inputs(Rest, [aere_theme:render(ErrMsg) | Outputs]);
+        no_output ->
+            eval_inputs(Rest, ["" | Outputs]);
+        finish ->
+            eval_inputs(Rest, Outputs)
     end.
 
-eval_inputs(State, Inputs) ->
-    eval_inputs(State, Inputs, []).
+eval_inputs(Inputs) ->
+    eval_inputs(Inputs, []).
 
 eval(I) ->
-    State = aere_repl_state:init_state(),
     Entries = split_file(I),
     Expected = [ Output || #entry{output = Output} <- Entries],
     Inputs = [ Input || #entry{input = Input} <- Entries ],
-    Received = eval_inputs(State, Inputs),
+    Received = eval_inputs(Inputs),
     {Expected, Received}.
