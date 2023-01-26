@@ -135,10 +135,10 @@ eval_result(none, Gas) ->
 eval_result(Res, Gas) ->
     [aere_theme:output(Res ++ "\n"), used_gas(Gas)].
 
--spec no_such_command(string()) -> msg().
+-spec no_such_command(atom()) -> msg().
 no_such_command(Command) ->
     [ aere_theme:output("No such command ")
-    , aere_theme:command(io_lib:format("~p", [Command]))
+    , aere_theme:command(io_lib:format("`~p`", [Command]))
     ].
 
 -spec locked_option() -> msg().
@@ -154,7 +154,7 @@ command_usage(Command, Doc) ->
     , aere_theme:output(Doc)
     ].
 
--spec bad_command_args(string(), string()) -> msg().
+-spec bad_command_args(atom(), string()) -> msg().
 bad_command_args(Command, Doc) ->
     [ aere_theme:error("Invalid parameters.\n")
     ] ++ command_usage(Command, Doc).
@@ -291,7 +291,7 @@ help() ->
 
 -spec help(any()) -> msg().
 help(What) ->
-    case aere_parse:resolve_command(What) of
+    case aere_parse:resolve_command(list_to_atom(What)) of
         {Cmd, {Aliases, _, ArgDoc, Doc}} ->
             AliasesStr = string:join([":" ++ A || A <- Aliases], ", "),
             command_usage(Cmd, ArgDoc) ++
