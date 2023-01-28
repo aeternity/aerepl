@@ -99,7 +99,8 @@ handle_call(Resume, _From, State)
        Resume == next;
        Resume == step;
        Resume == finish ->
-    ?HANDLE_ERRS(State, {reply, no_output, aere_debugger:resume_eval(State, Resume)});
+    {Out, NewState} = ?HANDLE_ERRS(State, aere_debugger:resume_eval(State, Resume)),
+    {reply, {ok, Out}, NewState};
 
 handle_call(location, _From, State) ->
     ?HANDLE_ERRS(State, {reply, {ok, aere_debugger:source_location(State)}, State} );
