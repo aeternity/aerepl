@@ -10,6 +10,7 @@
         , set_state/2
         , set_option/3
         , eval_code/2
+        , eval_handler/2
         , load_modules/2
         , reload_modules/1
         , print_state/2
