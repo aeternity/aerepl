@@ -101,6 +101,7 @@ scenarios() ->
     , reset_command
     , options_setting
     , stack_trace_abort
+    , debugger_basic_usage
     ].
 
 %% Split a file into entries
