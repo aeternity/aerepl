@@ -88,15 +88,15 @@ eval_state(ES0, RS0) ->
         Opts     = aere_repl_state:options(RS1),
         UsedGas  = maps:get(call_gas, Opts) - aefa_engine_state:gas(ES2) - 10, %% RETURN(R) costs 10
 
-        case aefa_engine_state:breakpoint_stop(ES2) of
-            false ->
+        case aefa_engine_state:debugger_status(ES2) of
+            break ->
+                RS2 = aere_repl_state:set_blockchain_state({breakpoint, ES2}, RS1),
+                {break, RS2};
+            _ ->
                 RS2 = aere_repl_state:set_blockchain_state({ready, ChainApi}, RS1),
                 {ok, #{result    => Res,
                        used_gas  => UsedGas,
-                       new_state => RS2}};
-            true ->
-                RS2 = aere_repl_state:set_blockchain_state({breakpoint, ES2}, RS1),
-                {break, RS2}
+                       new_state => RS2}}
         end
     catch
         {aefa_fate, revert, ErrMsg, ES} ->

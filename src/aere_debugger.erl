@@ -48,16 +48,14 @@ resume_eval(RS, Kind) ->
     when EngineState :: aefa_engine_state:state(),
          ResumeKind  :: step | next | continue | finish.
 
-resume(ES0, Kind) ->
-    CurFun = aefa_engine_state:current_function(ES0),
+resume(ES, Kind) ->
+    CurFun = aefa_engine_state:current_function(ES),
     Status =
         case Kind of
             K when K == next; K == finish -> {K, CurFun};
             _                             -> Kind
         end,
-    ES1 = aefa_engine_state:set_breakpoint_stop(false, ES0),
-    ES2 = aefa_engine_state:set_debugger_status(Status, ES1),
-    ES2.
+    aefa_engine_state:set_debugger_status(Status, ES).
 
 
 -spec lookup_variable(ReplState, VariableName) -> string() | no_return()
