@@ -1,0 +1,20 @@
+:load test/contracts/debug.aes
+
+let c = Chain.create() : C
+
+c.h()
+// 15
+
+:b test/contracts/debug.aes 14
+
+c.h()
+// Break
+
+:n
+// Break
+
+:print_var x
+// 1
+
+:c
+// 15

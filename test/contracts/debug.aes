@@ -1,0 +1,17 @@
+contract C =
+    entrypoint f(n : int) =
+        let x = n * 2
+        let x = 2
+        let y = x * 2
+        let z = y * 2
+        z
+
+    entrypoint g(n : int, res : int) =
+        if (n == 0) res
+        else g(n - 1, res + n)
+
+    entrypoint h() =
+        let x = 1
+        let y = g(3, 0)
+        let z = f(2)
+        x + y + z
