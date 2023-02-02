@@ -16,7 +16,11 @@
         ]).
 
 
--define(HANDLE_ERRS(S, X), try X catch E -> server_error(S, E) end).
+-define(HANDLE_ERRS(S, X),
+    try X catch
+        error:E:St -> server_error(S, E, St);
+        E          -> server_error(S, E)
+    end).
 
 
 %%% --- GEN SERVER ---
@@ -136,16 +140,31 @@ ready_or_error(State) ->
     end.
 
 
--spec server_error(ReplState, Err) -> {reply, {error, Msg}, ReplState}
+-spec server_error(ReplState, Error) -> {reply, {error, Msg}, ReplState}
     when ReplState :: aere_repl_state:state(),
-         Err       :: {repl_error, Msg} | Msg,
+         Error     :: term(),
          Msg       :: aere_theme:renderable().
 
-server_error(State, {repl_error, E}) ->
-    throw({reply, {error, E}, State});
+server_error(State, {repl_error, Err}) ->
+    throw({reply, {error, Err}, State});
 
-server_error(State, E) ->
-    throw({reply, {error, E}, State}).
+server_error(State, {revert, Err}) ->
+    throw({reply, {error, aere_msg:error(Err)}, State});
+
+server_error(State, {aefa_fate, FateErr, _}) ->
+    throw({reply, {error, aere_msg:error(io_lib:format("FATE error: ~s", [FateErr]))}, State});
+
+server_error(State, Err) ->
+    throw({reply, {error, aere_msg:error(io_lib:format("Unknown error: ~p", [Err]))}, State}).
+
+
+-spec server_error(ReplState, Error, erlang:stacktrace()) -> {reply, {error, Msg}, ReplState}
+    when ReplState :: aere_repl_state:state(),
+         Error     :: term(),
+         Msg       :: aere_theme:renderable().
+
+server_error(State, Err, Stacktrace) ->
+    throw({reply, {error, aere_msg:internal(Err, Stacktrace)}, State}).
 
 
 -spec input(string()) -> {ok, Message} | {error, Message} | no_output | finish
