@@ -90,7 +90,7 @@ handle_call({print, What}, _From, State) ->
     {reply, {ok, aere_repl:print_state(State, What)}, State};
 
 handle_call({disas, What}, _From, State) ->
-    ?HANDLE_ERRS(State, {reply, {ok, aere_repl:disassemble(What)}, State});
+    ?HANDLE_ERRS(State, {reply, {ok, aere_repl:disassemble(What, State)}, State});
 
 handle_call({break, File, Line}, _From, State) ->
     ?HANDLE_ERRS(State, {reply, no_output, aere_debugger:add_breakpoint(State, File, Line)});
