@@ -91,9 +91,6 @@ commands() ->
     , {delete_break,
         {[db], [{required, integer}], "BREAKPOINT_INDEX",
         [ "Delete a breakpoint." ]}}
-    , {info_break,
-        {[ib], [], "",
-        [ "List all breakpoints." ]}}
     , {step,
         {[sp], [], "",
         [ "Resume execution after a breakpoint is hit, until the next line." ]}}
