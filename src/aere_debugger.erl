@@ -49,10 +49,10 @@ resume_eval(RS, Kind) ->
          ResumeKind  :: step | next | continue | finish.
 
 resume(ES, Kind) ->
-    CurFun = aefa_engine_state:current_function(ES),
+    CallStack = aefa_engine_state:call_stack(ES),
     Status =
         case Kind of
-            K when K == next; K == finish -> {K, CurFun};
+            K when K == next; K == finish -> {K, CallStack};
             _                             -> Kind
         end,
     aefa_engine_state:set_debugger_status(Status, ES).
