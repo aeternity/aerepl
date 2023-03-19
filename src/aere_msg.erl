@@ -102,8 +102,12 @@ stacktrace(Stack) ->
            (F) when is_binary(F) -> binary_to_list(F);
            (F) -> F
         end,
+    ContractStr =
+        fun(C) when is_list(C) -> C;
+           (C) when is_binary(C) -> binary:bin_to_list(aeser_api_encoder:encode(contract_pubkey, C))
+        end,
     [ [ aere_theme:info(integer_to_list(I) ++ "    ")
-      , aere_theme:info(binary:bin_to_list(aeser_api_encoder:encode(contract_pubkey, Con))), aere_theme:info(":")
+      , aere_theme:info(ContractStr(Con)), aere_theme:info(":")
       , aere_theme:output(binary:bin_to_list(Fun)), aere_theme:info(":")
       , aere_theme:info(NonEmpty(File) ++ ":" ++ integer_to_list(Line) ++ "\n")
       ]

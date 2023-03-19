@@ -170,7 +170,7 @@ get_stack_trace(RS, ES0) ->
     ES       = aefa_engine_state:push_call_stack(ES0),
     Stack    = aefa_engine_state:call_stack(ES),
     DbgStack = aefa_engine_state:dbg_call_stack(ES),
-    Calls    = [ {Contract, get_fun_symbol(RS, FunHash)}
+    Calls    = [ {aefa_engine_state:get_contract_name(Contract, ES), get_fun_symbol(RS, FunHash)}
                    || {_, Contract, _, FunHash, _, _, _, _, _} <- Stack ],
     [ {Contract, Symbol, File, Line}
         || {{Contract, Symbol}, {File, Line}} <- lists:zip(Calls, DbgStack) ].
