@@ -91,14 +91,14 @@ commands() ->
     , {delete_break,
         {[db], [{required, integer}], "BREAKPOINT_INDEX",
         [ "Delete a breakpoint." ]}}
-    , {step,
-        {[sp], [], "",
+    , {stepin,
+        {[si], [], "",
         [ "Resume execution after a breakpoint is hit, until the next line." ]}}
-    , {next,
-        {[n], [], "",
+    , {stepover,
+        {[sv], [], "",
         [ "Resume execution after a breakpoint is hit, until the next line, skipping over function calls." ]}}
-    , {finish,
-        {[f], [], "",
+    , {stepout,
+        {[so], [], "",
         [ "Resume execution after a breakpoint is hit, until the current function is finished" ]}}
     , {continue,
         {[c], [], "",

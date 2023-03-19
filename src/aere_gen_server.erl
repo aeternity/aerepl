@@ -100,9 +100,9 @@ handle_call({delete_break, Index}, _From, State) ->
 
 handle_call(Resume, _From, State)
   when Resume == continue;
-       Resume == next;
-       Resume == step;
-       Resume == finish ->
+       Resume == stepover;
+       Resume == stepin;
+       Resume == stepout ->
     {Out, NewState} = ?HANDLE_ERRS(State, aere_debugger:resume_eval(State, Resume)),
     {reply, {ok, Out}, NewState};
 
