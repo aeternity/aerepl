@@ -22,8 +22,9 @@
                        }.
 
 run_contract(FateCode, RS) ->
-    ES0 = setup_fate_state(FateCode, RS),
-    ES1 = aefa_engine_state:set_debugger_status(disabled, ES0),
+    ES0  = setup_fate_state(FateCode, RS),
+    Info = aefa_debug:set_breakpoints([], aefa_engine_state:debug_info(ES0)),
+    ES1  = aefa_engine_state:set_debug_info(Info, ES0),
     case eval_state(ES1, RS) of
         {ok, Res} ->
             Res;
@@ -46,8 +47,9 @@ run_contract(FateCode, RS) ->
                        , engine_state := aefa_engine_state:state() }.
 
 run_contract_debug(FateCode, RS) ->
-    ES0 = setup_fate_state(FateCode, RS),
-    ES1 = aefa_engine_state:set_debugger_status(continue, ES0),
+    ES0  = setup_fate_state(FateCode, RS),
+    Info = aefa_debug:set_debugger_status(continue, aefa_engine_state:debug_info(ES0)),
+    ES1  = aefa_engine_state:set_debug_info(Info, ES0),
     eval_state(ES1, RS).
 
 
@@ -88,7 +90,7 @@ eval_state(ES0, RS0) ->
         Opts     = aere_repl_state:options(RS1),
         UsedGas  = maps:get(call_gas, Opts) - aefa_engine_state:gas(ES2) - 10, %% RETURN(R) costs 10
 
-        case aefa_engine_state:debugger_status(ES2) of
+        case aefa_debug:debugger_status(aefa_engine_state:debug_info(ES2)) of
             break ->
                 RS2 = aere_repl_state:set_blockchain_state({breakpoint, ES2}, RS1),
                 {break, RS2};
@@ -117,7 +119,6 @@ setup_fate_state(FateCode, RS) ->
     Funs = aere_repl_state:funs(RS),
     #{call_gas := Gas, call_value := Value} = aere_repl_state:options(RS),
     {_, StateVal} = aere_repl_state:contract_state(RS),
-    Breakpoints = aere_repl_state:breakpoints(RS),
 
     Version = #{ vm => aere_version:vm_version(), abi => aere_version:abi_version() },
     Binary = aeb_fate_code:serialize(FateCode, []),
@@ -139,23 +140,26 @@ setup_fate_state(FateCode, RS) ->
     Store = aefa_stores:initial_contract_store(),
     Functions = maps:merge(Funs, aeb_fate_code:functions(FateCode)),
 
+    Breakpoints = aere_repl_state:breakpoints(RS),
+    Info = aefa_debug:set_breakpoints(Breakpoints, aefa_debug:new()),
+
     ES0 =
-        aefa_engine_state:new_dbg(
+        aefa_engine_state:new(
             Gas,
             Value,
             #{caller => Owner}, % Spec
             aefa_stores:put_contract_store(ContractPubkey, Store, aefa_stores:new()),
             ChainApi,
             #{ContractPubkey => {FateCode, aere_version:vm_version()}}, % Code cache
-            aere_version:vm_version(),
-            Breakpoints
+            aere_version:vm_version()
         ),
     ES1 = aefa_engine_state:update_for_remote_call(ContractPubkey, FateCode, aere_version:vm_version(), Caller, ES0),
     ES2 = aefa_fate:set_local_function(Function, false, ES1),
     ES3 = aefa_fate:bind_args([Arg || {_, _, Arg} <- Vars], ES2),
     ES4 = aefa_engine_state:set_functions(Functions, ES3),
     ES5 = aefa_fate:store_var({var, -1}, StateVal, ES4),
-    ES5.
+    ES6 = aefa_engine_state:set_debug_info(Info, ES5),
+    ES6.
 
 
 -spec get_stack_trace(ReplState, EngineState) -> [{Contract, FunHash, File, Line}]
@@ -169,8 +173,9 @@ setup_fate_state(FateCode, RS) ->
 get_stack_trace(RS, ES0) ->
     ES       = aefa_engine_state:push_call_stack(ES0),
     Stack    = aefa_engine_state:call_stack(ES),
-    DbgStack = aefa_engine_state:dbg_call_stack(ES),
-    Calls    = [ {aefa_engine_state:get_contract_name(Contract, ES), get_fun_symbol(RS, FunHash)}
+    Info     = aefa_engine_state:debug_info(ES),
+    DbgStack = aefa_debug:call_stack(Info),
+    Calls    = [ {aefa_debug:contract_name(Contract, Info), get_fun_symbol(RS, FunHash)}
                    || {_, Contract, _, FunHash, _, _, _, _, _} <- Stack ],
     [ {Contract, Symbol, File, Line}
         || {{Contract, Symbol}, {File, Line}} <- lists:zip(Calls, DbgStack) ].

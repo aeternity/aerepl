@@ -55,7 +55,8 @@ resume(ES, Kind) ->
             K when K == stepover ; K == stepout -> {K, CallStack};
             _                                   -> Kind
         end,
-    aefa_engine_state:set_debugger_status(Status, ES).
+    Info = aefa_debug:set_debugger_status(Status, aefa_engine_state:debug_info(ES)),
+    aefa_engine_state:set_debug_info(Info, ES).
 
 
 -spec lookup_variable(ReplState, VariableName) -> string() | no_return()
@@ -64,7 +65,7 @@ resume(ES, Kind) ->
 
 lookup_variable(RS, VarName) ->
     ES = breakpoint_engine_state(RS),
-    case aefa_engine_state:get_variable_register(VarName, ES) of
+    case aefa_debug:get_variable_register(VarName, aefa_engine_state:debug_info(ES)) of
         undefined ->
             throw({repl_error, aere_msg:undefined_variable(VarName)});
         Reg ->
@@ -80,7 +81,7 @@ lookup_variable(RS, VarName) ->
 source_location(RS) ->
     ES = breakpoint_engine_state(RS),
 
-    {FileName, CurrentLine} = aefa_engine_state:debugger_location(ES),
+    {FileName, CurrentLine} = aefa_debug:debugger_location(aefa_engine_state:debug_info(ES)),
 
     File     = aere_utils:read_file(FileName),
     Lines    = string:split(File, "\n", all),
