@@ -10,7 +10,7 @@ c.h()
 c.h()
 // Break
 
-:n
+:stepover
 // Break
 
 :print_var x
