@@ -61,7 +61,11 @@ compile_contract(TypedAst) ->
         aeso_fcode_to_fate:compile(ChildConEnv, FCode, SavedFreshNames, Opts)
     catch {error, Ef} -> process_err(Ef) end.
 
-type_of_user_input(TEnv) ->
+type_of_user_input(TEnv0) ->
+    %% TODO: This is a hack, not a solution. If not done this way, the error
+    %% contract_treated_as_namespace_entrypoint will show when calling lookup_env1
+    TEnv = setelement(7, TEnv0, [?MOCK_CONTRACT]),
+
     {_, {_, {type_sig, _, _, _, _, Type}}} = aeso_ast_infer_types:lookup_env1(TEnv, term, [], [?MOCK_CONTRACT, ?USER_INPUT]),
     Type.
 
