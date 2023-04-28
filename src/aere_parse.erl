@@ -46,7 +46,7 @@ commands() ->
         , "Unloads previously loaded files."]
        }}
     , {reload,
-       {["r"], [], "",
+       {[r], [], "",
         [ "Reloads loaded files preserving the included scope."
         , "Cleans user variables, functions, types and contracts."]
        }}
