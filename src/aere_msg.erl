@@ -31,6 +31,7 @@
         , not_at_breakpoint/0
         , stacktrace/1
         , breakpoint_out_of_range/1
+        , breakpoint_file_not_loaded/1
         , undefined_variable/1
         , help/0, help/1
         , bye/0
@@ -273,6 +274,11 @@ not_at_breakpoint() ->
 -spec breakpoint_out_of_range(pos_integer()) -> msg().
 breakpoint_out_of_range(Index) ->
     aere_theme:error(io_lib:format("A breakpoint with the index ~p does not exist", [Index])).
+
+-spec breakpoint_file_not_loaded(string()) -> msg().
+
+breakpoint_file_not_loaded(FileName) ->
+    aere_theme:error(io_lib:format("Cannot add a breakpoint because the file `~s` is not loaded in the repl", [FileName])).
 
 -spec undefined_variable(string()) -> msg().
 undefined_variable(VarName) ->

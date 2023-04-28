@@ -15,6 +15,9 @@
          Line      :: integer().
 
 add_breakpoint(State, FileName, Line) ->
+    LoadedFiles = maps:keys(aere_repl_state:loaded_files(State)),
+    [ throw({repl_error, aere_msg:breakpoint_file_not_loaded(FileName)})
+        || not lists:member(FileName, LoadedFiles) ],
     OldBPs = aere_repl_state:breakpoints(State),
     BP     = {FileName, Line},
     NewBPs = OldBPs ++ [BP],
