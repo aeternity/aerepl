@@ -116,14 +116,14 @@ format_value(json, TEnv, Type, Val) ->
 load_modules([], S0) ->
     S0;
 load_modules(Filenames, S0) ->
-    Modules = aere_utils:read_files(Filenames),
+    Modules = aere_files:read_files(Filenames),
     S1 = register_modules(Modules, S0),
     S2 = register_include(element(1, lists:last(Modules)), S1),
     S2.
 
 reload_modules(RS) ->
     LdFiles  = aere_repl_state:loaded_files(RS),
-    Modules = aere_utils:read_files(maps:keys(LdFiles)),
+    Modules = aere_files:read_files(maps:keys(LdFiles)),
     IncFiles = aere_repl_state:included_files(RS),
     RS1 = register_modules(Modules, RS),
     RS2 = lists:foldl(fun register_include/2, RS1, IncFiles),
@@ -366,7 +366,7 @@ default_loaded_files() ->
                     File <- element(2, file:list_dir(StdlibDir)),
                     filename:extension(File) =:= ".aes"
                 ],
-            FileMap = maps:from_list(aere_utils:read_files(Files)),
+            FileMap = maps:from_list(aere_files:read_files(Files)),
             put(aere_default_loaded_files, FileMap),
             FileMap;
         Files ->

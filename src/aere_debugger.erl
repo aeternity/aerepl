@@ -83,7 +83,7 @@ source_location(RS) ->
 
     {FileName, CurrentLine} = aefa_debug:debugger_location(aefa_engine_state:debug_info(ES)),
 
-    File     = aere_utils:read_file(FileName),
+    File     = aere_files:read_file(FileName),
     Lines    = string:split(File, "\n", all),
     LineSign =
         fun(Id) when Id == CurrentLine -> ">";
