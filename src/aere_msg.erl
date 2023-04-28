@@ -292,7 +292,7 @@ help() ->
     Help =
         [ "Type a Sophia expression to evaluate it. Commands supported by the REPL:"
         ] ++
-        [ "- :" ++ Command
+        [ "- :" ++ atom_to_list(Command)
           || {Command, _} <- aere_parse:commands()
         ] ++
         ["Type `:help COMMAND` to learn about the given command"],
@@ -303,7 +303,7 @@ help() ->
 help(What) ->
     case aere_parse:resolve_command(list_to_atom(What)) of
         {Cmd, {Aliases, _, ArgDoc, Doc}} ->
-            AliasesStr = string:join([":" ++ A || A <- Aliases], ", "),
+            AliasesStr = string:join([":" ++ atom_to_list(A) || A <- Aliases], ", "),
             command_usage(Cmd, ArgDoc) ++
                 [aere_theme:info("\nALIASES: "), aere_theme:command(AliasesStr)] ++
                 [aere_theme:output("\n\n")] ++
