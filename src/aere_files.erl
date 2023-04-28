@@ -1,4 +1,4 @@
--module(aere_utils).
+-module(aere_files).
 
 -export([ read_file/1
         , read_files/1
