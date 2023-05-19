@@ -39,7 +39,7 @@ delete_breakpoint(State, Index) ->
 -spec resume_eval(ReplState, ResumeKind) -> EngineState | no_return()
     when ReplState   :: aere_repl_state:state(),
          EngineState :: aefa_engine_state:state(),
-         ResumeKind  :: continue | stepin | stepout | stepout.
+         ResumeKind  :: continue | stepin | stepout.
 
 resume_eval(RS, Kind) ->
     ES0 = breakpoint_engine_state(RS),
