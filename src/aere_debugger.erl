@@ -39,7 +39,7 @@ delete_breakpoint(State, Index) ->
 -spec resume_eval(ReplState, ResumeKind) -> EngineState | no_return()
     when ReplState   :: aere_repl_state:state(),
          EngineState :: aefa_engine_state:state(),
-         ResumeKind  :: continue | stepin | stepout.
+         ResumeKind  :: continue | stepin | stepout | stepover.
 
 resume_eval(RS, Kind) ->
     ES0 = breakpoint_engine_state(RS),
@@ -49,7 +49,7 @@ resume_eval(RS, Kind) ->
 
 -spec resume(EngineState, ResumeKind) -> EngineState
     when EngineState :: aefa_engine_state:state(),
-         ResumeKind  :: continue | stepin | stepout | stepout.
+         ResumeKind  :: continue | stepin | stepout | stepover.
 
 resume(ES, Kind) ->
     CallStack = aefa_engine_state:call_stack(ES),
