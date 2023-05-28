@@ -73,7 +73,8 @@ commands() ->
         , "- types: displays user-defined types"
         , "- options: displays the current configuration"
         , "- files: displays loaded files"
-        , "- includes: displays files included in the scope"]
+        , "- includes: displays files included in the scope"
+        , "- breakpoints: displays all breakpoints set in the debugger" ]
        }}
     , {help,
        {[h], [{optional, string}], "[COMMAND]",
