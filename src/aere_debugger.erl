@@ -2,6 +2,7 @@
 
 -export([ add_breakpoint/3
         , delete_breakpoint/2
+        , delete_breakpoint/3
         , resume_eval/2
         , lookup_variable/2
         , source_location/1
@@ -34,6 +35,19 @@ delete_breakpoint(State, Index) ->
         || Index < 1 orelse Index > length(BPs) ],
     {Left, [_ | Right]} = lists:split(Index - 1, BPs),
     aere_repl_state:set_breakpoints(Left ++ Right, State).
+
+
+-spec delete_breakpoint(ReplState, File, Line) -> ReplState | no_return()
+    when ReplState :: aere_repl_state:state(),
+         File      :: string(),
+         Line      :: pos_integer().
+
+delete_breakpoint(State, File, Line) ->
+    BPs = aere_repl_state:breakpoints(State),
+    NewBPs = [B || B = {F, L} <- BPs, F =/= File orelse L =/= Line],
+    [ throw({repl_error, aere_msg:breakpoint_wrong_location(File, Line)})
+        || length(BPs) == length(NewBPs) ],
+    aere_repl_state:set_breakpoints(NewBPs, State).
 
 
 -spec resume_eval(ReplState, ResumeKind) -> EngineState | no_return()

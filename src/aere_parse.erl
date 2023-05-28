@@ -92,6 +92,9 @@ commands() ->
     , {delete_break,
         {[db], [{required, integer}], "BREAKPOINT_INDEX",
         [ "Delete a breakpoint." ]}}
+    , {delete_break_loc,
+        {[dbl], [{required, string}, {required, integer}], "FILE LINE",
+        [ "Delete a breakpoint by its location." ]}}
     , {stepin,
         {[si], [], "",
         [ "Resume execution after a breakpoint is hit, until the next line." ]}}

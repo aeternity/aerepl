@@ -98,6 +98,9 @@ handle_call({break, File, Line}, _From, State) ->
 handle_call({delete_break, Index}, _From, State) ->
     ?HANDLE_ERRS(State, {reply, no_output, aere_debugger:delete_breakpoint(State, Index)});
 
+handle_call({delete_break_loc, File, Line}, _From, State) ->
+    ?HANDLE_ERRS(State, {reply, no_output, aere_debugger:delete_breakpoint(State, File, Line)});
+
 handle_call(Resume, _From, State)
   when Resume == continue;
        Resume == stepover;

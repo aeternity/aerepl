@@ -31,6 +31,7 @@
         , not_at_breakpoint/0
         , stacktrace/1
         , breakpoint_out_of_range/1
+        , breakpoint_wrong_location/2
         , breakpoint_file_not_loaded/1
         , undefined_variable/1
         , help/0, help/1
@@ -274,6 +275,10 @@ not_at_breakpoint() ->
 -spec breakpoint_out_of_range(pos_integer()) -> msg().
 breakpoint_out_of_range(Index) ->
     aere_theme:error(io_lib:format("A breakpoint with the index ~p does not exist", [Index])).
+
+-spec breakpoint_wrong_location(string(), pos_integer()) -> msg().
+breakpoint_wrong_location(File, Line) ->
+    aere_theme:error(io_lib:format("A breakpoint in the file `~s` at line ~p does not exist", [File, Line])).
 
 -spec breakpoint_file_not_loaded(string()) -> msg().
 
