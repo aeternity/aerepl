@@ -87,7 +87,7 @@ handle_call({help, Command}, _From, State) ->
     {reply, {ok, aere_msg:help(Command)}, State};
 
 handle_call({print, What}, _From, State) ->
-    {reply, {ok, aere_repl:print_state(State, What)}, State};
+    ?HANDLE_ERRS(State, {reply, {ok, aere_repl:print_state(State, What)}, State});
 
 handle_call({disas, What}, _From, State) ->
     ?HANDLE_ERRS(State, {reply, {ok, aere_repl:disassemble(What, State)}, State});
