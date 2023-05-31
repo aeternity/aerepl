@@ -56,9 +56,16 @@ delete_breakpoint(State, File, Line) ->
          ResumeKind  :: continue | stepin | stepout | stepover.
 
 resume_eval(RS, Kind) ->
-    ES0 = breakpoint_engine_state(RS),
-    ES1 = resume(ES0, Kind),
-    aere_repl:eval_handler(RS, aere_fate:resume_contract_debug(ES1, RS)).
+    case aere_repl_state:blockchain_state(RS) of
+        {abort, _} ->
+            Chain = aere_repl_state:chain_api(RS),
+            NewRS = aere_repl_state:set_blockchain_state({ready, Chain}, RS),
+            {aere_msg:contract_exec_ended(), NewRS};
+        _ ->
+            ES0 = breakpoint_engine_state(RS),
+            ES1 = resume(ES0, Kind),
+            aere_repl:eval_handler(RS, aere_fate:resume_contract_debug(ES1, RS))
+    end.
 
 
 -spec resume(EngineState, ResumeKind) -> EngineState
@@ -132,5 +139,6 @@ stacktrace(RS) ->
 breakpoint_engine_state(RS) ->
     case aere_repl_state:blockchain_state(RS) of
         {breakpoint, ES} -> ES;
+        {abort, ES}      -> ES;
         _                -> throw({repl_error, aere_msg:not_at_breakpoint()})
     end.

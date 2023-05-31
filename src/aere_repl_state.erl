@@ -24,7 +24,8 @@
 -type type_def() :: {string(), string(), [aeso_syntax:tvar()], aeso_syntax:typedef()}.
 -type type_scope() :: {string(), {string(), non_neg_integer()}}.
 -type chain_state() :: {ready, aefa_chain_api:state()}
-                     | {breakpoint, aefa_engine_state:state()}.
+                     | {breakpoint, aefa_engine_state:state()}
+                     | {abort, aefa_engine_state:state()}.
 
 -record(rs, { blockchain_state       :: chain_state()
             , repl_account           :: binary()
@@ -250,6 +251,8 @@ set_function_symbols(Symbols, RS) ->
 chain_api(#rs{blockchain_state = {ready, Api}}) ->
     Api;
 chain_api(#rs{blockchain_state = {breakpoint, ES}}) ->
+    aefa_engine_state:chain_api(ES);
+chain_api(#rs{blockchain_state = {abort, ES}}) ->
     aefa_engine_state:chain_api(ES).
 
 -spec bump_nonce(state()) -> state().

@@ -33,6 +33,7 @@
         , breakpoint_out_of_range/1
         , breakpoint_wrong_location/2
         , breakpoint_file_not_loaded/1
+        , contract_exec_ended/0
         , undefined_variable/1
         , help/0, help/1
         , bye/0
@@ -271,6 +272,10 @@ function_not_found_in(Name) ->
 -spec not_at_breakpoint() -> msg().
 not_at_breakpoint() ->
     aere_theme:error("Not at breakpoint!").
+
+-spec contract_exec_ended() -> msg().
+contract_exec_ended() ->
+    aere_theme:output("Contract execution was either aborted or exited.").
 
 -spec breakpoint_out_of_range(pos_integer()) -> msg().
 breakpoint_out_of_range(Index) ->

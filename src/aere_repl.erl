@@ -80,7 +80,7 @@ eval_expr(Body, RS) ->
 eval_handler(_RS, {ok, #{result := Res, used_gas := Gas, new_state := RS}}) ->
     print_eval_res(RS, Res, Gas, aere_repl_state:type_env(RS));
 eval_handler(RS0, {revert, #{err_msg := ErrMsg, engine_state := ES}}) ->
-    RS = aere_repl_state:set_blockchain_state({breakpoint, ES}, RS0),
+    RS = aere_repl_state:set_blockchain_state({abort, ES}, RS0),
     print_eval_stacktrace(RS, ES, ErrMsg);
 eval_handler(_RS, {break, RS}) ->
     {aere_msg:output("Break"), RS}.
