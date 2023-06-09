@@ -139,7 +139,7 @@ handle_cast(_, State) ->
 ready_or_error(State) ->
     case aere_repl_state:blockchain_state(State) of
         {ready, _} -> ok;
-        _          -> server_error(State, aere_msg:chain_not_ready())
+        _          -> server_error(State, {repl_error, aere_msg:chain_not_ready()})
     end.
 
 
