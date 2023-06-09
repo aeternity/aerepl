@@ -79,23 +79,22 @@ resume_contract_debug(ES, RS) ->
 
 eval_state(ES0, RS0) ->
     try
-        ES1             = aefa_fate:execute(ES0),
-        {StateVal, ES2} = aefa_fate:lookup_var({var, -1}, ES1),
-        {StateType, _}  = aere_repl_state:contract_state(RS0),
-        ContractState   = {StateType, StateVal},
-        RS1             = aere_repl_state:set_contract_state(ContractState, RS0),
+        ES1      = aefa_fate:execute(ES0),
+        Res      = aefa_engine_state:accumulator(ES1),
+        ChainApi = aefa_engine_state:chain_api(ES1),
+        Opts     = aere_repl_state:options(RS0),
+        UsedGas  = maps:get(call_gas, Opts) - aefa_engine_state:gas(ES1) - 10, %% RETURN(R) costs 10
 
-        Res      = aefa_engine_state:accumulator(ES2),
-        ChainApi = aefa_engine_state:chain_api(ES2),
-        Opts     = aere_repl_state:options(RS1),
-        UsedGas  = maps:get(call_gas, Opts) - aefa_engine_state:gas(ES2) - 10, %% RETURN(R) costs 10
-
-        case aefa_debug:debugger_status(aefa_engine_state:debug_info(ES2)) of
+        case aefa_debug:debugger_status(aefa_engine_state:debug_info(ES1)) of
             break ->
-                RS2 = aere_repl_state:set_blockchain_state({breakpoint, ES2}, RS1),
+                RS2 = aere_repl_state:set_blockchain_state({breakpoint, ES1}, RS0),
                 {break, RS2};
             _ ->
-                RS2 = aere_repl_state:set_blockchain_state({ready, ChainApi}, RS1),
+                {StateVal, _}  = aefa_fate:lookup_var({var, -1}, ES1),
+                {StateType, _} = aere_repl_state:contract_state(RS0),
+                ContractState  = {StateType, StateVal},
+                RS1            = aere_repl_state:set_contract_state(ContractState, RS0),
+                RS2            = aere_repl_state:set_blockchain_state({ready, ChainApi}, RS1),
                 {ok, #{result    => Res,
                        used_gas  => UsedGas,
                        new_state => RS2}}
