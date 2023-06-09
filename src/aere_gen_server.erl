@@ -50,6 +50,9 @@ handle_call(reset, _From, _State) ->
 handle_call(bump_nonce, _From, State) ->
     {reply, ok, aere_repl_state:bump_nonce(State)};
 
+handle_call(blockchain_state, _From, State) ->
+    {reply, {ok, element(1, aere_repl_state:blockchain_state(State))}, State};
+
 handle_call(theme, _From, State) ->
     #{ theme := Theme } = aere_repl_state:options(State),
     {reply, {theme, Theme}, State};
@@ -170,11 +173,20 @@ server_error(State, Err, Stacktrace) ->
     throw({reply, {error, aere_msg:internal(Err, Stacktrace)}, State}).
 
 
+-spec prompt_str(BlockchainState) -> string()
+    when BlockchainState :: ready | breakpoint | abort.
+
+prompt_str(ready)      -> "AESO";
+prompt_str(breakpoint) -> "AESO(DBG)";
+prompt_str(abort)      -> "AESO(ABORT)".
+
+
 -spec input(string()) -> {ok, Message} | {error, Message} | no_output | finish
     when Message :: aere_theme:renderable().
 
 input(Input) ->
-    case aere_parse:parse(Input) of
+    {ok, BCState} = gen_server:call(?MODULE, blockchain_state),
+    case aere_parse:parse(Input(prompt_str(BCState))) of
         Err = {error, _} ->
             Err;
         Command ->
