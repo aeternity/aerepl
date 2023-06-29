@@ -22,18 +22,19 @@ start() ->
     loop().
 
 loop() ->
-    Inp = get_input(),
-    try aere_gen_server:input(Inp) of
-        {Status, Out} ->
-            print_msg(Out),
-            case Status of
-                finish -> ok;
-                skip -> loop();
-                ok -> loop();
-                error -> loop();
-                internal_error -> loop()
-            end
-    catch _:E:Stack ->
+    try aere_gen_server:input(fun get_input/1) of
+        {ok, Msg} ->
+            print_msg(aere_gen_server:render(Msg)),
+            loop();
+        {error, Err} ->
+            print_msg(aere_gen_server:render(Err)),
+            loop();
+        no_output ->
+            loop();
+        finish ->
+            ok
+    catch
+        _:E:Stack ->
             print_msg(aere_theme:render(aere_msg:internal(E, Stack))),
             loop()
     end.
@@ -44,10 +45,10 @@ print_msg(Msg) ->
 
 
 %% Get single line or multiline input from the user and return it as a single string
--spec get_input() -> string().
-get_input() ->
+-spec get_input(string()) -> string().
+get_input(Str) ->
     Line =
-        case io:get_line("AESO> ") of
+        case io:get_line(Str ++ "> ") of
             eof          -> ":quit"; % that's dirty
             {error, Err} -> exit(Err);
             Data         -> Data

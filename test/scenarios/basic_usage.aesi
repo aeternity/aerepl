@@ -3,7 +3,7 @@
 
 2 + 2
 // 4
-// USED GAS: 41
+// USED GAS: 74
 
 :set display_gas false
 //
@@ -11,8 +11,8 @@
 2 + 1 + 1
 // 4
 
-:b 121
-// No such command "b"
+:bq 121
+// No such command `bq`
 
 :
 //

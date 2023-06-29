@@ -15,6 +15,7 @@
         , state_typedef/0
         , event_typedef/0
         , chain_not_ready/0
+        , chain_not_running/0
         , locked_option/0
         , option_usage/1
         , list_vars/1
@@ -22,15 +23,21 @@
         , list_options/1
         , list_loaded_files/1
         , list_includes/1
+        , list_breakpoints/1
         , list_unknown/1
         , bad_fun_ref/0
         , contract_not_found/0
         , function_not_found_in/1
+        , not_at_breakpoint/0
+        , stacktrace/1
+        , breakpoint_out_of_range/1
+        , breakpoint_wrong_location/2
+        , breakpoint_file_not_loaded/1
+        , contract_exec_ended/0
+        , undefined_variable/1
         , help/0, help/1
         , bye/0
         ]).
-
--include("aere_repl.hrl").
 
 -type msg() :: aere_theme:renderable().
 
@@ -87,14 +94,27 @@ error(Msg) -> aere_theme:error(trim(Msg)).
 -spec abort(binary() | string(), [{term(), binary(), integer()}]) -> msg().
 abort(Bin, Stack) when is_binary(Bin) -> abort(binary:bin_to_list(Bin), Stack);
 abort(Msg, Stack) ->
-    [ aere_theme:error("ABORT: "), aere_theme:output(trim(Msg) ++ "\n")
-    , [ [ aere_theme:info(integer_to_list(I) ++ "    ")
-        , aere_theme:info(binary:bin_to_list(aeser_api_encoder:encode(contract_pubkey, Con))), aere_theme:info(":")
-        , aere_theme:output(binary:bin_to_list(Fun)), aere_theme:info(":")
-        , aere_theme:info(integer_to_list(BB) ++ "\n")
-        ]
-       || {I, {Con, Fun, BB}} <- lists:zip(lists:seq(1, length(Stack)), Stack)
+    [ aere_theme:error("ABORT: ")
+    , aere_theme:output(trim(Msg) ++ "\n")
+    , stacktrace(Stack) ].
+
+-spec stacktrace([{term(), binary(), integer()}]) -> msg().
+stacktrace(Stack) ->
+    NonEmpty =
+        fun("") -> "aerepl";
+           (F) when is_binary(F) -> binary_to_list(F);
+           (F) -> F
+        end,
+    ContractStr =
+        fun(C) when is_list(C) -> C;
+           (C) when is_binary(C) -> binary:bin_to_list(aeser_api_encoder:encode(contract_pubkey, C))
+        end,
+    [ [ aere_theme:info(integer_to_list(I) ++ "    ")
+      , aere_theme:info(ContractStr(Con)), aere_theme:info(":")
+      , aere_theme:output(binary:bin_to_list(Fun)), aere_theme:info(":")
+      , aere_theme:info(NonEmpty(File) ++ ":" ++ integer_to_list(Line) ++ "\n")
       ]
+     || {I, {Con, Fun, File, Line}} <- lists:zip(lists:seq(1, length(Stack)), Stack)
     ].
 
 -spec internal(term(), erlang:stacktrace()) -> msg().
@@ -122,10 +142,10 @@ eval_result(none, Gas) ->
 eval_result(Res, Gas) ->
     [aere_theme:output(Res ++ "\n"), used_gas(Gas)].
 
--spec no_such_command(string()) -> msg().
+-spec no_such_command(atom()) -> msg().
 no_such_command(Command) ->
     [ aere_theme:output("No such command ")
-    , aere_theme:command(io_lib:format("~p", [Command]))
+    , aere_theme:command(io_lib:format("`~p`", [Command]))
     ].
 
 -spec locked_option() -> msg().
@@ -141,7 +161,7 @@ command_usage(Command, Doc) ->
     , aere_theme:output(Doc)
     ].
 
--spec bad_command_args(string(), string()) -> msg().
+-spec bad_command_args(atom(), string()) -> msg().
 bad_command_args(Command, Doc) ->
     [ aere_theme:error("Invalid parameters.\n")
     ] ++ command_usage(Command, Doc).
@@ -186,13 +206,17 @@ option_usage(Option) ->
 chain_not_ready() ->
     [aere_theme:error("This operation runs only in chain-ready state.")].
 
+-spec chain_not_running() -> msg().
+chain_not_running() ->
+    [aere_theme:error("This operation runs only in chain-running state.")].
+
 -spec list_vars([string()]) -> msg().
 list_vars(Vars) ->
     VarsS = [Var ++ " : " ++ aeso_ast_infer_types:pp_type("", Type)
              || {Var, Type, _} <- Vars],
     aere_theme:output(string:join(VarsS, "\n")).
 
--spec list_types([type_def()]) -> msg().
+-spec list_types([aere_repl_state:type_def()]) -> msg().
 list_types(Types) ->
     TypesS = [ TName ++
                case TArgs of
@@ -203,7 +227,7 @@ list_types(Types) ->
     UniqTypesS = lists:usort(TypesS),
     aere_theme:output(string:join(UniqTypesS, "\n")).
 
--spec list_options(repl_options()) -> msg().
+-spec list_options(aere_repl_state:repl_options()) -> msg().
 list_options(Opts) ->
     ExclOpts = [theme],
     OptsS =
@@ -221,6 +245,14 @@ list_loaded_files(Files) ->
 list_includes(Incs) ->
     aere_theme:output(string:join(Incs, "\n")).
 
+-spec list_breakpoints(aere_repl_state:breakpoints()) -> msg().
+list_breakpoints(BPs) ->
+    Enum = fun(List) -> lists:zip(lists:seq(1, length(List)), List) end,
+    Msg  = "Breakpoint in the file '~s' at line ~p\n",
+    [ [ aere_theme:info(io_lib:format("~p    ", [I]))
+      , aere_theme:output(io_lib:format(Msg, [F, L]))
+      ] || {I, {F, L}} <- Enum(BPs) ].
+
 -spec list_unknown([string()]) -> msg().
 list_unknown(ToList) ->
     aere_theme:error("Possible items to print: " ++ string:join(ToList, ", ")).
@@ -237,6 +269,31 @@ contract_not_found() ->
 function_not_found_in(Name) ->
     aere_theme:error("This contract does not have a function of hash name " ++ binary:bin_to_list(Name) ++ ".").
 
+-spec not_at_breakpoint() -> msg().
+not_at_breakpoint() ->
+    aere_theme:error("Not at breakpoint!").
+
+-spec contract_exec_ended() -> msg().
+contract_exec_ended() ->
+    aere_theme:output("Contract execution was either aborted or exited.").
+
+-spec breakpoint_out_of_range(pos_integer()) -> msg().
+breakpoint_out_of_range(Index) ->
+    aere_theme:error(io_lib:format("A breakpoint with the index ~p does not exist", [Index])).
+
+-spec breakpoint_wrong_location(string(), pos_integer()) -> msg().
+breakpoint_wrong_location(File, Line) ->
+    aere_theme:error(io_lib:format("A breakpoint in the file `~s` at line ~p does not exist", [File, Line])).
+
+-spec breakpoint_file_not_loaded(string()) -> msg().
+
+breakpoint_file_not_loaded(FileName) ->
+    aere_theme:error(io_lib:format("Cannot add a breakpoint because the file `~s` is not loaded in the repl", [FileName])).
+
+-spec undefined_variable(string()) -> msg().
+undefined_variable(VarName) ->
+    aere_theme:error(io_lib:format("Undefined variable `~s`", [VarName])).
+
 -spec bye() -> msg().
 bye() -> aere_theme:output("bye!").
 
@@ -245,7 +302,7 @@ help() ->
     Help =
         [ "Type a Sophia expression to evaluate it. Commands supported by the REPL:"
         ] ++
-        [ "- :" ++ Command
+        [ "- :" ++ atom_to_list(Command)
           || {Command, _} <- aere_parse:commands()
         ] ++
         ["Type `:help COMMAND` to learn about the given command"],
@@ -254,9 +311,9 @@ help() ->
 
 -spec help(any()) -> msg().
 help(What) ->
-    case aere_parse:resolve_command(What) of
+    case aere_parse:resolve_command(list_to_atom(What)) of
         {Cmd, {Aliases, _, ArgDoc, Doc}} ->
-            AliasesStr = string:join([":" ++ A || A <- Aliases], ", "),
+            AliasesStr = string:join([":" ++ atom_to_list(A) || A <- Aliases], ", "),
             command_usage(Cmd, ArgDoc) ++
                 [aere_theme:info("\nALIASES: "), aere_theme:command(AliasesStr)] ++
                 [aere_theme:output("\n\n")] ++

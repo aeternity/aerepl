@@ -2,7 +2,6 @@
 
 -compile([export_all, nowarn_export_all]).
 
--include("../src/aere_repl.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -record(entry,
@@ -46,6 +45,7 @@ eval_test_() ->
     {setup, fun load_deps/0, [{generator, fun tests/0}]}.
 
 tests() ->
+    aere_gen_server:start_link([]),
     [{"Testing the " ++ atom_to_list(TestScenario) ++ " scenario",
       fun() ->
               File = "test/scenarios/" ++ atom_to_list(TestScenario) ++ ".aesi",
@@ -55,6 +55,7 @@ tests() ->
                       end,
 
               {Answers, Results} = eval(binary_to_list(Input)),
+              aere_gen_server:restart(),
 
               ?IF(length(Answers) /= length(Results), ?assertEqual(Answers, Results), ok),
               Results1 =
@@ -65,7 +66,29 @@ tests() ->
                     || {A, R} <- lists:zip(Answers, Results)
                   ],
               ?assertEqual(Answers, Results1)
-      end} || TestScenario <- scenarios()].
+      end} || TestScenario <- scenarios()] ++
+    [ { "Testing the uniqueness of long repl commands",
+        fun() ->
+            Commands = [ Long || {Long, _} <- aere_parse:commands() ],
+            io:format("Duplicate long commands found"),
+            ?assertEqual([], duplicated(Commands))
+        end } ] ++
+    [ { "Testing the uniqueness of short repl commands",
+        fun() ->
+            io:format("Duplicate short commands found"),
+            Commands = [ Short || {_, {[Short], _, _, _}} <- aere_parse:commands() ],
+            ?assertEqual([], duplicated(Commands))
+        end } ].
+
+-spec duplicated(list()) -> list().
+duplicated(List) ->
+    Keys  = lists:usort(List),
+    Count = fun(V,L) -> length(lists:filter(fun(E) -> E == V end, L)) end,
+    Freq  = [ { K, Count(K, List) } || K <- Keys ],
+    IsDup = fun({K, F}) when F > 1 -> {true, K};
+               (_)                 -> false
+            end,
+    lists:filtermap(IsDup, Freq).
 
 scenarios() ->
     [ basic_usage
@@ -78,6 +101,7 @@ scenarios() ->
     , reset_command
     , options_setting
     , stack_trace_abort
+    , debugger_basic_usage
     ].
 
 %% Split a file into entries
@@ -116,28 +140,26 @@ split_raw_entry({raw_entry, EntryLines}) ->
     #entry{ input  = lists:flatten(lists:join("\n", Input))
           , output = lists:flatten(lists:join("\n", CleanOutput)) }.
 
-eval_inputs(_State, [], Outputs) ->
+eval_inputs([], Outputs) ->
     lists:reverse(Outputs);
-eval_inputs(State, [Input | Rest], Outputs) ->
-    case aere_repl:process_input(State, Input) of
-        #repl_response{output = Received, status = {ok, NewState}} ->
-            Rendered = aere_theme:render(Received),
-            eval_inputs(NewState, Rest, [Rendered  | Outputs]);
-        #repl_response{output = Received, status = Err}
-          when Err == error orelse Err == internal_error ->
-            Rendered = aere_theme:render(Received),
-            eval_inputs(State, Rest, [Rendered | Outputs]);
-        _ ->
-            eval_inputs(State, Rest, Outputs)
+eval_inputs([Input | Rest], Outputs) ->
+    case aere_gen_server:input(Input) of
+        {ok, Msg} ->
+            eval_inputs(Rest, [aere_theme:render(Msg) | Outputs]);
+        {error, ErrMsg} ->
+            eval_inputs(Rest, [aere_theme:render(ErrMsg) | Outputs]);
+        no_output ->
+            eval_inputs(Rest, ["" | Outputs]);
+        finish ->
+            eval_inputs(Rest, Outputs)
     end.
 
-eval_inputs(State, Inputs) ->
-    eval_inputs(State, Inputs, []).
+eval_inputs(Inputs) ->
+    eval_inputs(Inputs, []).
 
 eval(I) ->
-    State = aere_repl:init_state(),
     Entries = split_file(I),
     Expected = [ Output || #entry{output = Output} <- Entries],
     Inputs = [ Input || #entry{input = Input} <- Entries ],
-    Received = eval_inputs(State, Inputs),
+    Received = eval_inputs(Inputs),
     {Expected, Received}.

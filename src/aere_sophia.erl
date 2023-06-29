@@ -1,15 +1,40 @@
 -module(aere_sophia).
 
--export([ typecheck/2, typecheck/1, parse_file/2, parse_file/3, compile_contract/1
-        , parse_body/1, parse_top/2
-        , parse_decl/1, parse_top/1, parse_type/1, type_of_user_input/1
-        , process_err/1, format_value/4
+-export([ compile_contract/1
+        , typecheck/2
+        , typecheck/1
+        , type_of_user_input/1
+        , parse_file/2
+        , parse_file/3
+        , parse_body/1
+        , parse_top/1
+        , format_value/4
         ]).
 
 -include("../_build/default/lib/aesophia/src/aeso_parse_lib.hrl").
 -include_lib("aebytecode/include/aeb_fate_data.hrl").
 
 -include("aere_macros.hrl").
+
+optimizations_off() ->
+    [ {optimize_inliner, false},
+      {optimize_inline_local_functions, false},
+      {optimize_bind_subexpressions, false},
+      {optimize_let_floating, false},
+      {optimize_simplifier, false},
+      {optimize_drop_unused_lets, false},
+      {optimize_push_consume, false},
+      {optimize_one_shot_var, false},
+      {optimize_write_to_dead_var, false},
+      {optimize_inline_switch_target, false},
+      {optimize_swap_push, false},
+      {optimize_swap_pop, false},
+      {optimize_swap_write, false},
+      {optimize_constant_propagation, false},
+      {optimize_prune_impossible_branches, false},
+      {optimize_single_successful_branch, false},
+      {optimize_inline_store, false},
+      {optimize_float_switch_bod, false} ].
 
 process_err(Errs) when is_list(Errs) ->
     throw({repl_error, aere_msg:error(lists:concat([aeso_errors:err_msg(E) || E <- Errs]))});
@@ -28,15 +53,19 @@ typecheck(Ast, Opts) ->
     end.
 
 compile_contract(TypedAst) ->
-    {#{child_con_env := ChildConEnv
-     } = FCodeEnv, FCode} = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, [])
-                 catch {error, Ec} -> process_err(Ec) end,
-    SavedFreshNames = maps:get(saved_fresh_names, FCodeEnv, #{}),
-    try aeso_fcode_to_fate:compile(ChildConEnv, FCode, SavedFreshNames, [include_child_contract_symbols]) of
-        {Code, _} -> Code
+    Opts = [debug_info, include_child_contract_symbols | optimizations_off()],
+    {#{child_con_env := ChildConEnv, saved_fresh_names := SavedFreshNames}, FCode}
+        = try aeso_ast_to_fcode:ast_to_fcode(TypedAst, Opts)
+          catch {error, Ec} -> process_err(Ec) end,
+    try
+        aeso_fcode_to_fate:compile(ChildConEnv, FCode, SavedFreshNames, Opts)
     catch {error, Ef} -> process_err(Ef) end.
 
-type_of_user_input(TEnv) ->
+type_of_user_input(TEnv0) ->
+    %% TODO: This is a hack, not a solution. If not done this way, the error
+    %% contract_treated_as_namespace_entrypoint will show when calling lookup_env1
+    TEnv = setelement(7, TEnv0, [?MOCK_CONTRACT]),
+
     {_, {_, {type_sig, _, _, _, _, Type}}} = aeso_ast_infer_types:lookup_env1(TEnv, term, [], [?MOCK_CONTRACT, ?USER_INPUT]),
     Type.
 
@@ -64,16 +93,12 @@ parse_top(I, Opts) ->
                       end)
              ]),
     ?with_error_handle(aeso_parser:run_parser(Top, I, Opts)).
-parse_decl(I) ->
-    ?with_error_handle(aeso_parser:run_parser(aeso_parser:decl(), I)).
 parse_body(I) ->
     ?with_error_handle(
        case aeso_parser:run_parser(aeso_parser:body(), I) of
            {block, _, Stmts} when is_list(Stmts) -> Stmts;
            Other -> [Other]
        end).
-parse_type(I) ->
-    ?with_error_handle(aeso_parser:run_parser(aeso_parser:type(), I)).
 parse_file(I, Opts) ->
     parse_file(I, sets:new(), Opts).
 parse_file(I, Includes, Opts) when is_binary(I) ->
