@@ -8,7 +8,9 @@
         ]).
 
 -export([ start/1
+        , start/2
         , start_link/1
+        , start_link/2
         , input/1
         , render/1
         , banner/0
@@ -26,11 +28,16 @@
 %%% --- GEN SERVER ---
 
 start(Args) ->
-    gen_server:start({local, ?MODULE}, ?MODULE, Args, []).
+    start(?MODULE, Args).
 
+start(Name, Args) ->
+    gen_server:start(Name, ?MODULE, Args, []).
 
 start_link(Args) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, Args, []).
+    start_link(?MODULE, Args).
+
+start_link(Name, Args) ->
+    gen_server:start_link(Name, ?MODULE, Args, []).
 
 
 init(Args) ->
@@ -181,32 +188,44 @@ prompt_str(breakpoint) -> "AESO(DBG)";
 prompt_str(abort)      -> "AESO(ABORT)".
 
 
--spec input(string()) -> {ok, Message} | {error, Message} | no_output | finish
+-spec input(fun((string()) -> string())) -> {ok, Message} | {error, Message} | no_output | finish
     when Message :: aere_theme:renderable().
 
 input(Input) ->
-    {ok, BCState} = gen_server:call(?MODULE, blockchain_state),
+    input(?MODULE, Input).
+
+input(ServerName, Input) ->
+    {ok, BCState} = gen_server:call(ServerName, blockchain_state),
     case aere_parse:parse(Input(prompt_str(BCState))) of
         Err = {error, _} ->
             Err;
         Command ->
-            gen_server:call(?MODULE, bump_nonce),
-            gen_server:call(?MODULE, Command)
+            gen_server:call(ServerName, bump_nonce),
+            gen_server:call(ServerName, Command)
     end.
 
 
 -spec render(aere_theme:renderable()) -> string().
 
 render(Message) ->
-    {theme, Theme} = gen_server:call(?MODULE, theme),
+    render(?MODULE, Message).
+
+render(ServerName, Message) ->
+    {theme, Theme} = gen_server:call(ServerName, theme),
     aere_theme:render(Theme, Message).
 
 
 -spec restart() -> ok.
 
 restart() ->
-    gen_server:call(?MODULE, reset).
+    restart(?MODULE).
+
+restart(ServerName) ->
+    gen_server:call(ServerName, reset).
 
 
 banner() ->
-    gen_server:call(?MODULE, banner).
+    banner(?MODULE).
+
+banner(ServerName) ->
+    gen_server:call(ServerName, banner).

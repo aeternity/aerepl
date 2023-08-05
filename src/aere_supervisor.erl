@@ -16,7 +16,7 @@ init(_Args) ->
             },
     ChildSpecs =
         [ #{id => aerepl,
-            start => {aere_gen_server, start_link, [[]]},
+            start => {aere_gen_server, start_link, [{local, aerepl}, []]},
             restart => permanent,
             significant => false,
             shutdown => brutal_kill,
