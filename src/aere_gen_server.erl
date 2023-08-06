@@ -34,6 +34,8 @@
         , state/2
         , eval/1
         , eval/2
+        , update_filesystem_cache/1
+        , update_filesystem_cache/2
         , load/1
         , load/2
         , reload/0
@@ -147,6 +149,10 @@ handle_call({eval, Code}, _From, State) ->
         NewState        -> {reply, no_output, NewState}
     end;
 
+handle_call({update_filesystem_cache, Fs}, _From, State) ->
+    ready_or_error(State),
+    ?HANDLE_ERRS(State, {reply, no_output, aere_repl:update_filesystem_cache(Fs, State)});
+
 handle_call({load, Modules}, _From, State) ->
     ready_or_error(State),
     ?HANDLE_ERRS(State, {reply, no_output, aere_repl:load_modules(Modules, State)});
@@ -256,6 +262,11 @@ eval(Code) ->
     eval(?MODULE, Code).
 eval(ServerName, Code) ->
     gen_server:call(ServerName, {eval, Code}).
+
+update_filesystem_cache(Fs) ->
+    update_filesystem_cache(?MODULE, Fs).
+update_filesystem_cache(ServerName, Fs) ->
+    gen_server:call(ServerName, {update_filesystem_cache, Fs}).
 
 load(Modules) ->
     load(?MODULE, Modules).
