@@ -118,6 +118,8 @@ format_value(json, TEnv, Type, Val) ->
 
 %%%------------------
 
+update_filesystem_cache(Fs, S0) when is_list(Fs) ->
+    update_filesystem_cache(maps:from_list(Fs), S0);
 update_filesystem_cache(Fs, S0) when is_map(Fs) ->
     case aere_repl_state:update_cached_fs(Fs, S0) of
         {ok, S1} ->
