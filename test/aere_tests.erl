@@ -19,30 +19,17 @@ run_test(Test) ->
       end || {Label, Fun} <- ?MODULE:TestFun() ],
     ok.
 
-load_deps() ->
-    code:add_pathz("node/_build/dev1/lib/aechannel/ebin/"),
-    code:add_pathz("node/_build/dev1/lib/aecontract/ebin/"),
-    code:add_pathz("node/_build/dev1/lib/aecore/ebin/"),
-    code:add_pathz("node/_build/dev1/lib/aefate/ebin/"),
-    code:add_pathz("node/_build/dev1/lib/aens/ebin/"),
-    code:add_pathz("node/_build/dev1/lib/aeoracle/ebin/"),
-    code:add_pathz("node/_build/dev1/lib/aeprimop/ebin/"),
-    code:add_pathz("node/_build/dev1/lib/aetx/ebin/"),
-    code:add_pathz("node/_build/dev1/lib/aeutils/ebin/"),
-    code:add_pathz("node/_build/dev1/lib/setup/ebin/"),
-    application:load(aechannel),
-    application:load(aecontract),
-    application:load(aecore),
-    application:load(aefate),
-    application:load(aens),
-    application:load(aeoracle),
-    application:load(aeprimop),
-    application:load(aetx),
-    application:load(aeutils),
-    application:load(setup).
+
+load_paths() ->
+    ScriptDir = filename:dirname(escript:script_name()),
+    Paths = filelib:wildcard("_build/prod/lib/*/ebin/", ScriptDir),
+    [code:add_pathz(filename:append(ScriptDir, Path))
+     orelse error({not_found, filename:append(ScriptDir, Path)})
+     || Path <- Paths],
+    ok.
 
 eval_test_() ->
-    {setup, fun load_deps/0, [{generator, fun tests/0}]}.
+    {setup, fun load_paths/0, [{generator, fun tests/0}]}.
 
 tests() ->
     aere_gen_server:start_link([]),
@@ -55,7 +42,7 @@ tests() ->
                       end,
 
               {Answers, Results} = eval(binary_to_list(Input)),
-              aere_gen_server:restart(),
+              aere_gen_server:reset(),
 
               ?IF(length(Answers) /= length(Results), ?assertEqual(Answers, Results), ok),
               Results1 =

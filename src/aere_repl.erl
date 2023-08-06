@@ -32,7 +32,10 @@ infer_type(I, State) ->
     {TEnv, _} = aere_sophia:typecheck(Contract, [dont_unfold, allow_higher_order_entrypoints]),
     Type = aere_sophia:type_of_user_input(TEnv),
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
-    TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER ++ "[0-9]*\\.", "", [global, {return, list}]),
+    TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER_RE, "", [global, {return, list}]),
+    io:format("STR: ~s\n", [TypeStr]),
+    io:format("RE: ~s\n", [?TYPE_CONTAINER_RE]),
+    io:format("CLEAN: ~s\n", [TypeStrClean]),
     aere_msg:output(TypeStrClean).
 
 eval_code(I, State) ->
@@ -133,7 +136,7 @@ load_modules(Filenames, S0) ->
 
 reload_modules(RS) ->
     LdFiles  = aere_repl_state:loaded_files(RS),
-    Modules = aere_files:read_files(maps:keys(LdFiles)),
+    Modules = aere_files:read_files(maps:keys(LdFiles), RS),
     IncFiles = aere_repl_state:included_files(RS),
     RS1 = register_modules(Modules, RS),
     RS2 = lists:foldl(fun register_include/2, RS1, IncFiles),
@@ -175,7 +178,7 @@ register_include(Include, S0) ->
     LdFiles  = aere_repl_state:loaded_files(S0),
     IncCode  = aere_repl_state:included_code(S0),
     IncFiles = aere_repl_state:included_files(S0),
-    case maps:get(Include, maps:merge(default_loaded_files(), LdFiles), not_loaded) of
+    case maps:get(Include, maps:merge(default_loaded_files(S0), LdFiles), not_loaded) of
         not_loaded ->
             throw({repl_error, aere_msg:file_not_loaded(Include)});
         File ->
@@ -366,8 +369,8 @@ parse_fun_ref(What) ->
         _                                 -> error
     end.
 
--spec default_loaded_files() -> #{string() => binary()} | no_return().
-default_loaded_files() ->
+-spec default_loaded_files(repl_state()) -> #{string() => binary()} | no_return().
+default_loaded_files(S) ->
     case get(aere_default_loaded_files) of
         undefined ->
             StdlibDir = aeso_stdlib:stdlib_include_path(),
@@ -376,7 +379,7 @@ default_loaded_files() ->
                     File <- element(2, file:list_dir(StdlibDir)),
                     filename:extension(File) =:= ".aes"
                 ],
-            FileMap = maps:from_list(aere_files:read_files(Files)),
+            FileMap = maps:from_list(aere_files:read_files(Files, S)),
             put(aere_default_loaded_files, FileMap),
             FileMap;
         Files ->

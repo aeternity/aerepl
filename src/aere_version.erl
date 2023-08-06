@@ -15,7 +15,7 @@
 -include("../node/apps/aecontract/include/hard_forks.hrl").
 -include("../node/apps/aecontract/test/include/aect_sophia_vsn.hrl").
 
-protocol_version() -> ?IRIS_PROTOCOL_VSN.
+protocol_version() -> integer_to_list(?IRIS_PROTOCOL_VSN).
 sophia_version()   -> ?SOPHIA_IRIS_FATE.
 abi_version()      -> ?ABI_FATE_SOPHIA_1.
 vm_version()       -> ?VM_FATE_SOPHIA_2.
@@ -41,6 +41,6 @@ app_version(App) ->
 repl_version() ->
     app_version(aerepl).
 node_version() ->
-    integer_to_list(app_version(aecore)).
+    app_version(aecore).
 compiler_version() ->
     app_version(aesophia).

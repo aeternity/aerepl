@@ -77,6 +77,8 @@
         , input/2
         , render/1
         , render/2
+        , prompt/0
+        , prompt/1
         ]).
 
 
@@ -91,13 +93,13 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 start(Args) ->
-    start(?MODULE, Args).
+    start({local, ?MODULE}, Args).
 
 start(Name, Args) ->
     gen_server:start(Name, ?MODULE, Args, []).
 
 start_link(Args) ->
-    start_link(?MODULE, Args).
+    start_link({local, ?MODULE}, Args).
 
 start_link(Name, Args) ->
     gen_server:start_link(Name, ?MODULE, Args, []).
@@ -105,8 +107,8 @@ start_link(Name, Args) ->
 
 init(Args) ->
     Opts = proplists:get_value(options, Args, #{}),
-    Opts1 = Opts#{init_args = Args},
-    {ok, aere_repl_state:init_state(Opts)}.
+    Opts1 = Opts#{init_args => Args},
+    {ok, aere_repl_state:init_state(Opts1)}.
 
 
 handle_call(quit, _From, State) ->
@@ -276,7 +278,7 @@ help(ServerName) ->
     gen_server:call(ServerName, help).
 
 help_command(Command) ->
-    help(?MODULE, Command).
+    help_command(?MODULE, Command).
 help_command(ServerName, Command) ->
     gen_server:call(ServerName, {help, Command}).
 
@@ -357,13 +359,12 @@ render(ServerName, Message) ->
     {theme, Theme} = gen_server:call(ServerName, theme),
     aere_theme:render(Theme, Message).
 
--spec input(fun((string()) -> string())) -> {ok, Message} | {error, Message} | no_output | finish
+-spec input(string()) -> {ok, Message} | {error, Message} | no_output | finish
     when Message :: aere_theme:renderable().
 input(Input) ->
     input(?MODULE, Input).
 input(ServerName, Input) ->
-    {ok, BCState} = gen_server:call(ServerName, blockchain_state),
-    case aere_parse:parse(Input(prompt_str(BCState))) of
+    case aere_parse:parse(Input) of
         Err = {error, _} ->
             Err;
         Command ->
@@ -371,6 +372,11 @@ input(ServerName, Input) ->
             gen_server:call(ServerName, Command)
     end.
 
+prompt() ->
+    prompt(?MODULE).
+prompt(ServerName) ->
+    {MetaState, _} = gen_server:call(ServerName, blockchain_state),
+    prompt_str(MetaState).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% Helpers

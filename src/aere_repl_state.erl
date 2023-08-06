@@ -50,7 +50,9 @@
 
 -export_type([state/0, type_scope/0, type_def/0, repl_options/0, command_res/0, function_symbols/0, breakpoints/0]).
 
--export([init_state/0, init_state/1]).
+-export([ init_state/0, init_state/1
+        , init_options/0
+        ]).
 
 %% Getters
 -export([ blockchain_state/1

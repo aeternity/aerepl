@@ -230,11 +230,13 @@ list_types(Types) ->
 
 -spec list_options(aere_repl_state:repl_options()) -> msg().
 list_options(Opts) ->
+    InclOpts = maps:keys(aere_repl_state:init_options()),
     ExclOpts = [theme],
     OptsS =
         [ atom_to_list(Opt) ++ " = " ++ lists:flatten(io_lib:format("~p", [Val]))
          || {Opt, Val} <- maps:to_list(Opts),
-            not lists:member(Opt, ExclOpts)
+            not lists:member(Opt, ExclOpts),
+            lists:member(Opt, InclOpts)
         ],
     aere_theme:output(string:join(OptsS, "\n")).
 

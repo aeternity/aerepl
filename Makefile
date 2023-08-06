@@ -1,5 +1,7 @@
 .PHONY: all node aerepl docker test clean nuke nuke-all
 
+CXXFLAGS = -Wno-error=shadow -Wno-deprecated-copy -Wno-redundant-move -Wno-pessimizing-move
+
 all:  node aerepl
 
 node:
