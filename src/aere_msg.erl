@@ -33,6 +33,7 @@
         , breakpoint_out_of_range/1
         , breakpoint_wrong_location/2
         , breakpoint_file_not_loaded/1
+        , filesystem_not_cached/0
         , contract_exec_ended/0
         , undefined_variable/1
         , help/0, help/1
@@ -64,7 +65,7 @@ banner() ->
 version_info() ->
     REPL = aere_version:repl_version(),
     Sophia = aere_version:compiler_version(),
-    Protocol = integer_to_list(aere_version:protocol_version()),
+    Protocol = aere_version:protocol_version(),
     Node = aere_version:node_version(),
 
     aere_theme:info(
@@ -286,9 +287,12 @@ breakpoint_wrong_location(File, Line) ->
     aere_theme:error(io_lib:format("A breakpoint in the file `~s` at line ~p does not exist", [File, Line])).
 
 -spec breakpoint_file_not_loaded(string()) -> msg().
-
 breakpoint_file_not_loaded(FileName) ->
     aere_theme:error(io_lib:format("Cannot add a breakpoint because the file `~s` is not loaded in the repl", [FileName])).
+
+-spec filesystem_not_cached() -> msg().
+filesystem_not_cached() ->
+    aere_theme:error(io_lib:format("This operation is allowed only when the filesystem is in cached mode.")).
 
 -spec undefined_variable(string()) -> msg().
 undefined_variable(VarName) ->

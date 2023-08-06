@@ -41,6 +41,6 @@ app_version(App) ->
 repl_version() ->
     app_version(aerepl).
 node_version() ->
-    app_version(aecore).
+    integer_to_list(app_version(aecore)).
 compiler_version() ->
     app_version(aesophia).
