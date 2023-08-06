@@ -26,6 +26,7 @@
 -type chain_state() :: {ready, aefa_chain_api:state()}
                      | {breakpoint, aefa_engine_state:state()}
                      | {abort, aefa_engine_state:state()}.
+-type filesystem() :: local | {cached, #{string() => binary()}}.
 
 -record(rs, { blockchain_state       :: chain_state()
             , repl_account           :: binary()
@@ -35,6 +36,7 @@
             , funs           = #{}   :: #{binary() => term()}
             , typedefs       = []    :: [type_def()]
             , type_scope     = []    :: [type_scope()]
+            , filesystem     = local :: filesystem() % Whether to load files from disc or pre-defined map
             , loaded_files   = #{}   :: #{string() => binary()} % Loaded files ready to be included
             , included_files = []    :: [string()] % Files included in the context
             , included_code  = []    :: aeso_syntax:ast() % Cached AST of the included files
@@ -59,6 +61,7 @@
         , funs/1
         , typedefs/1
         , type_scope/1
+        , filesystem/1
         , loaded_files/1
         , included_files/1
         , included_code/1
@@ -77,6 +80,7 @@
         , set_funs/2
         , set_typedefs/2
         , set_type_scope/2
+        , set_filesystem/2
         , set_loaded_files/2
         , set_included_files/2
         , set_included_code/2
@@ -88,6 +92,7 @@
 
 -export([ chain_api/1
         , bump_nonce/1
+        , update_cached_fs/2
         ]).
 
 -spec init_options() -> repl_options().
@@ -121,6 +126,7 @@ init_state(Opts) ->
        blockchain_state = {ready, ChainState},
        repl_account     = PK,
        options          = maps:merge(init_options(), Opts),
+       filesystem       = maps:get(filesystem, Opts, local),
        contract_state   = ?DEFAULT_CONTRACT_STATE
       },
     S0.
@@ -197,6 +203,14 @@ type_env(#rs{type_env = TypeEnv}) ->
 set_type_env(X, S) ->
     S#rs{type_env = X}.
 
+-spec filesystem(state()) -> filesystem().
+filesystem(#rs{filesystem = Fs}) ->
+    Fs.
+
+-spec set_filesystem(filesystem(), state()) -> state().
+set_filesystem(Fs, S) ->
+    S#rs{filesystem = Fs}.
+
 -spec loaded_files(state()) -> #{string() => binary()}.
 loaded_files(#rs{loaded_files = LoadedFiles}) ->
     LoadedFiles.
@@ -234,16 +248,16 @@ breakpoints(#rs{breakpoints = Breakpoints}) ->
     Breakpoints.
 
 -spec set_breakpoints(breakpoints(), state()) -> state().
-set_breakpoints(Breakpoints, RS) ->
-    RS#rs{breakpoints = Breakpoints}.
+set_breakpoints(Breakpoints, S) ->
+    S#rs{breakpoints = Breakpoints}.
 
 -spec function_symbols(state()) -> function_symbols().
 function_symbols(#rs{function_symbols = Symbols}) ->
     Symbols.
 
 -spec set_function_symbols(function_symbols(), state()) -> state().
-set_function_symbols(Symbols, RS) ->
-    RS#rs{function_symbols = Symbols}.
+set_function_symbols(Symbols, S) ->
+    S#rs{function_symbols = Symbols}.
 
 %% Advanced getters
 
@@ -258,3 +272,9 @@ chain_api(#rs{blockchain_state = {abort, ES}}) ->
 -spec bump_nonce(state()) -> state().
 bump_nonce(S = #rs{query_nonce = N}) ->
     S#rs{query_nonce = N + 1}.
+
+-spec update_cached_fs(#{string() => binary()}, state()) -> state().
+update_cached_fs(_, #rs{filesystem = local}) ->
+    error;
+update_cached_fs(Fs, S) when is_map(Fs) ->
+    {ok,  S#rs{filesystem = {cached, Fs}}}.

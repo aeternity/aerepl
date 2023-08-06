@@ -11,6 +11,7 @@
         , set_option/3
         , eval_code/2
         , eval_handler/2
+        , update_filesystem_cache/2
         , load_modules/2
         , reload_modules/1
         , print_state/2
@@ -105,8 +106,6 @@ print_eval_res(RS, Res, UsedGas, TypeEnv) ->
         if DisplayGas -> UsedGas; true -> none end),
      aere_repl_state:set_type_env(none, RS)}.
 
-%%%------------------
-
 format_value(fate, _, _, Val) ->
     io_lib:format("~p", [Val]);
 format_value(sophia, TEnv, Type, Val) ->
@@ -114,10 +113,20 @@ format_value(sophia, TEnv, Type, Val) ->
 format_value(json, TEnv, Type, Val) ->
     aere_sophia:format_value(json, TEnv, Type, Val).
 
+%%%------------------
+
+update_filesystem_cache(Fs, S0) when is_map(Fs) ->
+    case aere_repl_state:update_cached_fs(Fs, S0) of
+        {ok, S1} ->
+            S1;
+        error ->
+            throw({repl_error, aere_msg:filesystem_not_cached()})
+    end.
+
 load_modules([], S0) ->
     S0;
 load_modules(Filenames, S0) ->
-    Modules = aere_files:read_files(Filenames),
+    Modules = aere_files:read_files(Filenames, S0),
     S1 = register_modules(Modules, S0),
     S2 = register_include(element(1, lists:last(Modules)), S1),
     S2.
@@ -163,7 +172,7 @@ clear_context(S0) ->
 register_include(Include, S0) when is_binary(Include) ->
     register_include(binary:bin_to_list(Include), S0);
 register_include(Include, S0) ->
-    LdFiles  = aere_repl_state:loaded_files(S0), 
+    LdFiles  = aere_repl_state:loaded_files(S0),
     IncCode  = aere_repl_state:included_code(S0),
     IncFiles = aere_repl_state:included_files(S0),
     case maps:get(Include, maps:merge(default_loaded_files(), LdFiles), not_loaded) of
