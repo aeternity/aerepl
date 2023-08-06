@@ -207,7 +207,7 @@ handle_call(_, _, State) ->
     {noreply, State}.
 
 
-handle_cast({update_filesystem_cache, Fs}, _From, State) ->
+handle_cast({update_filesystem_cache, Fs}, State) ->
     ready_or_error(State),
     ?HANDLE_ERRS(State, {noreply, aere_repl:update_filesystem_cache(Fs, State)});
 
