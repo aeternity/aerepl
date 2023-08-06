@@ -52,7 +52,7 @@ read_file_local(FileName) ->
         {error, enoent} ->
             read_file_stdlib(FileName);
         Res ->
-            Res
+            {ok, Res}
     end.
 
 
@@ -67,7 +67,7 @@ read_file_cached(FileName, Files) ->
         undefined ->
             read_file_stdlib(FileName);
         Res ->
-            Res
+            {ok, Res}
     end.
 
 -spec read_file_stdlib(FileName) -> {ok, file_contents()} | {error, term()}
