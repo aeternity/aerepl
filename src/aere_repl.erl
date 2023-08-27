@@ -33,9 +33,6 @@ infer_type(I, State) ->
     Type = aere_sophia:type_of_user_input(TEnv),
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
     TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER_RE, "", [global, {return, list}]),
-    io:format("STR: ~s\n", [TypeStr]),
-    io:format("RE: ~s\n", [?TYPE_CONTAINER_RE]),
-    io:format("CLEAN: ~s\n", [TypeStrClean]),
     aere_msg:output(TypeStrClean).
 
 eval_code(I, State) ->
