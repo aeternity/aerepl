@@ -24,7 +24,7 @@ read_file(FileName, S) ->
 
 read_files(FileNames, S) ->
     Files  = [read_file_safe(F, S) || F <- FileNames],
-    Failed = [{File, file:format_error(Err)} || {File, {error, Err}} <- lists:zip(FileNames, Files)],
+    Failed = [{FileName, file:format_error(Err)} || {FileName, {error, Err}} <- lists:zip(FileNames, Files)],
     case Failed of
         [] -> lists:zip(FileNames, [File || {ok, File} <- Files]);
         _  -> throw({repl_error, aere_msg:files_load_error(Failed)})
@@ -51,8 +51,7 @@ read_file_local(FileName) ->
     case file:read_file(FileName) of
         {error, enoent} ->
             read_file_stdlib(FileName);
-        Res ->
-            {ok, Res}
+        {ok, Res} -> {ok, Res}
     end.
 
 
