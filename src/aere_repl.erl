@@ -11,6 +11,7 @@
         , set_option/3
         , eval_code/2
         , eval_handler/2
+        , update_filesystem_cache/2
         , load_modules/2
         , reload_modules/1
         , print_state/2
@@ -31,7 +32,7 @@ infer_type(I, State) ->
     {TEnv, _} = aere_sophia:typecheck(Contract, [dont_unfold, allow_higher_order_entrypoints]),
     Type = aere_sophia:type_of_user_input(TEnv),
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
-    TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER ++ "[0-9]*\\.", "", [global, {return, list}]),
+    TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER_RE, "", [global, {return, list}]),
     aere_msg:output(TypeStrClean).
 
 eval_code(I, State) ->
@@ -105,8 +106,6 @@ print_eval_res(RS, Res, UsedGas, TypeEnv) ->
         if DisplayGas -> UsedGas; true -> none end),
      aere_repl_state:set_type_env(none, RS)}.
 
-%%%------------------
-
 format_value(fate, _, _, Val) ->
     io_lib:format("~p", [Val]);
 format_value(sophia, TEnv, Type, Val) ->
@@ -114,17 +113,29 @@ format_value(sophia, TEnv, Type, Val) ->
 format_value(json, TEnv, Type, Val) ->
     aere_sophia:format_value(json, TEnv, Type, Val).
 
+%%%------------------
+
+update_filesystem_cache(Fs, S0) when is_list(Fs) ->
+    update_filesystem_cache(maps:from_list(Fs), S0);
+update_filesystem_cache(Fs, S0) when is_map(Fs) ->
+    case aere_repl_state:update_cached_fs(Fs, S0) of
+        {ok, S1} ->
+            S1;
+        error ->
+            throw({repl_error, aere_msg:filesystem_not_cached()})
+    end.
+
 load_modules([], S0) ->
     S0;
 load_modules(Filenames, S0) ->
-    Modules = aere_files:read_files(Filenames),
+    Modules = aere_files:read_files(Filenames, S0),
     S1 = register_modules(Modules, S0),
     S2 = register_include(element(1, lists:last(Modules)), S1),
     S2.
 
 reload_modules(RS) ->
     LdFiles  = aere_repl_state:loaded_files(RS),
-    Modules = aere_files:read_files(maps:keys(LdFiles)),
+    Modules = aere_files:read_files(maps:keys(LdFiles), RS),
     IncFiles = aere_repl_state:included_files(RS),
     RS1 = register_modules(Modules, RS),
     RS2 = lists:foldl(fun register_include/2, RS1, IncFiles),
@@ -163,10 +174,10 @@ clear_context(S0) ->
 register_include(Include, S0) when is_binary(Include) ->
     register_include(binary:bin_to_list(Include), S0);
 register_include(Include, S0) ->
-    LdFiles  = aere_repl_state:loaded_files(S0), 
+    LdFiles  = aere_repl_state:loaded_files(S0),
     IncCode  = aere_repl_state:included_code(S0),
     IncFiles = aere_repl_state:included_files(S0),
-    case maps:get(Include, maps:merge(default_loaded_files(), LdFiles), not_loaded) of
+    case maps:get(Include, maps:merge(default_loaded_files(S0), LdFiles), not_loaded) of
         not_loaded ->
             throw({repl_error, aere_msg:file_not_loaded(Include)});
         File ->
@@ -357,8 +368,8 @@ parse_fun_ref(What) ->
         _                                 -> error
     end.
 
--spec default_loaded_files() -> #{string() => binary()} | no_return().
-default_loaded_files() ->
+-spec default_loaded_files(repl_state()) -> #{string() => binary()} | no_return().
+default_loaded_files(S) ->
     case get(aere_default_loaded_files) of
         undefined ->
             StdlibDir = aeso_stdlib:stdlib_include_path(),
@@ -367,7 +378,7 @@ default_loaded_files() ->
                     File <- element(2, file:list_dir(StdlibDir)),
                     filename:extension(File) =:= ".aes"
                 ],
-            FileMap = maps:from_list(aere_files:read_files(Files)),
+            FileMap = maps:from_list(aere_files:read_files(Files, S)),
             put(aere_default_loaded_files, FileMap),
             FileMap;
         Files ->

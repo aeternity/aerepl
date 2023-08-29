@@ -4,8 +4,8 @@ let c = Chain.create() : C
 
 c.f(5)
 // ABORT: x = 5
-// 1    ct_2JUHsCB1NnQjkFqEFLCeLWsqykutscr6hRRxkpWPttouRAmgMz:q:test/contracts/abort.aes:6
-// 2    ct_2JUHsCB1NnQjkFqEFLCeLWsqykutscr6hRRxkpWPttouRAmgMz:h:test/contracts/abort.aes:9
-// 3    ct_2JUHsCB1NnQjkFqEFLCeLWsqykutscr6hRRxkpWPttouRAmgMz:g:test/contracts/abort.aes:11
-// 4    ct_2JUHsCB1NnQjkFqEFLCeLWsqykutscr6hRRxkpWPttouRAmgMz:f:test/contracts/abort.aes:13
-// 5    ct_2eNrUWisXS4FsbEfmd8AyzxgdzS22YGQBnR7NXNnzWC4ZZwDkb:#user_input#INTERNAL_REPL:aerepl:1
+// 1    C:q:test/contracts/abort.aes:6
+// 2    C:h:test/contracts/abort.aes:9
+// 3    C:g:test/contracts/abort.aes:11
+// 4    C:f:test/contracts/abort.aes:13
+// 5    $REPL_contract:$REPL_user_input:aerepl:1
