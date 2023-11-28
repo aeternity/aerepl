@@ -5,6 +5,7 @@
         , delete_breakpoint/3
         , resume_eval/2
         , lookup_variable/2
+        , dump_variables/1
         , source_location/1
         , stacktrace/1
         ]).
@@ -83,19 +84,47 @@ resume(ES, Kind) ->
     aefa_engine_state:set_debug_info(Info, ES).
 
 
--spec lookup_variable(ReplState, VariableName) -> string() | no_return()
+-spec lookup_variable(ReplState, VariableName) -> Renderable | no_return()
+    when ReplState    :: aere_repl_state:state(),
+         VariableName :: aere_theme:renderable(),
+         Renderable   :: aere_theme:renderable().
+
+lookup_variable(RS, VarName) ->
+    aere_msg:output(lookup_variable_unthemed(RS, VarName)).
+
+
+-spec lookup_variable_unthemed(ReplState, VariableName) -> string() | no_return()
     when ReplState    :: aere_repl_state:state(),
          VariableName :: aere_theme:renderable().
 
-lookup_variable(RS, VarName) ->
+lookup_variable_unthemed(RS, VarName) ->
     ES = breakpoint_engine_state(RS),
     case aefa_debug:get_variable_register(VarName, aefa_engine_state:debug_info(ES)) of
         undefined ->
             throw({repl_error, aere_msg:undefined_variable(VarName)});
         Reg ->
             {Val, _} = aefa_fate:lookup_var(Reg, ES),
-            aere_msg:output(io_lib:format("~p", [Val]))
+            io_lib:format("~p", [Val])
     end.
+
+
+- spec dump_variables(ReplState) -> Renderable
+    when ReplState  :: aere_repl_state:state(),
+         Renderable :: aere_theme:renderable().
+
+dump_variables(RS) ->
+    ES = breakpoint_engine_state(RS),
+    AllVars = aefa_debug:vars_registers(aefa_engine_state:debug_info(ES)),
+
+    %% Filter out the variables with no mapped registers (variables defined in
+    %% the repl instead of the called debugged code)
+    VarsRegisters = maps:filter(fun(_, []) -> false; (_, _) -> true end, AllVars),
+
+    Lookup = fun(K, _) ->
+        io_lib:format("~s: ~s", [K, lookup_variable_unthemed(RS, K)]) end,
+    Dump = maps:map(Lookup, VarsRegisters),
+
+    aere_msg:output(lists:join("\n", maps:values(Dump))).
 
 
 -spec source_location(ReplState) -> Source | no_return()

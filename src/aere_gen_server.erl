@@ -196,6 +196,9 @@ handle_call(location, _From, State) ->
 handle_call({print_var, Var}, _From, State) ->
     ?HANDLE_ERRS(State, {reply, {ok, aere_debugger:lookup_variable(State, Var)}, State});
 
+handle_call(print_vars, _From, State) ->
+    ?HANDLE_ERRS(State, {reply, {ok, aere_debugger:dump_variables(State)}, State});
+
 handle_call(stacktrace, _From, State) ->
     ?HANDLE_ERRS(State, {reply, {ok, aere_debugger:stacktrace(State)}, State});
 
