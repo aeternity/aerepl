@@ -110,6 +110,9 @@ commands() ->
     , {print_var,
         {[pv], [{required, string}], "VAR_NAME",
         [ "Print the value of a variable when a breakpoint is hit." ]}}
+    , {print_vars,
+        {[], [], "",
+        [ "Print the values of all variables when a breakpoint is hit" ]}}
     , {location,
         {[loc], [], "",
         [ "Print the Sophia source file with a mark on the currently executing line." ]}}
