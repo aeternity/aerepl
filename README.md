@@ -9,6 +9,18 @@ first.
 
 # Setup
 
+## Dependencies
+
+Tools:
+
+- `git`
+- OTP 25
+- C++ compiler
+
+Libraries:
+
+
+
 ## Local build
 
 Clone the repo:
@@ -17,7 +29,14 @@ Clone the repo:
 git clone https://github.com/aeternity/aerepl.git
 ```
 
-Build the project:
+Set up the environment. Make sure Erlang 25 is used.
+
+```
+export ERLANG_ROCKSDB_OPTS="-DWITH_SYSTEM_ROCKSDB=ON -DWITH_LZ4=ON -DWITH_SNAPPY=ON -DWITH_BZ2=ON -DWITH_ZSTD=ON"
+export CXXFLAGS="-Wno-error=shadow -Wno-deprecated-copy -Wno-redundant-move -Wno-pessimizing-move"
+```
+
+Build the project (the `make` step may need to be executed twice, see [this issue](https://github.com/aeternity/aerepl/issues/67)):
 
 ```
 cd aerepl
@@ -30,7 +49,7 @@ Launch the REPL
 ./aerepl
 ```
 
-## Docker image
+## Docker/podman image
 
 For a consistent setup, a docker image can be created:
 
@@ -43,6 +62,8 @@ Then to start the dockerized REPL:
 ```
 docker run -i aeternity/aerepl:local
 ```
+
+Use `make podman` for a podman build.
 
 # Basic usage
 
@@ -103,7 +124,7 @@ them. To load a file, the `:load` command may be used:
 // File: Test.aes
 namespace N =
   function f() = 100
-  
+
 contract C =
   entrypoint f() = N.f() + 23
 ```
@@ -203,7 +224,7 @@ By default, the REPL shall display values preserving compatibility with Sophia
 syntax. An exception from that rule are values containing functions which
 in FATE are represented as pairs of function name and closure. In that case,
 the output will take a form of `"<fun $FUNHASH>" : $TYPE` where `$TYPE` is
-the type of the function (according to the Sophia code, not FATE bytecode), and 
+the type of the function (according to the Sophia code, not FATE bytecode), and
 `$FUNHASH` is a hex-encoded shortcut of the original function's name hashed with
 BLAKE2B (as it is stored in the bytecode). For example
 
@@ -254,3 +275,72 @@ AESO> :{
 | :}
 123
 ```
+
+# Generic server interface
+
+If REPL is used as a library for a different tool, its generic server can be
+used for more structured interface. The server is located in
+`src/aere_gen_server.erl` and implements the standard `gen_server` Erlang
+behaviour.
+
+## Startup
+
+Use `aere_gen_server:start/1` to start up the server. `aere_gen_server:start/2`
+allows to start a server under a custom name. The argument is property list with
+the following fields:
+
+- `options` --- parameter map for the repl configuration with the following fields:
+  - TODO
+
+## Call
+
+- `quit` --- terminates the server
+- `skip` --- does nothing
+- `bump_nonce` --- bumps internal REPL nonce (used in naming internal variables)
+- `blockchain_state` --- returns the chain state for the current session
+- `theme` --- returns the current display theme
+- `{type, string()}` --- parses the expression and returns its type in the
+  session context
+- `{state, string()}` --- parses the expression and evaluates it in the session
+  context. The restult is then assigned to the session's contract store. All
+  locally defined functions, variables and types are pruned.
+- `{eval, string()}` --- parses the expression and evaluates it in the session
+  context
+- `{set, Option :: atom(), Value :: list(term())}` --- changes REPL's
+  configuration (see `{help, "set"}` for more details)
+- `help` --- lists all available commands
+- `{help, string()}` --- returns the help text for the given command
+- `{print, atom()}` --- prints information about REPL's state or configuration
+- `{disas, string()}` --- parses a reference to a function and prints its FATE
+  code
+- `{break, FileName :: string(), Line :: integer()}` --- adds a breakpoint
+- `{delete_break, integer()}` --- removes a breakpoint with a given id
+- `{delete_break_loc, string(), integer()}` --- removes all breakpoints from the
+  given file at the given line
+- `continue` --- resumes execution after a breakpoint stop
+- `stepover` --- proceeds to the next line in the current execution
+- `stepin` --- proceeds to the next line, or enters the function body if there
+  is a function call upcoming
+- `stepout` --- resumes execution until the next breakpoint or current function
+  return
+- `location` --- returns in-code location of current execution
+- `banner` --- returns an ASCII "banner" presenting the REPL's logo and various
+  version information
+
+## Cast
+
+- `{update_filesystem_cache, #{string() => bytes()}}` --- updates REPL's
+  perception of the file system to the provided map. If this is set, all include
+  and file load instructions will ignore system's file system, and will use this
+  map instead.
+
+## Functions
+
+All above calls and casts are exposed as function calls for
+convenience. Additionally, the following are offered:
+
+- `render` --- renders a renderable output to a string using REPL's theme
+- `input` --- parses a text command and interprets it as one of the calls
+  above. Useful for CLI-like interfaces.
+- `prompt` --- proposes prompt to display in the CLI based on the REPL's
+  state. For example, the default is `AESO> `.
