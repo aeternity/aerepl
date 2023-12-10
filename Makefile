@@ -1,4 +1,4 @@
-.PHONY: all node aerepl docker test clean nuke nuke-all
+.PHONY: all node aerepl docker podman test clean nuke nuke-all
 
 CXXFLAGS = -Wno-error=shadow -Wno-deprecated-copy -Wno-redundant-move -Wno-pessimizing-move
 
@@ -15,6 +15,9 @@ aerepl:
 
 docker:
 	@docker build -t aeternity/aerepl:local .
+
+podman:
+	@podman build -t aeternity/aerepl:local .
 
 test:
 	./rebar3 eunit --module=aere_tests
