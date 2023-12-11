@@ -13,7 +13,7 @@ load_paths() ->
 
 main(_Args) ->
     load_paths(),
-    aere_gen_server:start([{options, #{return_mode => format}}]),
+    aere_gen_server:start([{options, #{return_mode => render}}]),
     start().
 
 start() ->
@@ -25,12 +25,12 @@ loop() ->
     Input = get_input(),
     try aere_gen_server:input(Input) of
         {ok, Msg} ->
-            print_msg(aere_gen_server:render(Msg)),
+            print_msg(Msg),
             loop();
         {error, Err} ->
-            print_msg(aere_gen_server:render(Err)),
+            print_msg(Err),
             loop();
-        no_output ->
+        ok ->
             loop();
         finish ->
             ok

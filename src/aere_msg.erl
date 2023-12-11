@@ -131,7 +131,13 @@ stacktrace(Stack) ->
       , aere_theme:output(binary:bin_to_list(Fun)), aere_theme:info(":")
       , aere_theme:info(NonEmpty(File) ++ ":" ++ integer_to_list(Line) ++ "\n")
       ]
-     || {I, {Con, Fun, File, Line}} <- lists:zip(lists:seq(1, length(Stack)), Stack)
+     || {I,
+         #{ contract := Con
+          , function := Fun
+          , file := File
+          , line := Line
+          }
+        } <- lists:zip(lists:seq(1, length(Stack)), Stack)
     ].
 
 -spec internal(term(), erlang:stacktrace()) -> msg().
@@ -341,6 +347,8 @@ type(Type) ->
 
 eval(no_output, _) ->
     [];
+eval({msg, Msg}, _) ->
+    Msg;
 eval({ok, #{result := Res, type := Type, used_gas := UsedGas}}, Opts) ->
     #{ display_gas  := DisplayGas,
        print_unit   := PrintUnit,
@@ -353,7 +361,12 @@ eval({ok, #{result := Res, type := Type, used_gas := UsedGas}}, Opts) ->
     , [aere_theme:info(" : " ++ TypeStr) || PrintRes andalso PrintType]
     , ["\n" || PrintRes andalso DisplayGas]
     , [used_gas(UsedGas) || DisplayGas]
-    ].
+    ];
+eval(break, _Opts) ->
+    aere_msg:output("Break");
+eval({revert, #{err_msg := ErrMsg, stacktrace := Stacktrace}}, _Opts) ->
+    abort(ErrMsg, Stacktrace).
+
 
 lookup(What, Data) ->
     case What of
@@ -377,7 +390,7 @@ location(FileName, CurrentLine, RS) ->
     File     = aere_files:read_file(FileName, RS),
     Lines    = string:split(File, "\n", all),
     Enumerate     = fun(List) -> lists:zip(lists:seq(1, length(List)), List) end,
-    NewLines      = [ {Idx, Line}
+    SelectLines   = [ {Idx, Line}
                       || {Idx, Line} <- Enumerate(Lines),
                          Idx > CurrentLine - LocBackwards,
                          Idx < CurrentLine + LocForwards
@@ -390,5 +403,5 @@ location(FileName, CurrentLine, RS) ->
     MaxDigits     = length(integer_to_list(length(Lines))),
     FormatLineNum = fun(Num) -> string:right(integer_to_list(Num), MaxDigits) end,
     FormatLine    = fun(N, Ln) -> [LineSign(N), " ", FormatLineNum(N), " ", Ln] end,
-    NewLines = [FormatLine(Idx, Line) || {Idx, Line} <- Lines],
+    NewLines = [FormatLine(Idx, Line) || {Idx, Line} <- SelectLines],
     aere_msg:output(lists:join("\n", NewLines)).

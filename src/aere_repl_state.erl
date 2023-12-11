@@ -20,8 +20,8 @@
          , loc_backwards := non_neg_integer()
          , loc_forwards  := non_neg_integer()
          , locked_opts  => [atom()]
+         , init_args    => [any()]
          }.
--type command_res() :: finish | {aere_theme:renderable(), state()} | state() | no_return().
 -type breakpoints() :: [{string(), integer()}].
 -type function_symbols() :: #{binary() => binary()}.
 -type var() :: {string(), aeso_syntax:type(), term()}.
@@ -54,7 +54,9 @@
 
 -opaque state() :: #rs{}.
 
--export_type([state/0, type_scope/0, type_def/0, repl_options/0, command_res/0, function_symbols/0, breakpoints/0]).
+-export_type(
+   [ state/0, type_scope/0, type_def/0, repl_options/0
+   , function_symbols/0, breakpoints/0]).
 
 -export([ init_state/0, init_state/1
         , init_options/0
@@ -286,7 +288,7 @@ chain_api(#rs{blockchain_state = {abort, ES}}) ->
 bump_nonce(S = #rs{query_nonce = N}) ->
     S#rs{query_nonce = N + 1}.
 
--spec update_cached_fs(#{string() => binary()}, state()) -> state().
+-spec update_cached_fs(#{string() => binary()}, state()) -> error | {ok, state()}.
 update_cached_fs(_, #rs{filesystem = local}) ->
     error;
 update_cached_fs(Fs, S) when is_map(Fs) ->

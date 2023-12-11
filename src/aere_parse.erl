@@ -54,7 +54,10 @@ commands() ->
        {[s], [{required, atom}, {some, string}], "SETTING [SETTING_ARGS]",
         [ "Configures REPL environment and behavior. "
         , "Possible usages:"] ++
-            [ "- :set " ++ atom_to_list(Opt) ++ " " ++ aere_options:format_option_scheme(Scheme)
+            [ "- :set " ++
+                  atom_to_list(Opt) ++
+                  " " ++
+                  aere_options:format_option_scheme(Scheme)
               || {Opt, Scheme} <- aere_options:option_parse_rules()
             ]
        }}

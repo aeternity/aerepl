@@ -61,7 +61,7 @@ resume_eval(RS, Kind) ->
         {abort, _} ->
             Chain = aere_repl_state:chain_api(RS),
             NewRS = aere_repl_state:set_blockchain_state({ready, Chain}, RS),
-            {aere_msg:contract_exec_ended(), NewRS};
+            {{msg, aere_msg:contract_exec_ended()}, NewRS};
         _ ->
             ES0 = breakpoint_engine_state(RS),
             ES1 = resume(ES0, Kind),
