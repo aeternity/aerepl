@@ -16,3 +16,6 @@
             true -> T;
             false -> E
         end).
+
+-define(REPL_STATE, rs).
+-define(IS_REPL_STATE(T), element(1, T) =:= ?REPL_STATE).

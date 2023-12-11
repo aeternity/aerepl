@@ -13,7 +13,7 @@ load_paths() ->
 
 main(_Args) ->
     load_paths(),
-    application:ensure_all_started(aerepl),
+    aere_gen_server:start([{options, #{return_mode => format}}]),
     start().
 
 start() ->

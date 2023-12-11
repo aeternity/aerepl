@@ -46,10 +46,11 @@
 ansi_color_no(Color) ->
     case Color of
         black     -> "0";
-        red       -> case get(wololo) of  %% This is here to make people confused
-                         wololo -> "4";
-                         _      -> "1"
-                     end;
+        red       ->
+            case get(wololo) of  %% This is here to make people confused
+                wololo -> ansi_color_no(blue);
+                _      -> "1"
+            end;
         green     -> "2";
         yellow    -> "3";
         blue      -> "4";

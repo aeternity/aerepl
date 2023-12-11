@@ -65,7 +65,7 @@ resume_eval(RS, Kind) ->
         _ ->
             ES0 = breakpoint_engine_state(RS),
             ES1 = resume(ES0, Kind),
-            aere_repl:eval_handler(RS, aere_fate:resume_contract_debug(ES1, RS))
+            aere_fate:resume_contract_debug(ES1, RS)
     end.
 
 
@@ -127,38 +127,28 @@ dump_variables(RS) ->
     aere_msg:output(lists:join("\n", maps:values(Dump))).
 
 
--spec source_location(ReplState) -> Source | no_return()
+-spec source_location(ReplState) -> Location | no_return()
     when ReplState :: aere_repl_state:state(),
-         Source    :: aere_theme:renderable().
+         Location  :: #{ file := string()
+                       , line := non_neg_integer()
+                       }.
 
 source_location(RS) ->
     ES = breakpoint_engine_state(RS),
-
-    {FileName, CurrentLine} = aefa_debug:debugger_location(aefa_engine_state:debug_info(ES)),
-
-    File     = aere_files:read_file(FileName, RS),
-    Lines    = string:split(File, "\n", all),
-    LineSign =
-        fun(Id) when Id == CurrentLine -> ">";
-           (_)                         -> "|"
-        end,
-    MaxDigits     = length(integer_to_list(length(Lines))),
-    FormatLineNum = fun(Num) -> string:right(integer_to_list(Num), MaxDigits) end,
-    FormatLine    = fun(N, Ln) -> [LineSign(N), " ", FormatLineNum(N), " ", Ln] end,
-    Enumerate     = fun(List) -> lists:zip(lists:seq(1, length(List)), List) end,
-    NewLines      = [ FormatLine(Idx, Line)
-                        || {Idx, Line} <- Enumerate(Lines)
-                         , Idx < CurrentLine + 5, Idx > CurrentLine - 5 ],
-    aere_msg:output(lists:join("\n", NewLines)).
+    Dbg = aefa_engine_state:debug_info(ES),
+    {FileName, CurrentLine} = aefa_debug:debugger_location(Dbg),
+    #{file => FileName,
+      line => CurrentLine
+     }.
 
 
 -spec stacktrace(ReplState) -> Message | no_return()
     when ReplState :: aere_repl_state:state(),
-         Message   :: aere_theme:renderable().
+         Message   :: aere_fate:stacktrace().
 
 stacktrace(RS) ->
     ES = breakpoint_engine_state(RS),
-    aere_msg:stacktrace(aere_fate:get_stack_trace(RS, ES)).
+    aere_fate:get_stack_trace(RS, ES).
 
 
 -spec breakpoint_engine_state(ReplState) -> EngineState | no_return()

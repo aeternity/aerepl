@@ -306,6 +306,9 @@ the following fields:
   locally defined functions, variables and types are pruned.
 - `{eval, string()}` --- parses the expression and evaluates it in the session
   context
+- `{load, list(string())}` --- Loads files from the file system. Includes the
+  first one in the list.
+- `reload` --- Reloads the currently loaded files.
 - `{set, Option :: atom(), Value :: list(term())}` --- changes REPL's
   configuration (see `{help, "set"}` for more details)
 - `help` --- lists all available commands

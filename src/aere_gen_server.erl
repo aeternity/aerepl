@@ -68,6 +68,8 @@
         , location/1
         , print_var/1
         , print_var/2
+        , print_vars/0
+        , print_vars/1
         , stacktrace/0
         , stacktrace/1
         , banner/0
@@ -89,6 +91,33 @@
         error:E:St -> server_error(S, E, St);
         E          -> server_error(S, E)
     end).
+
+-define(RENDER(S, Val, Format),
+    case aere_repl_state:options(S) of
+        #{return_mode := format} ->
+            Format;
+        #{return_mode := render, theme := Theme} ->
+            aere_theme:render(Theme, Format);
+        _ -> Val
+    end).
+
+-define(
+   HANDLE_ERRS_RENDER(S0, Compute, Val, Format),
+   ?HANDLE_ERRS(
+      S0,
+      begin
+          Val = Compute,
+          ?RENDER(S0, Val, Format)
+      end)).
+
+-define(
+   HANDLE_ERRS_RENDER(S0, Compute, Val, S1, Format),
+   ?HANDLE_ERRS(
+      S0,
+      begin
+          {Val, S1} = Compute,
+          {?RENDER(S1, Val, Format), S1}
+      end)).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% GenServer
@@ -136,7 +165,13 @@ handle_call(theme, _From, State) ->
     {reply, {theme, Theme}, State};
 
 handle_call({type, Expr}, _From, State) ->
-    ?HANDLE_ERRS(State, {reply, {ok, aere_repl:infer_type(Expr, State)}, State});
+    Out = ?HANDLE_ERRS_RENDER(
+             State,
+             aere_repl:infer_type(Expr, State),
+             Type,
+             aere_msg:type(Type)
+            ),
+    {reply, {ok, Out}, State};
 
 handle_call({state, Val}, _From, State) ->
     ready_or_error(State),
@@ -144,10 +179,14 @@ handle_call({state, Val}, _From, State) ->
 
 handle_call({eval, Code}, _From, State) ->
     ready_or_error(State),
-    case ?HANDLE_ERRS(State, aere_repl:eval_code(Code, State)) of
-        {Msg, NewState} -> {reply, {ok, Msg}, NewState};
-        NewState        -> {reply, no_output, NewState}
-    end;
+    {Out, State2} =
+        ?HANDLE_ERRS_RENDER(
+           State,
+           aere_repl:eval_code(Code, State),
+           Res, State1,
+           aere_msg:eval(Res, aere_repl_state:options(State1))
+          ),
+    {reply, {ok, Out}, State2};
 
 handle_call({load, Modules}, _From, State) ->
     ready_or_error(State),
@@ -167,11 +206,23 @@ handle_call(help, _From, State) ->
 handle_call({help, Command}, _From, State) ->
     {reply, {ok, aere_msg:help(Command)}, State};
 
-handle_call({print, What}, _From, State) ->
-    ?HANDLE_ERRS(State, {reply, {ok, aere_repl:print_state(State, What)}, State});
+handle_call({lookup, What}, _From, State) ->
+    Out = ?HANDLE_ERRS_RENDER(
+             State,
+             aere_repl:lookup_state(State, What),
+             Data,
+             aere_msg:lookup(What, Data)
+            ),
+    {reply, {ok, Out}, State};
 
 handle_call({disas, What}, _From, State) ->
-    ?HANDLE_ERRS(State, {reply, {ok, aere_repl:disassemble(What, State)}, State});
+    Out = ?HANDLE_ERRS_RENDER(
+             State,
+             aere_repl:disassemble(What, State),
+             Fate,
+             aere_msg:fate(Fate)
+            ),
+    {reply, {ok, Out}, State};
 
 handle_call({break, File, Line}, _From, State) ->
     ?HANDLE_ERRS(State, {reply, no_output, aere_debugger:add_breakpoint(State, File, Line)});
@@ -187,11 +238,24 @@ handle_call(Resume, _From, State)
        Resume == stepover;
        Resume == stepin;
        Resume == stepout ->
-    {Out, NewState} = ?HANDLE_ERRS(State, aere_debugger:resume_eval(State, Resume)),
-    {reply, {ok, Out}, NewState};
+    {Out, State1} =
+        ?HANDLE_ERRS_RENDER(
+           State,
+           aere_debugger:resume_eval(State, Resume),
+           Res, State0,
+           aere_msg:eval(Res, aere_repl_state:options(State0))
+          ),
+    {reply, {ok, Out}, State1};
 
 handle_call(location, _From, State) ->
-    ?HANDLE_ERRS(State, {reply, {ok, aere_debugger:source_location(State)}, State} );
+    Out = ?HANDLE_ERRS_RENDER(
+             State,
+             #{file := FileName, line := CurrentLine} =
+                 aere_debugger:source_location(State),
+             L,
+             aere_msg:location(FileName, CurrentLine, State)
+            ),
+    {reply, {ok, Out}, State};
 
 handle_call({print_var, Var}, _From, State) ->
     ?HANDLE_ERRS(State, {reply, {ok, aere_debugger:lookup_variable(State, Var)}, State});
@@ -345,6 +409,11 @@ print_var(Var) ->
     print_var(?MODULE, Var).
 print_var(ServerName, Var) ->
     gen_server:call(ServerName, {print_var, Var}).
+
+print_vars() ->
+    print_var(?MODULE).
+print_vars(ServerName) ->
+    gen_server:call(ServerName, print_vars).
 
 stacktrace() ->
     stacktrace(?MODULE).

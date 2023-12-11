@@ -7,15 +7,20 @@
 -include("aere_macros.hrl").
 
 -type print_format() :: sophia | fate | json.
+-type return_mode() :: value | format | render.
 -type repl_options() ::
         #{ theme       := aere_theme:theme()
-        , display_gas  := boolean()
-        , call_gas     := pos_integer()
-        , call_value   := non_neg_integer()
-        , print_format := print_format()
-        , print_unit   := boolean()
-        , locked_opts  => [atom()]
-        }.
+         , display_gas  := boolean()
+         , call_gas     := pos_integer()
+         , call_value   := non_neg_integer()
+         , print_format := print_format()
+         , return_mode  := return_mode()
+         , print_unit   := boolean()
+         , print_type   := boolean()
+         , loc_backwards := non_neg_integer()
+         , loc_forwards  := non_neg_integer()
+         , locked_opts  => [atom()]
+         }.
 -type command_res() :: finish | {aere_theme:renderable(), state()} | state() | no_return().
 -type breakpoints() :: [{string(), integer()}].
 -type function_symbols() :: #{binary() => binary()}.
@@ -28,23 +33,24 @@
                      | {abort, aefa_engine_state:state()}.
 -type filesystem() :: local | {cached, #{string() => binary()}}.
 
--record(rs, { blockchain_state       :: chain_state()
-            , repl_account           :: binary()
-            , options                :: repl_options()
-            , contract_state         :: contract_state()
-            , vars           = []    :: [var()]
-            , funs           = #{}   :: #{binary() => term()}
-            , typedefs       = []    :: [type_def()]
-            , type_scope     = []    :: [type_scope()]
-            , filesystem     = local :: filesystem() % Whether to load files from disc or pre-defined map
-            , loaded_files   = #{}   :: #{string() => binary()} % Loaded files ready to be included
-            , included_files = []    :: [string()] % Files included in the context
-            , included_code  = []    :: aeso_syntax:ast() % Cached AST of the included files
-            , query_nonce    = 0     :: non_neg_integer()
-            , breakpoints    = []    :: breakpoints()
-            , function_symbols = #{} :: #{binary() => binary()}
-            , type_env = none        :: none | term()
-            }).
+-record(?REPL_STATE,
+        { blockchain_state       :: chain_state()
+        , repl_account           :: binary()
+        , options                :: repl_options()
+        , contract_state         :: contract_state()
+        , vars           = []    :: [var()]
+        , funs           = #{}   :: #{binary() => term()}
+        , typedefs       = []    :: [type_def()]
+        , type_scope     = []    :: [type_scope()]
+        , filesystem     = local :: filesystem() % Whether to load files from disc or pre-defined map
+        , loaded_files   = #{}   :: #{string() => binary()} % Loaded files ready to be included
+        , included_files = []    :: [string()] % Files included in the context
+        , included_code  = []    :: aeso_syntax:ast() % Cached AST of the included files
+        , query_nonce    = 0     :: non_neg_integer()
+        , breakpoints    = []    :: breakpoints()
+        , function_symbols = #{} :: #{binary() => binary()}
+        , type_env = none        :: none | term()
+        }).
 
 -opaque state() :: #rs{}.
 
@@ -100,11 +106,16 @@
 -spec init_options() -> repl_options().
 init_options() ->
     #{ theme => aere_theme:default_theme()
-    , display_gas => false
-    , call_gas => 100000000000000000
-    , call_value => 0
-    , print_format => sophia
-    , print_unit => false
+     , display_gas   => false
+     , call_gas      => 100000000000000000
+     , call_value    => 0
+     , print_format  => sophia
+     , return_mode   => value
+     , print_unit    => false
+     , print_type    => false
+     , loc_backwards => 5
+     , loc_forwards  => 5
+     , locked_opts   => []
     }.
 
 -spec init_state() -> state().
