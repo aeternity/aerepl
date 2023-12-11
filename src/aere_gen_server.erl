@@ -526,10 +526,11 @@ server_error(State, Err) ->
     throw({reply, {error, Msg}, State}).
 
 
--spec server_error(ReplState, Error, erlang:stacktrace()) -> {reply, {error, Msg}, ReplState}
+-spec server_error(ReplState, Error, erlang:stacktrace()) ->
+          {reply, {error, Msg}, ReplState}
     when ReplState :: aere_repl_state:state(),
          Error     :: term(),
-         Msg       :: aere_theme:renderable().
+         Msg       :: term().
 
 server_error(State, Err, Stacktrace) ->
     Msg = ?RENDER(

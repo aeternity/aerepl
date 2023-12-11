@@ -341,11 +341,14 @@ help(What) ->
             help()
     end.
 
+-spec type(aeso_syntax:type()) -> msg().
 type(Type) ->
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
     TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER_RE, "", [global, {return, list}]),
     aere_msg:output(TypeStrClean).
 
+-spec eval(Eval, aere_repl_state:options()) -> msg() when
+      Eval :: no_output | {msg, msg()} | aere_fate:eval_debug_result().
 eval(no_output, _) ->
     [];
 eval({msg, Msg}, _) ->
@@ -368,7 +371,7 @@ eval(break, _Opts) ->
 eval({revert, #{err_msg := ErrMsg, stacktrace := Stacktrace}}, _Opts) ->
     abort(ErrMsg, Stacktrace).
 
-
+-spec lookup(string(), list(term())) -> msg().
 lookup(What, Data) ->
     case What of
         "vars"        -> list_vars(Data);
@@ -380,10 +383,12 @@ lookup(What, Data) ->
         "breakpoints" -> list_breakpoints(Data)
     end.
 
+-spec fate(term()) -> msg().
 fate(Fate) ->
     FateStr = lists:flatten(aeb_fate_asm:pp(Fate)),
     aere_msg:output(FateStr).
 
+-spec location(string(), non_neg_integer(), aere_repl_state:state()) -> msg().
 location(FileName, CurrentLine, RS) ->
     #{ loc_backwards := LocBackwards
      , loc_forwards := LocForwards
@@ -407,6 +412,7 @@ location(FileName, CurrentLine, RS) ->
     NewLines = [FormatLine(Idx, Line) || {Idx, Line} <- SelectLines],
     aere_msg:output(lists:join("\n", NewLines)).
 
+-spec debug_vars(list({string(), string()})) -> msg().
 debug_vars(Vars) ->
     Dump = [io_lib:format("~s:\t~s", [K, V]) || {K, V} <- Vars],
 
