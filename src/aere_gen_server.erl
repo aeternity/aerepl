@@ -46,8 +46,8 @@
         , help/1
         , help_command/1
         , help_command/2
-        , print/1
-        , print/2
+        , lookup/1
+        , lookup/2
         , disas/1
         , disas/2
         , break/2
@@ -201,10 +201,12 @@ handle_call({set, Option, Args}, _From, State) ->
     ?HANDLE_ERRS(State, {reply, ok, aere_repl:set_option(Option, Args, State)});
 
 handle_call(help, _From, State) ->
-    {reply, {ok, aere_msg:help()}, State};
+    Out = ?RENDER(State, aere_parse:commands(), aere_msg:help()),
+    {reply, {ok, Out}, State};
 
 handle_call({help, Command}, _From, State) ->
-    {reply, {ok, aere_msg:help(Command)}, State};
+    Out = ?RENDER(State, aere_parse:resolve_command(Command), aere_msg:help(Command)),
+    {reply, {ok, Out}, State};
 
 handle_call({lookup, What}, _From, State) ->
     Out = ?HANDLE_ERRS_RENDER(
@@ -258,10 +260,22 @@ handle_call(location, _From, State) ->
     {reply, {ok, Out}, State};
 
 handle_call({print_var, Var}, _From, State) ->
-    ?HANDLE_ERRS(State, {reply, {ok, aere_debugger:lookup_variable(State, Var)}, State});
+    Out = ?HANDLE_ERRS_RENDER(
+             State,
+             aere_debugger:lookup_variable(State, Var),
+             VarR,
+             aere_msg:output(VarR)
+            ),
+    {reply, {ok, Out}, State};
 
 handle_call(print_vars, _From, State) ->
-    ?HANDLE_ERRS(State, {reply, {ok, aere_debugger:dump_variables(State)}, State});
+    Out = ?HANDLE_ERRS_RENDER(
+             State,
+             aere_debugger:get_variables(State),
+             Vars,
+             aere_msg:debug_vars(Vars)
+            ),
+    {reply, {ok, Out}, State};
 
 handle_call(stacktrace, _From, State) ->
     Out = ?HANDLE_ERRS_RENDER(
@@ -361,9 +375,9 @@ help_command(Command) ->
 help_command(ServerName, Command) ->
     gen_server:call(ServerName, {help, Command}).
 
-print(What) ->
-    print(?MODULE, What).
-print(ServerName, What) ->
+lookup(What) ->
+    lookup(?MODULE, What).
+lookup(ServerName, What) ->
     gen_server:call(ServerName, {print, What}).
 
 disas(What) ->
@@ -454,8 +468,8 @@ input(Input) ->
     input(?MODULE, Input).
 input(ServerName, Input) ->
     case aere_parse:parse(Input) of
-        Err = {error, _} ->
-            Err;
+        {error, Err} ->
+            {error, render(ServerName, Err)};
         Command ->
             bump_nonce(ServerName),
             gen_server:call(ServerName, Command)
@@ -496,11 +510,19 @@ server_error(State, {revert, Err}) ->
     throw({reply, {error, Msg}, State});
 
 server_error(State, {aefa_fate, FateErr, _}) ->
-    Msg = ?RENDER(State, FateErr, aere_msg:error(io_lib:format("FATE error: ~s", [FateErr]))),
+    Msg = ?RENDER(
+             State,
+             FateErr,
+             aere_msg:error(io_lib:format("FATE error: ~s", [FateErr]))
+            ),
     throw({reply, {error, Msg}, State});
 
 server_error(State, Err) ->
-    Msg = ?RENDER(State, Err, aere_msg:error(io_lib:format("Unknown error: ~p", [Err]))),
+    Msg = ?RENDER(
+             State,
+             Err,
+             aere_msg:error(io_lib:format("Unknown error: ~p", [Err]))
+            ),
     throw({reply, {error, Msg}, State}).
 
 
@@ -510,8 +532,12 @@ server_error(State, Err) ->
          Msg       :: aere_theme:renderable().
 
 server_error(State, Err, Stacktrace) ->
-    Msg = ?RENDER(State, {Err, Stacktrace}, aere_msg:internal(Err, Stacktrace)),
-    throw({reply, {error, Msg, State}}).
+    Msg = ?RENDER(
+             State,
+             {Err, Stacktrace},
+             aere_msg:internal(Err, Stacktrace)
+            ),
+    throw({reply, {error, Msg}, State}).
 
 
 -spec prompt_str(BlockchainState) -> string()

@@ -68,7 +68,7 @@ commands() ->
         , "cannot be adjusted using the put function."
         , "Cleans user variables and functions."]
        }}
-    , {print,
+    , {lookup,
        {[p], [{required, string}], "WHAT",
         [ "Prints REPL state. The argument determines what component is to be printed."
         , "Possible componens:"

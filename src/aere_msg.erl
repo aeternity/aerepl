@@ -54,6 +54,7 @@
    , help/0, help/1
    , option_usage/1
    , bye/0
+   , debug_vars/1
    ]).
 
 -type msg() :: aere_theme:renderable().
@@ -405,3 +406,8 @@ location(FileName, CurrentLine, RS) ->
     FormatLine    = fun(N, Ln) -> [LineSign(N), " ", FormatLineNum(N), " ", Ln] end,
     NewLines = [FormatLine(Idx, Line) || {Idx, Line} <- SelectLines],
     aere_msg:output(lists:join("\n", NewLines)).
+
+debug_vars(Vars) ->
+    Dump = [io_lib:format("~s:\t~s", [K, V]) || {K, V} <- Vars],
+
+    output(lists:join("\n", Dump)).

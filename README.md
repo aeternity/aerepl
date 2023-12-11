@@ -313,7 +313,7 @@ the following fields:
   configuration (see `{help, "set"}` for more details)
 - `help` --- lists all available commands
 - `{help, string()}` --- returns the help text for the given command
-- `{print, atom()}` --- prints information about REPL's state or configuration
+- `{lookup, atom()}` --- prints information about REPL's state or configuration
 - `{disas, string()}` --- parses a reference to a function and prints its FATE
   code
 - `{break, FileName :: string(), Line :: integer()}` --- adds a breakpoint
@@ -327,6 +327,9 @@ the following fields:
 - `stepout` --- resumes execution until the next breakpoint or current function
   return
 - `location` --- returns in-code location of current execution
+- `{print_var}` --- returns in-code location of current execution
+- `print_vars` --- returns values of all variables in scope
+- `stacktrace` --- returns the current stacktrace
 - `banner` --- returns an ASCII "banner" presenting the REPL's logo and various
   version information
 
