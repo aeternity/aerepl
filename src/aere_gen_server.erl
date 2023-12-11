@@ -141,7 +141,6 @@ init(Args) ->
     Opts1 = Opts#{init_args => Args},
     {ok, aere_repl_state:init_state(Opts1)}.
 
-
 handle_call(quit, _From, State) ->
     {stop, normal, finish, State};
 
