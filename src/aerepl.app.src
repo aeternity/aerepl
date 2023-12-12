@@ -4,9 +4,11 @@
   {mod, {aerepl, []}},
   {registered, []},
   {applications,
-   [kernel,
-    stdlib,
-    aesophia
+   [ kernel
+   , stdlib
+   , aesophia
+   , aebytecode
+   , aeserialization
    ]},
   {env,[]},
   {modules, []},
