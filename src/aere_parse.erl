@@ -227,7 +227,7 @@ parse_args(_, _) ->
     error.
 
 
--spec apply_type(string(), arg_type()) -> arg() | no_return().
+-spec apply_type(string(), arg_type()) -> arg().
 
 apply_type(X, integer) ->
     try
@@ -241,11 +241,7 @@ apply_type(X, atom) ->
     list_to_atom(X);
 
 apply_type(X, string) ->
-    X;
-
-apply_type(_, T) ->
-    throw({parse_error, {unknown_arg_type, T}}).
-
+    X.
 
 -spec words(string()) -> [string()].
 
