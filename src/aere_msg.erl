@@ -38,13 +38,14 @@
 %% Messages
 -export(
    [ banner/0
+   , version_info/1
    , eval/2
    , used_gas/1
    , stacktrace/1
    , type/1
    , lookup/2
    , fate/1
-   , location/3
+   , location/2
    , list_vars/1
    , list_types/1
    , list_options/1
@@ -75,15 +76,17 @@ banner() ->
 
     SophiaThemed = aere_theme:banner(Sophia),
     InteractiveThemed = aere_theme:banner_sub(Interactive),
-    VersionInfo = version_info(),
+    VersionInfo = version_info(aere_version:version_info()),
 
     [SophiaThemed, InteractiveThemed, VersionInfo].
 
-version_info() ->
-    REPL = aere_version:repl_version(),
-    Sophia = aere_version:compiler_version(),
-    Protocol = aere_version:protocol_version(),
-    Node = aere_version:node_version(),
+version_info(
+  #{ protocol_version := Protocol
+   , repl_version := REPL
+   , compiler_version := Sophia
+   , node_version := Node
+   }
+ ) ->
 
     aere_theme:info(
       string:join(
@@ -328,18 +331,15 @@ help() ->
 
     aere_theme:info(string:join(Help, "\n")).
 
--spec help(any()) -> msg().
-help(What) ->
-    case aere_parse:resolve_command(list_to_atom(What)) of
-        {Cmd, {Aliases, _, ArgDoc, Doc}} ->
-            AliasesStr = string:join([":" ++ atom_to_list(A) || A <- Aliases], ", "),
-            command_usage(Cmd, ArgDoc) ++
-                [aere_theme:info("\nALIASES: "), aere_theme:command(AliasesStr)] ++
-                [aere_theme:output("\n\n")] ++
-                [aere_theme:info(string:join(Doc, "\n"))];
-        _ ->
-            help()
-    end.
+-spec help(aere_parse:command_spec()) -> msg().
+help(Spec) ->
+    {Cmd, {Aliases, _, ArgDoc, Doc}} = Spec,
+    AliasesStr = string:join([":" ++ atom_to_list(A) || A <- Aliases], ", "),
+    command_usage(Cmd, ArgDoc) ++
+        [aere_theme:info("\nALIASES: "), aere_theme:command(AliasesStr)] ++
+        [aere_theme:output("\n\n")] ++
+        [aere_theme:info(string:join(Doc, "\n"))]
+        .
 
 -spec type(aeso_syntax:type()) -> msg().
 type(Type) ->
@@ -348,8 +348,8 @@ type(Type) ->
     aere_msg:output(TypeStrClean).
 
 -spec eval(Eval, aere_repl_state:options()) -> msg() when
-      Eval :: no_output | {msg, msg()} | aere_fate:eval_debug_result().
-eval(no_output, _) ->
+      Eval :: ok | {msg, msg()} | aere_fate:eval_debug_result().
+eval(ok, _) ->
     [];
 eval({msg, Msg}, _) ->
     Msg;
@@ -388,8 +388,9 @@ fate(Fate) ->
     FateStr = lists:flatten(aeb_fate_asm:pp(Fate)),
     aere_msg:output(FateStr).
 
--spec location(string(), non_neg_integer(), aere_repl_state:state()) -> msg().
-location(FileName, CurrentLine, RS) ->
+-spec location(Location, aere_repl_state:state()) -> msg() when
+      Location :: aere_debugger:source_location().
+location(#{file := FileName, line := CurrentLine}, RS) ->
     #{ loc_backwards := LocBackwards
      , loc_forwards := LocForwards
      } = aere_repl_state:options(RS),

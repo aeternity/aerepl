@@ -327,7 +327,7 @@ the following fields:
 - `stepout` --- resumes execution until the next breakpoint or current function
   return
 - `location` --- returns in-code location of current execution
-- `{print_var}` --- returns in-code location of current execution
+- `{print_var, string()}` --- returns in-code location of where the variable was introduced
 - `print_vars` --- returns values of all variables in scope
 - `stacktrace` --- returns the current stacktrace
 - `banner` --- returns an ASCII "banner" presenting the REPL's logo and various

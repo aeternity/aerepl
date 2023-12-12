@@ -156,21 +156,21 @@ resolve_command_by_alias(Alias, [Spec = {_, {Aliases, _, _, _}} | Rest]) ->
     end.
 
 
--spec parse(string()) -> parse_result().
+-spec parse(string()) -> {ok, parse_result()} | {error, aere_theme:renerable()}.
 %% @doc
 %% Parse an input string. This function is called on strings entered by the user in the repl
 
 parse(Input) ->
     case string:trim(Input) of
         [] ->
-            skip;
+            {ok, skip};
         ":" ->
-            skip;
+            {ok, skip};
         [$:|CommandAndArgs] ->
             parse_command(CommandAndArgs);
         _ ->
             %% Eval is the default command (i.e. 1 + 1 is just :eval 1 + 1)
-            {eval, Input}
+            {ok, {eval, Input}}
     end.
 
 
@@ -179,8 +179,8 @@ parse_command(CommandAndArgs) ->
     case resolve_command(Cmd) of
         {Command, {_, Scheme, ArgDoc, _}} ->
             try parse_command_scheme(Scheme, ArgStr) of
-                {ok, []}   -> Command;
-                {ok, Args} -> list_to_tuple([Command | Args]);
+                {ok, []}   -> {ok, Command};
+                {ok, Args} -> {ok, list_to_tuple([Command | Args])};
                 error      -> {error, aere_msg:bad_command_args(Command, ArgDoc)}
             catch
                 {parse_error, {bad_integer, _}} ->

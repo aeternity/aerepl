@@ -33,7 +33,7 @@
                      | {abort, aefa_engine_state:state()}.
 -type filesystem() :: local | {cached, #{string() => binary()}}.
 
--record(?REPL_STATE,
+-record(rs,
         { blockchain_state       :: chain_state()
         , repl_account           :: binary()
         , options                :: repl_options()

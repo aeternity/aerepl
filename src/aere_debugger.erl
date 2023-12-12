@@ -10,6 +10,12 @@
         , stacktrace/1
         ]).
 
+-type source_location() ::
+        #{ file := string()
+         , line := non_neg_integer()
+         }.
+
+-export_type([source_location/0]).
 
 -spec add_breakpoint(ReplState, FileName, Line) -> ReplState
     when ReplState :: aere_repl_state:state(),
@@ -99,9 +105,9 @@ lookup_variable(RS, VarName) ->
     end.
 
 
-- spec get_variables(ReplState) -> Renderable
+- spec get_variables(ReplState) -> Vars
     when ReplState  :: aere_repl_state:state(),
-         Renderable :: aere_theme:renderable().
+         Vars :: list({string(), string()}).
 
 get_variables(RS) ->
     ES = breakpoint_engine_state(RS),
@@ -117,9 +123,7 @@ get_variables(RS) ->
 
 -spec source_location(ReplState) -> Location | no_return()
     when ReplState :: aere_repl_state:state(),
-         Location  :: #{ file := string()
-                       , line := non_neg_integer()
-                       }.
+         Location  :: source_location().
 
 source_location(RS) ->
     ES = breakpoint_engine_state(RS),

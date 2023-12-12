@@ -10,12 +10,8 @@
 -define(DEFAULT_CONTRACT_STATE_T, {tuple_t, aere_mock:ann(), []}).
 -define(DEFAULT_CONTRACT_STATE, {?DEFAULT_CONTRACT_STATE_T, {tuple, {}}}).
 
--define(LAZY(C), fun() -> C end).
 -define(IF(C, T, E),
         case C of
             true -> T;
             false -> E
         end).
-
--define(REPL_STATE, rs).
--define(IS_REPL_STATE(T), element(1, T) =:= ?REPL_STATE).

@@ -29,6 +29,7 @@
 -type command_res() :: finish | repl_state() | no_return().
 -type command_res(T) :: {T, repl_state()} | command_res().
 
+
 infer_type(Expr, RS) ->
     Stmts = aere_sophia:parse_body(Expr),
     Contract = aere_mock:eval_contract(Stmts, RS),
@@ -42,13 +43,13 @@ eval_code(Expr, RS) ->
         {body, Body} ->
             eval_expr(Body, RS);
         [{include, _, {string, _, Inc}}] ->
-            {no_output, register_include(Inc, RS)};
+            {ok, register_include(Inc, RS)};
         [{letval, _, Pat, Body}] ->
-            {no_output, register_letval(Pat, Body, RS)};
+            {ok, register_letval(Pat, Body, RS)};
         %% [{letfun, _, FName, Args, _, Body}] ->
-        %%     {no_output, register_letfun(FName, Args, Body, RS)};
+        %%     {ok, register_letfun(FName, Args, Body, RS)};
         [{type_def, _, Name, Args, Body}] ->
-            {no_output, register_typedef(Name, Args, Body, RS)};
+            {ok, register_typedef(Name, Args, Body, RS)};
         _ -> error(too_much_stuff) %% FIXME
     end.
 
