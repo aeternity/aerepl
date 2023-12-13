@@ -586,6 +586,6 @@ server_error(State, Err, Stacktrace) ->
 -spec prompt_str(BlockchainState) -> string()
     when BlockchainState :: ready | breakpoint | abort.
 
-prompt_str(ready)      -> "AESO";
-prompt_str(breakpoint) -> "AESO(DBG)";
-prompt_str(abort)      -> "AESO(ABORT)".
+prompt_str(ready)      -> <<"AESO">>;
+prompt_str(breakpoint) -> <<"AESO(DBG)">>;
+prompt_str(abort)      -> <<"AESO(ABORT)">>.
