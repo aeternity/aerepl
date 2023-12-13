@@ -359,7 +359,12 @@ eval({ok, #{result := Res, type := Type, used_gas := UsedGas}}, Opts) ->
        print_type   := PrintType
      } = Opts,
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
-    PrintRes = PrintUnit orelse Res =/= {tuple, {}},
+    PrintRes =
+        case Type of
+            {id, _, "unit"} -> PrintUnit;
+            {tuple_t, _, []} -> PrintUnit;
+            _ -> true
+        end,
 
     [ [aere_theme:output(Res) || PrintRes]
     , [aere_theme:info(" : " ++ TypeStr) || PrintRes andalso PrintType]
