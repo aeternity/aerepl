@@ -51,7 +51,7 @@ print_msg(Msg) ->
 get_input() ->
     Prompt = aere_gen_server:prompt(),
     Line =
-        case io:get_line(Prompt ++ "> ") of
+        case io:get_line(binary:bin_to_list(Prompt) ++ "> ") of
             eof          -> ":quit"; % that's dirty
             {error, Err} -> exit(Err);
             Data         -> Data
