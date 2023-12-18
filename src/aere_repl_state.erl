@@ -10,6 +10,8 @@
 -type return_mode() :: value | format | render.
 -type repl_options() ::
         #{ theme       := aere_theme:theme()
+         , call_origin      := aec_keys:pubkey()
+         , call_beneficiary := aec_keys:pubkey()
          , display_gas  := boolean()
          , call_gas     := pos_integer()
          , call_value   := non_neg_integer()
@@ -19,6 +21,8 @@
          , print_type   := boolean()
          , loc_backwards := non_neg_integer()
          , loc_forwards  := non_neg_integer()
+         , block_height  := non_neg_integer()
+         , auto_incr_height := boolean()
          , locked_opts  => [atom()]
          , init_args    => [any()]
          }.
@@ -35,7 +39,7 @@
 
 -record(rs,
         { blockchain_state       :: chain_state()
-        , repl_account           :: binary()
+        , private_keys           :: #{aec_keys:pubkey() => aec_keys:privkey()}
         , options                :: repl_options()
         , contract_state         :: contract_state()
         , vars           = []    :: [var()]
@@ -64,7 +68,7 @@
 
 %% Getters
 -export([ blockchain_state/1
-        , repl_account/1
+        , private_keys/1
         , options/1
         , contract_state/1
         , vars/1
@@ -83,7 +87,6 @@
 
 %% Setters
 -export([ set_blockchain_state/2
-        , set_repl_account/2
         , set_options/2
         , set_contract_state/2
         , set_vars/2
@@ -100,14 +103,18 @@
         , set_type_env/2
         ]).
 
--export([ chain_api/1
+-export([ get_chain_api/1
+        , set_chain_api/2
         , bump_nonce/1
         , update_cached_fs/2
+        , get_accounts/1
         ]).
 
 -spec init_options() -> repl_options().
 init_options() ->
     #{ theme => aere_theme:default_theme()
+     , call_origin   => aere_chain:default_call_origin()
+     , call_beneficiary => aere_chain:default_call_beneficiary()
      , display_gas   => false
      , call_gas      => 100000000000000000
      , call_value    => 0
@@ -125,22 +132,22 @@ init_state() ->
     init_state(init_options()).
 
 -spec init_state(repl_options()) -> state().
-init_state(Opts) ->
-    Trees0 = aec_trees:new(),
-    {_, Trees} = aere_chain:new_account(100000000000000000000000000000, Trees0),
-    PK = <<0:256>>,
+init_state(Opts0) ->
+    #{ call_origin := CallOrigin
+     } = Opts = maps:merge(init_options(), Opts0),
+    Trees = aec_trees:new(),
+
     ChainState = aefa_chain_api:new(
                    #{ gas_price => 1,
                       fee       => 0,
                       trees     => Trees,
-                      origin    => PK,
+                      origin    => CallOrigin,
                       tx_env    => aere_chain:default_tx_env(1)
-                   }
+                    }
                   ),
     S0 = #rs{
        blockchain_state = {ready, ChainState},
-       repl_account     = PK,
-       options          = maps:merge(init_options(), Opts),
+       options          = Opts,
        filesystem       = maps:get(filesystem, Opts, local),
        contract_state   = ?DEFAULT_CONTRACT_STATE
       },
@@ -153,14 +160,6 @@ blockchain_state(#rs{blockchain_state = BlockchainState}) ->
 -spec set_blockchain_state(chain_state(), state()) -> state().
 set_blockchain_state(X, S) ->
     S#rs{blockchain_state = X}.
-
--spec repl_account(state()) -> binary().
-repl_account(#rs{repl_account = ReplAccount}) ->
-    ReplAccount.
-
--spec set_repl_account(binary(), state()) -> state().
-set_repl_account(X, S) ->
-    S#rs{repl_account = X}.
 
 -spec options(state()) -> repl_options().
 options(#rs{options = Options}) ->
@@ -276,13 +275,24 @@ set_function_symbols(Symbols, S) ->
 
 %% Advanced getters
 
--spec chain_api(state()) -> aefa_chain_api:state().
-chain_api(#rs{blockchain_state = {ready, Api}}) ->
+-spec get_chain_api(state()) -> aefa_chain_api:state().
+get_chain_api(#rs{blockchain_state = {ready, Api}}) ->
     Api;
-chain_api(#rs{blockchain_state = {breakpoint, ES}}) ->
+get_chain_api(#rs{blockchain_state = {breakpoint, ES}}) ->
     aefa_engine_state:chain_api(ES);
-chain_api(#rs{blockchain_state = {abort, ES}}) ->
+get_chain_api(#rs{blockchain_state = {abort, ES}}) ->
     aefa_engine_state:chain_api(ES).
+
+-spec set_chain_api(Api, state()) -> Api when
+      Api :: aefa_chain_api:state().
+set_chain_api(Api, S = #rs{blockchain_state = {ready, _}}) ->
+    S#rs{blockchain_state = {ready, Api}};
+set_chain_api(Api, S = #rs{blockchain_state = {breakpoint, ES}}) ->
+    ES1 = aefa_engine_state:set_chain_api(Api, ES),
+    S#rs{blockchain_state = {breakpoint, ES1}};
+set_chain_api(Api, S = #rs{blockchain_state = {abort, ES}}) ->
+    ES1 = aefa_engine_state:set_chain_api(Api, ES),
+    S#rs{blockchain_state = {breakpoint, ES1}}.
 
 -spec bump_nonce(state()) -> state().
 bump_nonce(S = #rs{query_nonce = N}) ->
@@ -293,3 +303,34 @@ update_cached_fs(_, #rs{filesystem = local}) ->
     error;
 update_cached_fs(Fs, S) when is_map(Fs) ->
     {ok,  S#rs{filesystem = {cached, Fs}}}.
+
+get_accounts(Priv, S) ->
+    Api = get_chain_api(S),
+    Trees = aefa_chain_api:final_trees(Api),
+    [ #{ public => PK
+       , private => maps:get(Priv, PK, unknown)
+       , balance => Balance
+       }
+     || {PK, Balance} <- aere_chain:get_accounts(Trees)
+    ].
+
+add_account(
+  #{ public => PubKey
+   , balance => Balance
+   } = Acc, S = #rs{private_keys = PrivKeys}) ->
+    S1 = eval_primops([aeprimop_state:put_account(PubKey, )
+
+
+%% Helpers
+
+get_trees(#rs{blockchain_state = {ready, Api}}) ->
+    aefa_chain_api:final_trees(Api);
+get_trees(#rs{blockchain_state = {breakpoint, ES}}) ->
+    aefa_fate:final_trees(ES);
+get_trees(#rs{blockchain_state = {abort, ES}}) ->
+    aefa_fate:final_trees(ES).
+
+eval_primops(Ops, S) ->
+    Api0 = get_chain_api(S),
+    Api1 = aefa_chain_api:eval_primops(Ops, Api0),
+    set_chain_api(Api1, S).

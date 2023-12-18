@@ -52,6 +52,7 @@
    , list_loaded_files/1
    , list_includes/1
    , list_breakpoints/1
+   , list_accounts/1
    , help/0, help/1
    , option_usage/1
    , bye/0
@@ -272,6 +273,21 @@ list_breakpoints(BPs) ->
       , aere_theme:output(io_lib:format(Msg, [F, L]))
       ] || {I, {F, L}} <- Enum(BPs) ].
 
+-spec list_accounts(aere_repl_state:accounts()) -> msg().
+list_accounts(Accs) ->
+    [ begin
+          PKStr = prettypr:format(aeso_pretty:expr({account_pubkey, [], PK})),
+          BalanceStr = integer_to_list(Balance),
+          [ aere_theme:output(PKStr)
+          , aere_theme:info(" : ")
+          , aere_theme:info(BalanceStr)
+          ]
+      end
+     || #{ public_key := PK
+         , balance := Balance
+         } <- Accs
+    ].
+
 -spec list_unknown([string()]) -> msg().
 list_unknown(ToList) ->
     aere_theme:error("Possible items to print: " ++ string:join(ToList, ", ")).
@@ -385,7 +401,8 @@ lookup(What, Data) ->
         "options"     -> list_options(Data);
         "files"       -> list_loaded_files(Data);
         "includes"    -> list_includes(Data);
-        "breakpoints" -> list_breakpoints(Data)
+        "breakpoints" -> list_breakpoints(Data);
+        "accounts"    -> list_accounts(Data)
     end.
 
 -spec fate(term()) -> msg().
