@@ -127,8 +127,7 @@ init_state() ->
 -spec init_state(repl_options()) -> state().
 init_state(Opts) ->
     Trees0 = aec_trees:new(),
-    {_, Trees} = aere_chain:new_account(100000000000000000000000000000, Trees0),
-    PK = <<0:256>>,
+    {PK, Trees} = aere_chain:new_account(100000000000000000000000000000, Trees0),
     ChainState = aefa_chain_api:new(
                    #{ gas_price => 1,
                       fee       => 0,
