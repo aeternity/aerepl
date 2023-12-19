@@ -9,18 +9,30 @@
 -type print_format() :: sophia | fate | json.
 -type return_mode() :: value | format | render.
 -type repl_options() ::
-        #{ theme       := aere_theme:theme()
-         , display_gas  := boolean()
-         , call_gas     := pos_integer()
-         , call_value   := non_neg_integer()
-         , print_format := print_format()
-         , return_mode  := return_mode()
-         , print_unit   := boolean()
-         , print_type   := boolean()
-         , loc_backwards := non_neg_integer()
-         , loc_forwards  := non_neg_integer()
-         , locked_opts  => [atom()]
-         , init_args    => [any()]
+        #{ % Theme used for rendering
+           theme        := aere_theme:theme()
+         , % Whether to measure gas usage on each eval
+           display_gas  := boolean()
+         , % How much gas to use for each eval
+           call_gas     := pos_integer()
+         , % What should `Call.value` return
+           call_value   := non_neg_integer()
+         , % How to display eval results and types
+           print_format := print_format()
+         , % Whether to render results and how, or return Erlang values
+           return_mode  := return_mode()
+         , % Whether to print () if the result is a 0-tuple
+           print_unit   := boolean()
+         , % Whether to attach type to each eval result
+           print_type   := boolean()
+         , % When looking up code location, how many lines backwards to show
+           loc_backwards := non_neg_integer()
+         , % When looking up code location, how many lines forwards to show
+           loc_forwards  := non_neg_integer()
+         , % Which options should be prevented from being changed
+           locked_opts  => [atom()]
+         , % Arguments used to initialize the REPL. Used in restarts.
+           init_args    => [any()]
          }.
 -type breakpoints() :: [{string(), integer()}].
 -type function_symbols() :: #{binary() => binary()}.
@@ -118,6 +130,7 @@ init_options() ->
      , loc_backwards => 5
      , loc_forwards  => 5
      , locked_opts   => []
+     , init_args     => []
     }.
 
 -spec init_state() -> state().
