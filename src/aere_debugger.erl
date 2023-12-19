@@ -57,9 +57,10 @@ delete_breakpoint(State, File, Line) ->
     aere_repl_state:set_breakpoints(NewBPs, State).
 
 
--spec resume_eval(ReplState, ResumeKind) -> EngineState | no_return()
+-spec resume_eval(ReplState, ResumeKind) -> {Result, ReplState} | no_return()
     when ReplState   :: aere_repl_state:state(),
-         EngineState :: aefa_engine_state:state(),
+         Result      :: {msg, aere_theme:renderable()}
+                      | aere_fate:eval_debug_result(),
          ResumeKind  :: continue | stepin | stepout | stepover.
 
 resume_eval(RS, Kind) ->

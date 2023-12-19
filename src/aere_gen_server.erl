@@ -583,7 +583,7 @@ server_error(State, Err, Stacktrace) ->
     throw({reply, {error, Msg}, State}).
 
 
--spec prompt_str(BlockchainState) -> string()
+-spec prompt_str(BlockchainState) -> binary()
     when BlockchainState :: ready | breakpoint | abort.
 
 prompt_str(ready)      -> <<"AESO">>;
