@@ -18,6 +18,8 @@
 
 -type command_spec() :: {atom(), {[atom()], command_scheme(), string(), string()}}.
 
+-export_type([command_spec/0]).
+
 
 -spec commands() -> [command_spec()].
 
@@ -162,7 +164,7 @@ resolve_command_by_alias(Alias, [Spec = {_, {Aliases, _, _, _}} | Rest]) ->
     end.
 
 
--spec parse(string()) -> {ok, parse_result()} | {error, aere_theme:renerable()}.
+-spec parse(string()) -> {ok, parse_result()} | {error, aere_theme:renderable()}.
 %% @doc
 %% Parse an input string. This function is called on strings entered by the user in the repl
 
