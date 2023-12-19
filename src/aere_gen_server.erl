@@ -157,8 +157,7 @@ handle_call(skip, _From, State) ->
     {reply, ok, State};
 
 handle_call(reset, _From, State) ->
-    Opts = aere_repl_state:options(State),
-    Args = maps:get(init_opts, Opts, []),
+    #{init_args := Args} = aere_repl_state:options(State),
     {ok, NewState} = init(Args),
     {reply, ok, NewState};
 
