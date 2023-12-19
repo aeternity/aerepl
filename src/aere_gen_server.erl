@@ -46,8 +46,8 @@
         , help/1
         , help_command/1
         , help_command/2
-        , print/1
-        , print/2
+        , lookup/1
+        , lookup/2
         , disas/1
         , disas/2
         , break/2
@@ -68,6 +68,8 @@
         , location/1
         , print_var/1
         , print_var/2
+        , print_vars/0
+        , print_vars/1
         , stacktrace/0
         , stacktrace/1
         , banner/0
@@ -83,12 +85,47 @@
         , prompt/1
         ]).
 
+-type result(V) ::
+        V
+      | finish
+      | ok
+      | binary()
+      | aere_theme:renderable().
+
+-export_type([result/1]).
 
 -define(HANDLE_ERRS(S, X),
     try X catch
         error:E:St -> server_error(S, E, St);
         E          -> server_error(S, E)
     end).
+
+-define(RENDER(S, Val, Format),
+    case aere_repl_state:options(S) of
+        #{return_mode := format} ->
+            Format;
+        #{return_mode := render, theme := Theme} ->
+            aere_theme:render(Theme, Format);
+        _ -> Val
+    end).
+
+-define(
+   HANDLE_ERRS_RENDER(S0, Compute, Val, Format),
+   ?HANDLE_ERRS(
+      S0,
+      begin
+          Val = Compute,
+          {reply, ?RENDER(S0, Val, Format), S0}
+      end)).
+
+-define(
+   HANDLE_ERRS_RENDER(S0, Compute, Val, S1, Format),
+   ?HANDLE_ERRS(
+      S0,
+      begin
+          {Val, S1} = Compute,
+          {reply, ?RENDER(S1, Val, Format), S1}
+      end)).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% GenServer
@@ -117,13 +154,13 @@ handle_call(quit, _From, State) ->
     {stop, normal, finish, State};
 
 handle_call(skip, _From, State) ->
-    {reply, no_output, State};
+    {reply, ok, State};
 
 handle_call(reset, _From, State) ->
     Opts = aere_repl_state:options(State),
     Args = maps:get(init_opts, Opts, []),
     {ok, NewState} = init(Args),
-    {reply, no_output, NewState};
+    {reply, ok, NewState};
 
 handle_call(bump_nonce, _From, State) ->
     {reply, ok, aere_repl_state:bump_nonce(State)};
@@ -136,78 +173,164 @@ handle_call(theme, _From, State) ->
     {reply, {theme, Theme}, State};
 
 handle_call({type, Expr}, _From, State) ->
-    ?HANDLE_ERRS(State, {reply, {ok, aere_repl:infer_type(Expr, State)}, State});
+    ?HANDLE_ERRS_RENDER(
+       State,
+       aere_repl:infer_type(Expr, State),
+       Type,
+       aere_msg:type(Type)
+      );
 
 handle_call({state, Val}, _From, State) ->
     ready_or_error(State),
-    ?HANDLE_ERRS(State, {reply, no_output, aere_repl:set_state(Val, State)});
+    ?HANDLE_ERRS(
+       State,
+       {reply, ok, aere_repl:set_state(Val, State)}
+      );
 
 handle_call({eval, Code}, _From, State) ->
     ready_or_error(State),
-    case ?HANDLE_ERRS(State, aere_repl:eval_code(Code, State)) of
-        {Msg, NewState} -> {reply, {ok, Msg}, NewState};
-        NewState        -> {reply, no_output, NewState}
-    end;
+    ?HANDLE_ERRS_RENDER(
+       State,
+       aere_repl:eval_code(Code, State),
+       Res, State1,
+       aere_msg:eval(Res, aere_repl_state:options(State1))
+      );
 
 handle_call({load, Modules}, _From, State) ->
     ready_or_error(State),
-    ?HANDLE_ERRS(State, {reply, no_output, aere_repl:load_modules(Modules, State)});
+    ?HANDLE_ERRS(
+       State,
+       {reply, ok, aere_repl:load_modules(Modules, State)}
+      );
 
 handle_call(reload, _From, State) ->
     ready_or_error(State),
-    ?HANDLE_ERRS(State, {reply, no_output, aere_repl:reload_modules(State)});
+    ?HANDLE_ERRS(
+       State,
+       {reply, ok, aere_repl:reload_modules(State)}
+      );
 
 handle_call({set, Option, Args}, _From, State) ->
     ready_or_error(State),
-    ?HANDLE_ERRS(State, {reply, no_output, aere_repl:set_option(Option, Args, State)});
+    ?HANDLE_ERRS(
+       State,
+       {reply, ok, aere_repl:set_option(Option, Args, State)}
+      );
 
 handle_call(help, _From, State) ->
-    {reply, {ok, aere_msg:help()}, State};
+    ?HANDLE_ERRS_RENDER(
+       State,
+       aere_parse:commands(),
+       Help,
+       aere_msg:help()
+      );
 
 handle_call({help, Command}, _From, State) ->
-    {reply, {ok, aere_msg:help(Command)}, State};
+    ?HANDLE_ERRS_RENDER(
+       State,
+       aere_parse:resolve_command(Command),
+       Spec,
+       case Spec of
+           undefined -> aere_msg:help();
+           _ -> aere_msg:help(Spec)
+       end);
 
-handle_call({print, What}, _From, State) ->
-    ?HANDLE_ERRS(State, {reply, {ok, aere_repl:print_state(State, What)}, State});
+handle_call({lookup, What}, _From, State) ->
+    ?HANDLE_ERRS_RENDER(
+       State,
+       aere_repl:lookup_state(State, What),
+       Data,
+       aere_msg:lookup(What, Data)
+      );
 
 handle_call({disas, What}, _From, State) ->
-    ?HANDLE_ERRS(State, {reply, {ok, aere_repl:disassemble(What, State)}, State});
+    ?HANDLE_ERRS_RENDER(
+       State,
+       aere_repl:disassemble(What, State),
+       Fate,
+       aere_msg:fate(Fate)
+      );
 
 handle_call({break, File, Line}, _From, State) ->
-    ?HANDLE_ERRS(State, {reply, no_output, aere_debugger:add_breakpoint(State, File, Line)});
+    ?HANDLE_ERRS(
+       State,
+       {reply, ok, aere_debugger:add_breakpoint(State, File, Line)}
+      );
 
 handle_call({delete_break, Index}, _From, State) ->
-    ?HANDLE_ERRS(State, {reply, no_output, aere_debugger:delete_breakpoint(State, Index)});
+    ?HANDLE_ERRS(
+       State,
+       {reply, ok, aere_debugger:delete_breakpoint(State, Index)}
+      );
 
 handle_call({delete_break_loc, File, Line}, _From, State) ->
-    ?HANDLE_ERRS(State, {reply, no_output, aere_debugger:delete_breakpoint(State, File, Line)});
+    ?HANDLE_ERRS(
+       State,
+       {reply, ok, aere_debugger:delete_breakpoint(State, File, Line)}
+      );
 
 handle_call(Resume, _From, State)
   when Resume == continue;
        Resume == stepover;
        Resume == stepin;
        Resume == stepout ->
-    {Out, NewState} = ?HANDLE_ERRS(State, aere_debugger:resume_eval(State, Resume)),
-    {reply, {ok, Out}, NewState};
+    ?HANDLE_ERRS_RENDER(
+       State,
+       aere_debugger:resume_eval(State, Resume),
+       Res, State0,
+       aere_msg:eval(Res, aere_repl_state:options(State0))
+      );
 
 handle_call(location, _From, State) ->
-    ?HANDLE_ERRS(State, {reply, {ok, aere_debugger:source_location(State)}, State} );
+    ?HANDLE_ERRS_RENDER(
+       State,
+       aere_debugger:source_location(State),
+       L,
+       aere_msg:location(L, State)
+      );
 
 handle_call({print_var, Var}, _From, State) ->
-    ?HANDLE_ERRS(State, {reply, {ok, aere_debugger:lookup_variable(State, Var)}, State});
+    ?HANDLE_ERRS_RENDER(
+       State,
+       aere_debugger:lookup_variable(State, Var),
+       VarR,
+       aere_msg:output(VarR)
+      );
 
 handle_call(print_vars, _From, State) ->
-    ?HANDLE_ERRS(State, {reply, {ok, aere_debugger:dump_variables(State)}, State});
+    ?HANDLE_ERRS_RENDER(
+       State,
+       aere_debugger:get_variables(State),
+       Vars,
+       aere_msg:debug_vars(Vars)
+      );
 
 handle_call(stacktrace, _From, State) ->
-    ?HANDLE_ERRS(State, {reply, {ok, aere_debugger:stacktrace(State)}, State});
+    ?HANDLE_ERRS_RENDER(
+       State,
+       aere_debugger:stacktrace(State),
+       Stacktrace,
+       aere_msg:stacktrace(Stacktrace)
+      );
+
+handle_call(version, _From, State) ->
+    ?HANDLE_ERRS_RENDER(
+      State,
+      aere_version:version_info(),
+      Vsn,
+      aere_msg:version_info(Vsn)
+     );
 
 handle_call(banner, _From, State) ->
-    #{ theme := Theme } = aere_repl_state:options(State),
-    {reply, aere_theme:render(Theme, aere_msg:banner()), State};
+    Out = ?RENDER(
+             State,
+             aere_theme:render(aere_msg:banner()),
+             aere_msg:banner()
+            ),
+    {reply, Out, State};
 
 handle_call(_, _, State) ->
-    {noreply, State}.
+    {reply, ok, State}.
 
 
 handle_cast({update_filesystem_cache, Fs}, State) ->
@@ -215,7 +338,7 @@ handle_cast({update_filesystem_cache, Fs}, State) ->
     ?HANDLE_ERRS(State, {noreply, aere_repl:update_filesystem_cache(Fs, State)});
 
 handle_cast(_, State) ->
-    {noreply, State}.
+    {reply, ok, State}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% API
@@ -291,9 +414,9 @@ help_command(Command) ->
 help_command(ServerName, Command) ->
     gen_server:call(ServerName, {help, Command}).
 
-print(What) ->
-    print(?MODULE, What).
-print(ServerName, What) ->
+lookup(What) ->
+    lookup(?MODULE, What).
+lookup(ServerName, What) ->
     gen_server:call(ServerName, {print, What}).
 
 disas(What) ->
@@ -346,6 +469,11 @@ print_var(Var) ->
 print_var(ServerName, Var) ->
     gen_server:call(ServerName, {print_var, Var}).
 
+print_vars() ->
+    print_var(?MODULE).
+print_vars(ServerName) ->
+    gen_server:call(ServerName, print_vars).
+
 stacktrace() ->
     stacktrace(?MODULE).
 stacktrace(ServerName) ->
@@ -366,24 +494,27 @@ update_filesystem_cache(ServerName, Fs) ->
 %%% Complex calls
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec render(aere_theme:renderable()) -> string().
+-spec render(aere_theme:renderable()) -> binary().
 render(Message) ->
     render(?MODULE, Message).
 render(ServerName, Message) ->
     {theme, Theme} = gen_server:call(ServerName, theme),
     aere_theme:render(Theme, Message).
 
--spec input(string()) -> {ok, Message} | {error, Message} | no_output | finish
-    when Message :: aere_theme:renderable().
+-spec input(string()) -> {ok, Result} | {error, ErrMsg} when
+      Result :: result(any()),
+      ErrMsg :: binary().
 input(Input) ->
     input(?MODULE, Input).
 input(ServerName, Input) ->
     case aere_parse:parse(Input) of
-        Err = {error, _} ->
-            Err;
-        Command ->
-            gen_server:call(ServerName, bump_nonce),
-            gen_server:call(ServerName, Command)
+        {error, Err} ->
+            ErrStr = render(ServerName, Err),
+            {error, ErrStr};
+        {ok, Command} ->
+            bump_nonce(ServerName),
+            Result = gen_server:call(ServerName, Command),
+            {ok, Result}
     end.
 
 prompt() ->
@@ -413,30 +544,48 @@ ready_or_error(State) ->
          Msg       :: aere_theme:renderable().
 
 server_error(State, {repl_error, Err}) ->
-    throw({reply, {error, Err}, State});
+    Msg = ?RENDER(State, Err, Err), % TODO: structured errors
+    throw({reply, {error, Msg}, State});
 
 server_error(State, {revert, Err}) ->
-    throw({reply, {error, aere_msg:error(Err)}, State});
+    Msg = ?RENDER(State, Err, aere_msg:error(Err)),
+    throw({reply, {error, Msg}, State});
 
 server_error(State, {aefa_fate, FateErr, _}) ->
-    throw({reply, {error, aere_msg:error(io_lib:format("FATE error: ~s", [FateErr]))}, State});
+    Msg = ?RENDER(
+             State,
+             FateErr,
+             aere_msg:error(io_lib:format("FATE error: ~s", [FateErr]))
+            ),
+    throw({reply, {error, Msg}, State});
 
 server_error(State, Err) ->
-    throw({reply, {error, aere_msg:error(io_lib:format("Unknown error: ~p", [Err]))}, State}).
+    Msg = ?RENDER(
+             State,
+             Err,
+             aere_msg:error(io_lib:format("Unknown error: ~p", [Err]))
+            ),
+    throw({reply, {error, Msg}, State}).
 
 
--spec server_error(ReplState, Error, erlang:stacktrace()) -> {reply, {error, Msg}, ReplState}
+-spec server_error(ReplState, Error, erlang:stacktrace()) ->
+          {reply, {error, Msg}, ReplState}
     when ReplState :: aere_repl_state:state(),
          Error     :: term(),
-         Msg       :: aere_theme:renderable().
+         Msg       :: term().
 
 server_error(State, Err, Stacktrace) ->
-    throw({reply, {error, aere_msg:internal(Err, Stacktrace)}, State}).
+    Msg = ?RENDER(
+             State,
+             {Err, Stacktrace},
+             aere_msg:internal(Err, Stacktrace)
+            ),
+    throw({reply, {error, Msg}, State}).
 
 
--spec prompt_str(BlockchainState) -> string()
+-spec prompt_str(BlockchainState) -> binary()
     when BlockchainState :: ready | breakpoint | abort.
 
-prompt_str(ready)      -> "AESO";
-prompt_str(breakpoint) -> "AESO(DBG)";
-prompt_str(abort)      -> "AESO(ABORT)".
+prompt_str(ready)      -> <<"AESO">>;
+prompt_str(breakpoint) -> <<"AESO(DBG)">>;
+prompt_str(abort)      -> <<"AESO(ABORT)">>.

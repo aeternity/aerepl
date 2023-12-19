@@ -5,6 +5,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [3.2.0] - 2023.12.19
+
+### Added
+- Option to return rendered results
+- Option to return raw erlang values for successful calls to the gen server
+- Several options to configure printing format
+### Changed
+- Themed rendering now returns bytestrings
+- `print` is renamed to `lookup`
+- `aere_repl` more often returns a tuple `{Result, repl_state()}`
+- CLI uses REPL supervisor directly
+### Removed
+- In-repl functions
+
+
 ## [3.1.1] - 2023.12.10
 
 ### Added

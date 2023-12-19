@@ -1,44 +1,63 @@
 -module(aere_msg).
 
--export([ banner/0
-        , output/1
-        , used_gas/1
-        , error/1
-        , abort/2
-        , internal/1
-        , internal/2
-        , eval_result/2
-        , no_such_command/1
-        , bad_command_args/2
-        , file_not_loaded/1
-        , files_load_error/1
-        , state_typedef/0
-        , event_typedef/0
-        , chain_not_ready/0
-        , chain_not_running/0
-        , locked_option/0
-        , option_usage/1
-        , list_vars/1
-        , list_types/1
-        , list_options/1
-        , list_loaded_files/1
-        , list_includes/1
-        , list_breakpoints/1
-        , list_unknown/1
-        , bad_fun_ref/0
-        , contract_not_found/0
-        , function_not_found_in/1
-        , not_at_breakpoint/0
-        , stacktrace/1
-        , breakpoint_out_of_range/1
-        , breakpoint_wrong_location/2
-        , breakpoint_file_not_loaded/1
-        , filesystem_not_cached/0
-        , contract_exec_ended/0
-        , undefined_variable/1
-        , help/0, help/1
-        , bye/0
-        ]).
+-include("aere_macros.hrl").
+
+%% Misc
+-export(
+   [ output/1
+   , error/1
+   , internal/1
+   , internal/2
+   ]).
+
+%% Errors
+-export(
+   [ abort/2
+   , no_such_command/1
+   , bad_command_args/2
+   , file_not_loaded/1
+   , files_load_error/1
+   , state_typedef/0
+   , event_typedef/0
+   , chain_not_ready/0
+   , chain_not_running/0
+   , locked_option/0
+   , list_unknown/1
+   , bad_fun_ref/0
+   , contract_not_found/0
+   , function_not_found_in/1
+   , not_at_breakpoint/0
+   , breakpoint_out_of_range/1
+   , breakpoint_wrong_location/2
+   , breakpoint_file_not_loaded/1
+   , filesystem_not_cached/0
+   , contract_exec_ended/0
+   , undefined_variable/1
+   , unsupported_eval/1
+   ]).
+
+%% Messages
+-export(
+   [ banner/0
+   , version_info/1
+   , eval/2
+   , used_gas/1
+   , stacktrace/1
+   , type/1
+   , lookup/2
+   , fate/1
+   , location/2
+   , list_vars/1
+   , list_types/1
+   , list_options/1
+   , list_loaded_files/1
+   , list_includes/1
+   , list_breakpoints/1
+   , help/0, help/1
+   , option_usage/1
+   , bye/0
+   , debug_vars/1
+   ]).
 
 -type msg() :: aere_theme:renderable().
 
@@ -58,15 +77,17 @@ banner() ->
 
     SophiaThemed = aere_theme:banner(Sophia),
     InteractiveThemed = aere_theme:banner_sub(Interactive),
-    VersionInfo = version_info(),
+    VersionInfo = version_info(aere_version:version_info()),
 
     [SophiaThemed, InteractiveThemed, VersionInfo].
 
-version_info() ->
-    REPL = aere_version:repl_version(),
-    Sophia = aere_version:compiler_version(),
-    Protocol = aere_version:protocol_version(),
-    Node = aere_version:node_version(),
+version_info(
+  #{ protocol_version := Protocol
+   , repl_version := REPL
+   , compiler_version := Sophia
+   , node_version := Node
+   }
+ ) ->
 
     aere_theme:info(
       string:join(
@@ -115,7 +136,13 @@ stacktrace(Stack) ->
       , aere_theme:output(binary:bin_to_list(Fun)), aere_theme:info(":")
       , aere_theme:info(NonEmpty(File) ++ ":" ++ integer_to_list(Line) ++ "\n")
       ]
-     || {I, {Con, Fun, File, Line}} <- lists:zip(lists:seq(1, length(Stack)), Stack)
+     || {I,
+         #{ contract := Con
+          , function := Fun
+          , file := File
+          , line := Line
+          }
+        } <- lists:zip(lists:seq(1, length(Stack)), Stack)
     ].
 
 -spec internal(term(), erlang:stacktrace()) -> msg().
@@ -132,16 +159,6 @@ internal(Error, Stacktrace) ->
 -spec internal(term()) -> msg().
 internal(Error) ->
     internal(Error, []).
-
--spec eval_result(string() | none, integer() | none) -> msg().
-eval_result(none, none) ->
-    [];
-eval_result(Res, none) ->
-    [aere_theme:output(Res)];
-eval_result(none, Gas) ->
-    [used_gas(Gas)];
-eval_result(Res, Gas) ->
-    [aere_theme:output(Res ++ "\n"), used_gas(Gas)].
 
 -spec no_such_command(atom()) -> msg().
 no_such_command(Command) ->
@@ -294,11 +311,29 @@ breakpoint_file_not_loaded(FileName) ->
 
 -spec filesystem_not_cached() -> msg().
 filesystem_not_cached() ->
-    aere_theme:error(io_lib:format("This operation is allowed only when the filesystem is in cached mode.")).
+    aere_theme:error("This operation is allowed only when the filesystem is in cached mode.").
 
 -spec undefined_variable(string()) -> msg().
 undefined_variable(VarName) ->
     aere_theme:error(io_lib:format("Undefined variable `~s`", [VarName])).
+
+-spec unsupported_eval(aere_sophia:parse_result()) -> msg().
+unsupported_eval([{letfun, Ann, FName, Args, _RetT, _Body}]) ->
+    Wildcard = {id, [{origin, system}], "_"},
+    Hole = {id, [{origin, system}], "???"},
+    LamArgs = [{arg, Ann, Wildcard, Hole} || _A <- Args],
+    Lam = {lam, Ann, LamArgs, Wildcard},
+    LetLam = {letval, Ann, FName, Lam},
+
+    ErrMsg = aere_theme:error("Top-level function definitions are not supported.\n"),
+    HintMsg = aere_theme:info("Hint: maybe a non-recursive lambda would work:\n"),
+    ExampleMsg = aere_theme:info(prettypr:format(aeso_pretty:decl(LetLam))),
+
+    [ErrMsg, HintMsg, ExampleMsg];
+unsupported_eval([_, _ | _]) ->
+    aere_theme:error("Multiple queries are not supported.");
+unsupported_eval(_) ->
+    aere_theme:error("Unsupported query").
 
 -spec bye() -> msg().
 bye() -> aere_theme:output("bye!").
@@ -315,15 +350,95 @@ help() ->
 
     aere_theme:info(string:join(Help, "\n")).
 
--spec help(any()) -> msg().
-help(What) ->
-    case aere_parse:resolve_command(list_to_atom(What)) of
-        {Cmd, {Aliases, _, ArgDoc, Doc}} ->
-            AliasesStr = string:join([":" ++ atom_to_list(A) || A <- Aliases], ", "),
-            command_usage(Cmd, ArgDoc) ++
-                [aere_theme:info("\nALIASES: "), aere_theme:command(AliasesStr)] ++
-                [aere_theme:output("\n\n")] ++
-                [aere_theme:info(string:join(Doc, "\n"))];
-        _ ->
-            help()
+-spec help(aere_parse:command_spec()) -> msg().
+help(Spec) ->
+    {Cmd, {Aliases, _, ArgDoc, Doc}} = Spec,
+    AliasesStr = string:join([":" ++ atom_to_list(A) || A <- Aliases], ", "),
+    command_usage(Cmd, ArgDoc) ++
+        [aere_theme:info("\nALIASES: "), aere_theme:command(AliasesStr)] ++
+        [aere_theme:output("\n\n")] ++
+        [aere_theme:info(string:join(Doc, "\n"))]
+        .
+
+-spec type(aeso_syntax:type()) -> msg().
+type(Type) ->
+    TypeStr = aeso_ast_infer_types:pp_type("", Type),
+    TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER_RE, "", [global, {return, list}]),
+    aere_msg:output(TypeStrClean).
+
+-spec eval(Eval, aere_repl_state:options()) -> msg() when
+      Eval :: ok | {msg, msg()} | aere_fate:eval_debug_result().
+eval(ok, _) ->
+    [];
+eval({msg, Msg}, _) ->
+    Msg;
+eval({ok, #{result := Res, type := Type, used_gas := UsedGas}}, Opts) ->
+    #{ display_gas  := DisplayGas,
+       print_unit   := PrintUnit,
+       print_type   := PrintType
+     } = Opts,
+    TypeStr = aeso_ast_infer_types:pp_type("", Type),
+    PrintRes =
+        case Type of
+            {id, _, "unit"} -> PrintUnit;
+            {tuple_t, _, []} -> PrintUnit;
+            _ -> true
+        end,
+
+    [ [aere_theme:output(Res) || PrintRes]
+    , [aere_theme:info(" : " ++ TypeStr) || PrintRes andalso PrintType]
+    , ["\n" || PrintRes andalso DisplayGas]
+    , [used_gas(UsedGas) || DisplayGas]
+    ];
+eval(break, _Opts) ->
+    aere_msg:output("Break");
+eval({revert, #{err_msg := ErrMsg, stacktrace := Stacktrace}}, _Opts) ->
+    abort(ErrMsg, Stacktrace).
+
+-spec lookup(string(), list(term())) -> msg().
+lookup(What, Data) ->
+    case What of
+        "vars"        -> list_vars(Data);
+        %% "funs"        -> aere_msg:list_funs(Data),
+        "types"       -> list_types(Data);
+        "options"     -> list_options(Data);
+        "files"       -> list_loaded_files(Data);
+        "includes"    -> list_includes(Data);
+        "breakpoints" -> list_breakpoints(Data)
     end.
+
+-spec fate(term()) -> msg().
+fate(Fate) ->
+    FateStr = lists:flatten(aeb_fate_asm:pp(Fate)),
+    aere_msg:output(FateStr).
+
+-spec location(Location, aere_repl_state:state()) -> msg() when
+      Location :: aere_debugger:source_location().
+location(#{file := FileName, line := CurrentLine}, RS) ->
+    #{ loc_backwards := LocBackwards
+     , loc_forwards := LocForwards
+     } = aere_repl_state:options(RS),
+    File     = aere_files:read_file(FileName, RS),
+    Lines    = string:split(File, "\n", all),
+    Enumerate     = fun(List) -> lists:zip(lists:seq(1, length(List)), List) end,
+    SelectLines   = [ {Idx, Line}
+                      || {Idx, Line} <- Enumerate(Lines),
+                         Idx > CurrentLine - LocBackwards,
+                         Idx < CurrentLine + LocForwards
+                    ],
+
+    LineSign =
+        fun(Id) when Id == CurrentLine -> ">";
+           (_)                         -> "|"
+        end,
+    MaxDigits     = length(integer_to_list(length(Lines))),
+    FormatLineNum = fun(Num) -> string:right(integer_to_list(Num), MaxDigits) end,
+    FormatLine    = fun(N, Ln) -> [LineSign(N), " ", FormatLineNum(N), " ", Ln] end,
+    NewLines = [FormatLine(Idx, Line) || {Idx, Line} <- SelectLines],
+    aere_msg:output(lists:join("\n", NewLines)).
+
+-spec debug_vars(list({string(), string()})) -> msg().
+debug_vars(Vars) ->
+    Dump = [io_lib:format("~s:\t~s", [K, V]) || {K, V} <- Vars],
+
+    output(lists:join("\n", Dump)).

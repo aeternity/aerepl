@@ -13,34 +13,35 @@ load_paths() ->
 
 main(_Args) ->
     load_paths(),
-    application:ensure_all_started(aerepl),
+    {ok, _Sup} = aere_supervisor:start_link([{options, #{return_mode => render}}]),
     start().
 
 start() ->
     Banner = aere_gen_server:banner(),
-    io:format(Banner ++ "\n\n"),
+    io:format("~s\n\n", [Banner]),
     loop().
 
 loop() ->
     Input = get_input(),
     try aere_gen_server:input(Input) of
+        {ok, finish} ->
+            finish;
         {ok, Msg} ->
-            print_msg(aere_gen_server:render(Msg)),
+            print_msg(Msg),
             loop();
         {error, Err} ->
-            print_msg(aere_gen_server:render(Err)),
-            loop();
-        no_output ->
-            loop();
-        finish ->
-            ok
+            print_msg(Err),
+            loop()
     catch
         _:E:Stack ->
             print_msg(aere_theme:render(aere_msg:internal(E, Stack))),
             loop()
     end.
 
-print_msg("") -> ok;
+print_msg(ok) -> ok;
+print_msg(<<"">>) -> ok;
+print_msg({error, Msg}) ->
+    io:format("~s\n", [Msg]);
 print_msg(Msg) ->
     io:format("~s\n", [Msg]).
 
@@ -50,7 +51,7 @@ print_msg(Msg) ->
 get_input() ->
     Prompt = aere_gen_server:prompt(),
     Line =
-        case io:get_line(Prompt ++ "> ") of
+        case io:get_line(binary:bin_to_list(Prompt) ++ "> ") of
             eof          -> ":quit"; % that's dirty
             {error, Err} -> exit(Err);
             Data         -> Data

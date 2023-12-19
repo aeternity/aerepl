@@ -5,11 +5,17 @@
         , delete_breakpoint/3
         , resume_eval/2
         , lookup_variable/2
-        , dump_variables/1
+        , get_variables/1
         , source_location/1
         , stacktrace/1
         ]).
 
+-type source_location() ::
+        #{ file := string()
+         , line := non_neg_integer()
+         }.
+
+-export_type([source_location/0]).
 
 -spec add_breakpoint(ReplState, FileName, Line) -> ReplState
     when ReplState :: aere_repl_state:state(),
@@ -51,9 +57,10 @@ delete_breakpoint(State, File, Line) ->
     aere_repl_state:set_breakpoints(NewBPs, State).
 
 
--spec resume_eval(ReplState, ResumeKind) -> EngineState | no_return()
+-spec resume_eval(ReplState, ResumeKind) -> {Result, ReplState} | no_return()
     when ReplState   :: aere_repl_state:state(),
-         EngineState :: aefa_engine_state:state(),
+         Result      :: {msg, aere_theme:renderable()}
+                      | aere_fate:eval_debug_result(),
          ResumeKind  :: continue | stepin | stepout | stepover.
 
 resume_eval(RS, Kind) ->
@@ -61,11 +68,11 @@ resume_eval(RS, Kind) ->
         {abort, _} ->
             Chain = aere_repl_state:chain_api(RS),
             NewRS = aere_repl_state:set_blockchain_state({ready, Chain}, RS),
-            {aere_msg:contract_exec_ended(), NewRS};
+            {{msg, aere_msg:contract_exec_ended()}, NewRS};
         _ ->
             ES0 = breakpoint_engine_state(RS),
             ES1 = resume(ES0, Kind),
-            aere_repl:eval_handler(RS, aere_fate:resume_contract_debug(ES1, RS))
+            aere_fate:resume_contract_debug(ES1, RS)
     end.
 
 
@@ -84,20 +91,11 @@ resume(ES, Kind) ->
     aefa_engine_state:set_debug_info(Info, ES).
 
 
--spec lookup_variable(ReplState, VariableName) -> Renderable | no_return()
+-spec lookup_variable(ReplState, VariableName) -> string() | no_return()
     when ReplState    :: aere_repl_state:state(),
-         VariableName :: aere_theme:renderable(),
-         Renderable   :: aere_theme:renderable().
+         VariableName :: string().
 
 lookup_variable(RS, VarName) ->
-    aere_msg:output(lookup_variable_unthemed(RS, VarName)).
-
-
--spec lookup_variable_unthemed(ReplState, VariableName) -> string() | no_return()
-    when ReplState    :: aere_repl_state:state(),
-         VariableName :: aere_theme:renderable().
-
-lookup_variable_unthemed(RS, VarName) ->
     ES = breakpoint_engine_state(RS),
     case aefa_debug:get_variable_register(VarName, aefa_engine_state:debug_info(ES)) of
         undefined ->
@@ -108,11 +106,11 @@ lookup_variable_unthemed(RS, VarName) ->
     end.
 
 
-- spec dump_variables(ReplState) -> Renderable
+- spec get_variables(ReplState) -> Vars
     when ReplState  :: aere_repl_state:state(),
-         Renderable :: aere_theme:renderable().
+         Vars :: list({string(), string()}).
 
-dump_variables(RS) ->
+get_variables(RS) ->
     ES = breakpoint_engine_state(RS),
     AllVars = aefa_debug:vars_registers(aefa_engine_state:debug_info(ES)),
 
@@ -120,45 +118,30 @@ dump_variables(RS) ->
     %% the repl instead of the called debugged code)
     VarsRegisters = maps:filter(fun(_, []) -> false; (_, _) -> true end, AllVars),
 
-    Lookup = fun(K, _) ->
-        io_lib:format("~s: ~s", [K, lookup_variable_unthemed(RS, K)]) end,
-    Dump = maps:map(Lookup, VarsRegisters),
-
-    aere_msg:output(lists:join("\n", maps:values(Dump))).
+    Vars = [{K, lookup_variable(RS, K)} || K <- maps:keys(VarsRegisters)],
+    Vars.
 
 
--spec source_location(ReplState) -> Source | no_return()
+-spec source_location(ReplState) -> Location | no_return()
     when ReplState :: aere_repl_state:state(),
-         Source    :: aere_theme:renderable().
+         Location  :: source_location().
 
 source_location(RS) ->
     ES = breakpoint_engine_state(RS),
-
-    {FileName, CurrentLine} = aefa_debug:debugger_location(aefa_engine_state:debug_info(ES)),
-
-    File     = aere_files:read_file(FileName, RS),
-    Lines    = string:split(File, "\n", all),
-    LineSign =
-        fun(Id) when Id == CurrentLine -> ">";
-           (_)                         -> "|"
-        end,
-    MaxDigits     = length(integer_to_list(length(Lines))),
-    FormatLineNum = fun(Num) -> string:right(integer_to_list(Num), MaxDigits) end,
-    FormatLine    = fun(N, Ln) -> [LineSign(N), " ", FormatLineNum(N), " ", Ln] end,
-    Enumerate     = fun(List) -> lists:zip(lists:seq(1, length(List)), List) end,
-    NewLines      = [ FormatLine(Idx, Line)
-                        || {Idx, Line} <- Enumerate(Lines)
-                         , Idx < CurrentLine + 5, Idx > CurrentLine - 5 ],
-    aere_msg:output(lists:join("\n", NewLines)).
+    Dbg = aefa_engine_state:debug_info(ES),
+    {FileName, CurrentLine} = aefa_debug:debugger_location(Dbg),
+    #{file => FileName,
+      line => CurrentLine
+     }.
 
 
 -spec stacktrace(ReplState) -> Message | no_return()
     when ReplState :: aere_repl_state:state(),
-         Message   :: aere_theme:renderable().
+         Message   :: aere_fate:stacktrace().
 
 stacktrace(RS) ->
     ES = breakpoint_engine_state(RS),
-    aere_msg:stacktrace(aere_fate:get_stack_trace(RS, ES)).
+    aere_fate:get_stack_trace(RS, ES).
 
 
 -spec breakpoint_engine_state(ReplState) -> EngineState | no_return()

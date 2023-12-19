@@ -7,16 +7,33 @@
 -include("aere_macros.hrl").
 
 -type print_format() :: sophia | fate | json.
+-type return_mode() :: value | format | render.
 -type repl_options() ::
-        #{ theme       := aere_theme:theme()
-        , display_gas  := boolean()
-        , call_gas     := pos_integer()
-        , call_value   := non_neg_integer()
-        , print_format := print_format()
-        , print_unit   := boolean()
-        , locked_opts  => [atom()]
-        }.
--type command_res() :: finish | {aere_theme:renderable(), state()} | state() | no_return().
+        #{ % Theme used for rendering
+           theme        := aere_theme:theme()
+         , % Whether to measure gas usage on each eval
+           display_gas  := boolean()
+         , % How much gas to use for each eval
+           call_gas     := pos_integer()
+         , % What should `Call.value` return
+           call_value   := non_neg_integer()
+         , % How to display eval results and types
+           print_format := print_format()
+         , % Whether to render results and how, or return Erlang values
+           return_mode  := return_mode()
+         , % Whether to print () if the result is a 0-tuple
+           print_unit   := boolean()
+         , % Whether to attach type to each eval result
+           print_type   := boolean()
+         , % When looking up code location, how many lines backwards to show
+           loc_backwards := non_neg_integer()
+         , % When looking up code location, how many lines forwards to show
+           loc_forwards  := non_neg_integer()
+         , % Which options should be prevented from being changed
+           locked_opts  => [atom()]
+         , % Arguments used to initialize the REPL. Used in restarts.
+           init_args    => [any()]
+         }.
 -type breakpoints() :: [{string(), integer()}].
 -type function_symbols() :: #{binary() => binary()}.
 -type var() :: {string(), aeso_syntax:type(), term()}.
@@ -28,27 +45,30 @@
                      | {abort, aefa_engine_state:state()}.
 -type filesystem() :: local | {cached, #{string() => binary()}}.
 
--record(rs, { blockchain_state       :: chain_state()
-            , repl_account           :: binary()
-            , options                :: repl_options()
-            , contract_state         :: contract_state()
-            , vars           = []    :: [var()]
-            , funs           = #{}   :: #{binary() => term()}
-            , typedefs       = []    :: [type_def()]
-            , type_scope     = []    :: [type_scope()]
-            , filesystem     = local :: filesystem() % Whether to load files from disc or pre-defined map
-            , loaded_files   = #{}   :: #{string() => binary()} % Loaded files ready to be included
-            , included_files = []    :: [string()] % Files included in the context
-            , included_code  = []    :: aeso_syntax:ast() % Cached AST of the included files
-            , query_nonce    = 0     :: non_neg_integer()
-            , breakpoints    = []    :: breakpoints()
-            , function_symbols = #{} :: #{binary() => binary()}
-            , type_env = none        :: none | term()
-            }).
+-record(rs,
+        { blockchain_state       :: chain_state()
+        , repl_account           :: binary()
+        , options                :: repl_options()
+        , contract_state         :: contract_state()
+        , vars           = []    :: [var()]
+        , funs           = #{}   :: #{binary() => term()}
+        , typedefs       = []    :: [type_def()]
+        , type_scope     = []    :: [type_scope()]
+        , filesystem     = local :: filesystem() % Whether to load files from disc or pre-defined map
+        , loaded_files   = #{}   :: #{string() => binary()} % Loaded files ready to be included
+        , included_files = []    :: [string()] % Files included in the context
+        , included_code  = []    :: aeso_syntax:ast() % Cached AST of the included files
+        , query_nonce    = 0     :: non_neg_integer()
+        , breakpoints    = []    :: breakpoints()
+        , function_symbols = #{} :: #{binary() => binary()}
+        , type_env = none        :: none | term()
+        }).
 
 -opaque state() :: #rs{}.
 
--export_type([state/0, type_scope/0, type_def/0, repl_options/0, command_res/0, function_symbols/0, breakpoints/0]).
+-export_type(
+   [ state/0, type_scope/0, type_def/0, repl_options/0
+   , function_symbols/0, breakpoints/0]).
 
 -export([ init_state/0, init_state/1
         , init_options/0
@@ -100,11 +120,17 @@
 -spec init_options() -> repl_options().
 init_options() ->
     #{ theme => aere_theme:default_theme()
-    , display_gas => false
-    , call_gas => 100000000000000000
-    , call_value => 0
-    , print_format => sophia
-    , print_unit => false
+     , display_gas   => false
+     , call_gas      => 100000000000000000
+     , call_value    => 0
+     , print_format  => sophia
+     , return_mode   => value
+     , print_unit    => false
+     , print_type    => false
+     , loc_backwards => 5
+     , loc_forwards  => 5
+     , locked_opts   => []
+     , init_args     => []
     }.
 
 -spec init_state() -> state().
@@ -114,8 +140,7 @@ init_state() ->
 -spec init_state(repl_options()) -> state().
 init_state(Opts) ->
     Trees0 = aec_trees:new(),
-    {_, Trees} = aere_chain:new_account(100000000000000000000000000000, Trees0),
-    PK = <<0:256>>,
+    {PK, Trees} = aere_chain:new_account(100000000000000000000000000000, Trees0),
     ChainState = aefa_chain_api:new(
                    #{ gas_price => 1,
                       fee       => 0,
@@ -275,7 +300,7 @@ chain_api(#rs{blockchain_state = {abort, ES}}) ->
 bump_nonce(S = #rs{query_nonce = N}) ->
     S#rs{query_nonce = N + 1}.
 
--spec update_cached_fs(#{string() => binary()}, state()) -> state().
+-spec update_cached_fs(#{string() => binary()}, state()) -> error | {ok, state()}.
 update_cached_fs(_, #rs{filesystem = local}) ->
     error;
 update_cached_fs(Fs, S) when is_map(Fs) ->

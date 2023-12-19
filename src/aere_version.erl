@@ -10,6 +10,8 @@
         , node_version/0
         ]).
 
+-export([version_info/0]).
+
 -include("../node/apps/aecontract/src/aect_sophia.hrl").
 -include("../node/apps/aecontract/include/aecontract.hrl").
 -include("../node/apps/aecontract/include/hard_forks.hrl").
@@ -44,3 +46,14 @@ node_version() ->
     app_version(aecore).
 compiler_version() ->
     app_version(aesophia).
+
+version_info() ->
+    #{ protocol_version => aere_version:protocol_version()
+     , abi_version => aere_version:abi_version()
+     , sophia_version => aere_version:sophia_version()
+     , contract_version => aere_version:contract_version()
+     , vm_version => aere_version:vm_version()
+     , repl_version => aere_version:repl_version()
+     , compiler_version => aere_version:compiler_version()
+     , node_version => aere_version:node_version()
+     }.

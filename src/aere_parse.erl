@@ -54,7 +54,10 @@ commands() ->
        {[s], [{required, atom}, {some, string}], "SETTING [SETTING_ARGS]",
         [ "Configures REPL environment and behavior. "
         , "Possible usages:"] ++
-            [ "- :set " ++ atom_to_list(Opt) ++ " " ++ aere_options:format_option_scheme(Scheme)
+            [ "- :set " ++
+                  atom_to_list(Opt) ++
+                  " " ++
+                  aere_options:format_option_scheme(Scheme)
               || {Opt, Scheme} <- aere_options:option_parse_rules()
             ]
        }}
@@ -65,7 +68,7 @@ commands() ->
         , "cannot be adjusted using the put function."
         , "Cleans user variables and functions."]
        }}
-    , {print,
+    , {lookup,
        {[p], [{required, string}], "WHAT",
         [ "Prints REPL state. The argument determines what component is to be printed."
         , "Possible componens:"
@@ -153,21 +156,21 @@ resolve_command_by_alias(Alias, [Spec = {_, {Aliases, _, _, _}} | Rest]) ->
     end.
 
 
--spec parse(string()) -> parse_result().
+-spec parse(string()) -> {ok, parse_result()} | {error, aere_theme:renerable()}.
 %% @doc
 %% Parse an input string. This function is called on strings entered by the user in the repl
 
 parse(Input) ->
     case string:trim(Input) of
         [] ->
-            skip;
+            {ok, skip};
         ":" ->
-            skip;
+            {ok, skip};
         [$:|CommandAndArgs] ->
             parse_command(CommandAndArgs);
         _ ->
             %% Eval is the default command (i.e. 1 + 1 is just :eval 1 + 1)
-            {eval, Input}
+            {ok, {eval, Input}}
     end.
 
 
@@ -176,8 +179,8 @@ parse_command(CommandAndArgs) ->
     case resolve_command(Cmd) of
         {Command, {_, Scheme, ArgDoc, _}} ->
             try parse_command_scheme(Scheme, ArgStr) of
-                {ok, []}   -> Command;
-                {ok, Args} -> list_to_tuple([Command | Args]);
+                {ok, []}   -> {ok, Command};
+                {ok, Args} -> {ok, list_to_tuple([Command | Args])};
                 error      -> {error, aere_msg:bad_command_args(Command, ArgDoc)}
             catch
                 {parse_error, {bad_integer, _}} ->
@@ -224,7 +227,7 @@ parse_args(_, _) ->
     error.
 
 
--spec apply_type(string(), arg_type()) -> arg() | no_return().
+-spec apply_type(string(), arg_type()) -> arg().
 
 apply_type(X, integer) ->
     try
@@ -238,11 +241,7 @@ apply_type(X, atom) ->
     list_to_atom(X);
 
 apply_type(X, string) ->
-    X;
-
-apply_type(_, T) ->
-    throw({parse_error, {unknown_arg_type, T}}).
-
+    X.
 
 -spec words(string()) -> [string()].
 

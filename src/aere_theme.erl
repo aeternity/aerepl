@@ -46,10 +46,11 @@
 ansi_color_no(Color) ->
     case Color of
         black     -> "0";
-        red       -> case get(wololo) of  %% This is here to make people confused
-                         wololo -> "4";
-                         _      -> "1"
-                     end;
+        red       ->
+            case get(wololo) of  %% This is here to make people confused
+                wololo -> ansi_color_no(blue);
+                _      -> "1"
+            end;
         green     -> "2";
         yellow    -> "3";
         blue      -> "4";
@@ -140,15 +141,20 @@ file(Text) -> make_themed(file, Text).
 info(Text) -> make_themed(info, Text).
 
 %% Like render/2, but with the empty theme
--spec render(renderable()) -> string().
+-spec render(renderable()) -> binary().
 render(ThemedTxts) ->
     render(empty_theme(), ThemedTxts).
 
-%% Render a given renderable as an ANSI escaped string in the provided theme
--spec render(theme(), renderable()) -> string().
-render(Theme, ThemedTxt = {themed, _, _}) ->
-    render(Theme, [ThemedTxt]);
-render(Theme, ThemedTxts) when is_list(ThemedTxts) ->
+%% Render a given renderable as an ANSI escaped byte string in the provided theme
+-spec render(theme(), renderable()) -> binary().
+render(Theme, ThemedTxts) ->
+    Str = render_str(Theme, ThemedTxts),
+    list_to_binary(Str).
+
+-spec render_str(theme(), renderable()) -> string().
+render_str(Theme, ThemedTxt = {themed, _, _}) ->
+    render_str(Theme, [ThemedTxt]);
+render_str(Theme, ThemedTxts) when is_list(ThemedTxts) ->
     AnsiStr = lists:flatten(lists:map(fun(T) -> apply_theme(Theme, T) end, lists:flatten(ThemedTxts))),
     string:trim(AnsiStr, trailing, unicode_util:whitespace()).
 

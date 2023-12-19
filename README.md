@@ -25,20 +25,20 @@ Libraries:
 
 Clone the repo:
 
-```
+```bash
 git clone https://github.com/aeternity/aerepl.git
 ```
 
 Set up the environment. Make sure Erlang 25 is used.
 
-```
+```bash
 export ERLANG_ROCKSDB_OPTS="-DWITH_SYSTEM_ROCKSDB=ON -DWITH_LZ4=ON -DWITH_SNAPPY=ON -DWITH_BZ2=ON -DWITH_ZSTD=ON"
 export CXXFLAGS="-Wno-error=shadow -Wno-deprecated-copy -Wno-redundant-move -Wno-pessimizing-move"
 ```
 
 Build the project (the `make` step may need to be executed twice, see [this issue](https://github.com/aeternity/aerepl/issues/67)):
 
-```
+```bash
 cd aerepl
 make
 ```
@@ -206,17 +206,24 @@ AESO> :set print_unit true
 
 Currently the supported options are:
 
-| Option         | Arguments          | Description                                                         |
-|----------------|--------------------|:--------------------------------------------------------------------|
-| `display_gas`  | `true/false`       | If `true`, REPL will print gas used for evaluating each expression. |
-|----------------|--------------------|:--------------------------------------------------------------------|
-| `call_gas`     | non-neg int        | Determines the amount of gas to be supplied to each query.          |
-|----------------|--------------------|:--------------------------------------------------------------------|
-| `call_value`   | non-neg int        | Sets the `value`, the amount of tokens supplied with the query.     |
-|----------------|--------------------|:--------------------------------------------------------------------|
-| `print_format` | `sophia/fate/json` | Determines the syntax used to display values.                       |
-|----------------|--------------------|:--------------------------------------------------------------------|
-| `print_unit`   | `true/false`       | Whether to display unit (`()`).                                     |
+| Option          | Arguments          | Description                                                         |
+|-----------------|--------------------|:--------------------------------------------------------------------|
+| `display_gas`   | `true/false`       | If `true`, REPL will print gas used for evaluating each expression. |
+|-----------------|--------------------|:--------------------------------------------------------------------|
+| `call_gas`      | non-neg int        | Determines the amount of gas to be supplied to each query.          |
+|-----------------|--------------------|:--------------------------------------------------------------------|
+| `call_value`    | non-neg int        | Sets the `value`, the amount of tokens supplied with the query.     |
+|-----------------|--------------------|:--------------------------------------------------------------------|
+| `print_format`  | `sophia/fate/json` | Determines the syntax used to display values.                       |
+|-----------------|--------------------|:--------------------------------------------------------------------|
+| `print_unit`    | `true/false`       | Whether to display unit (`()`).                                     |
+|-----------------|--------------------|:--------------------------------------------------------------------|
+| `print_type`    | `true/false`       | Whether to display the type after each eval.                        |
+|-----------------|--------------------|:--------------------------------------------------------------------|
+| `loc_backwards` | non-neg int        | Number of previous lines to be displayed when using `location`.     |
+|-----------------|--------------------|:--------------------------------------------------------------------|
+| `loc_forwards`  | non-neg int        | Number of further lines to be displayed when using `location`.      |
+
 
 # Output format
 
@@ -306,11 +313,14 @@ the following fields:
   locally defined functions, variables and types are pruned.
 - `{eval, string()}` --- parses the expression and evaluates it in the session
   context
+- `{load, list(string())}` --- Loads files from the file system. Includes the
+  first one in the list.
+- `reload` --- Reloads the currently loaded files.
 - `{set, Option :: atom(), Value :: list(term())}` --- changes REPL's
   configuration (see `{help, "set"}` for more details)
 - `help` --- lists all available commands
 - `{help, string()}` --- returns the help text for the given command
-- `{print, atom()}` --- prints information about REPL's state or configuration
+- `{lookup, atom()}` --- prints information about REPL's state or configuration
 - `{disas, string()}` --- parses a reference to a function and prints its FATE
   code
 - `{break, FileName :: string(), Line :: integer()}` --- adds a breakpoint
@@ -324,12 +334,15 @@ the following fields:
 - `stepout` --- resumes execution until the next breakpoint or current function
   return
 - `location` --- returns in-code location of current execution
+- `{print_var, string()}` --- returns in-code location of where the variable was introduced
+- `print_vars` --- returns values of all variables in scope
+- `stacktrace` --- returns the current stacktrace
 - `banner` --- returns an ASCII "banner" presenting the REPL's logo and various
   version information
 
 ## Cast
 
-- `{update_filesystem_cache, #{string() => bytes()}}` --- updates REPL's
+- `{update_filesystem_cache, #{string() => binary()}}` --- updates REPL's
   perception of the file system to the provided map. If this is set, all include
   and file load instructions will ignore system's file system, and will use this
   map instead.

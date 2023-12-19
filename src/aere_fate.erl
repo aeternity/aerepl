@@ -12,40 +12,52 @@
 
 -include("aere_macros.hrl").
 
+-type stacktrace_entry() ::
+        #{ contract => aefa_debug:pubkey()
+         , function => binary()
+         , file     => string()
+         , line     => non_neg_integer()
+        }.
+-type stacktrace() :: list(stacktrace_entry()).
 
--spec run_contract(FateCode, ReplState) -> Res | no_return()
+-type eval_result() ::
+        #{ result    := term()
+         , value     := term()
+         , type      := term()
+         , used_gas  := non_neg_integer()
+         }.
+-type eval_debug_result() ::
+        {ok, eval_result()}
+      | break
+      | {revert,
+         #{ err_msg      := binary()
+          , stacktrace   := stacktrace()
+          }}.
+
+-export_type([stacktrace_entry/0, stacktrace/0, eval_result/0, eval_debug_result/0]).
+
+-spec run_contract(FateCode, ReplState) -> {Res, ReplState} | no_return()
     when FateCode  :: aeb_fate_code:fcode(),
          ReplState :: aere_repl_state:state(),
-         Res       :: #{ result    := term()
-                       , used_gas  := non_neg_integer()
-                       , new_state := aefa_engine_state:state()
-                       }.
+         Res       :: eval_result().
 
 run_contract(FateCode, RS) ->
     ES0  = setup_fate_state(FateCode, RS),
     Info = aefa_debug:set_breakpoints([], aefa_engine_state:debug_info(ES0)),
     ES1  = aefa_engine_state:set_debug_info(Info, ES0),
     case eval_state(ES1, RS) of
-        {ok, Res} ->
-            Res;
-        {revert, #{err_msg := ErrMsg, engine_state := ES1}} ->
-            StackTrace = get_stack_trace(RS, ES1),
+        {{ok, Res}, RS1} ->
+            {Res, RS1};
+        {{revert, #{err_msg := ErrMsg, stacktrace := StackTrace}}, _} ->
             throw({repl_error, aere_msg:abort(ErrMsg, StackTrace)});
         {break, _} ->
             throw({internal_error, "Breakpoint found outside of debug mode"})
     end.
 
-
--spec run_contract_debug(FateCode, ReplState) -> {ok, Res} | {break, ReplState} | {revert, Err}
-    when FateCode  :: aeb_fate_code:fcode(),
-         ReplState :: aere_repl_state:state(),
-         Res         :: #{ result    := term()
-                         , used_gas  := non_neg_integer()
-                         , new_state := aefa_engine_state:state()
-                         },
-         Err       :: #{ err_msg      := binary()
-                       , engine_state := aefa_engine_state:state() }.
-
+-spec run_contract_debug(FateCode, ReplState) -> {Result, ReplState} when
+      FateCode  :: aeb_fate_code:fcode(),
+      ReplState :: aere_repl_state:state(),
+      Result :: eval_debug_result().
 run_contract_debug(FateCode, RS) ->
     ES0  = setup_fate_state(FateCode, RS),
     Info = aefa_debug:set_debugger_status(continue, aefa_engine_state:debug_info(ES0)),
@@ -53,32 +65,22 @@ run_contract_debug(FateCode, RS) ->
     eval_state(ES1, RS).
 
 
--spec resume_contract_debug(EngineState, ReplState) -> {ok, Res} | {break, ReplState} | {revert, Err}
-    when EngineState :: aefa_engine_state:state(),
-         ReplState   :: aere_repl_state:state(),
-         Res         :: #{ result    := term()
-                         , used_gas  := non_neg_integer()
-                         , new_state := aefa_engine_state:state()
-                         },
-         Err       :: #{ err_msg      := binary()
-                       , engine_state := aefa_engine_state:state() }.
-
+-spec resume_contract_debug(EngineState, ReplState) -> {Result, ReplState} when
+      EngineState :: aefa_engine_state:state(),
+      ReplState :: aere_repl_state:state(),
+      Result :: eval_debug_result().
 resume_contract_debug(ES, RS) ->
     eval_state(ES, RS).
 
 
--spec eval_state(EngineState, ReplState) -> {ok, Res} | {break, ReplState} | {revert, Err}
-    when EngineState :: aefa_engine_state:state(),
-         ReplState   :: aere_repl_state:state(),
-         Res         :: #{ result    := term()
-                         , used_gas  := non_neg_integer()
-                         , new_state := EngineState
-                         },
-         Err         :: #{ err_msg      := binary()
-                         , engine_state := EngineState }.
-
+-spec eval_state(EngineState, ReplState) -> {Result, ReplState} when
+      EngineState :: aefa_engine_state:state(),
+      ReplState :: aere_repl_state:state(),
+      Result :: eval_debug_result().
 eval_state(ES0, RS0) ->
     try
+        TypeEnv  = aere_repl_state:type_env(RS0),
+        Type     = aere_sophia:type_of_user_input(TypeEnv),
         ES1      = aefa_fate:execute(ES0),
         Res      = aefa_engine_state:accumulator(ES1),
         ChainApi = aefa_engine_state:chain_api(ES1),
@@ -95,16 +97,38 @@ eval_state(ES0, RS0) ->
                 ContractState  = {StateType, StateVal},
                 RS1            = aere_repl_state:set_contract_state(ContractState, RS0),
                 RS2            = aere_repl_state:set_blockchain_state({ready, ChainApi}, RS1),
-                {ok, #{result    => Res,
-                       used_gas  => UsedGas,
-                       new_state => RS2}}
+                {{ok,
+                  #{result    => format_value(Res, RS2),
+                    value     => Res,
+                    used_gas  => UsedGas,
+                    type      => Type}},
+                 RS2}
         end
     catch
         {aefa_fate, revert, ErrMsg, ES} ->
-            {revert, #{err_msg      => ErrMsg,
-                       engine_state => ES}}
+            RSE = aere_repl_state:set_blockchain_state({abort, ES}, RS0),
+            StackTrace = get_stack_trace(RS0, ES),
+            {{revert,
+              #{err_msg => ErrMsg,
+                stacktrace => StackTrace
+               }},
+              RSE
+            }
     end.
 
+format_value(Val, RS) ->
+    #{ print_format := PrintFormat
+     } = aere_repl_state:options(RS),
+    TEnv = aere_repl_state:type_env(RS),
+    Type = aere_sophia:type_of_user_input(TEnv),
+    format_value(PrintFormat, TEnv, Type, Val).
+
+format_value(fate, _, _, Val) ->
+    io_lib:format("~p", [Val]);
+format_value(sophia, TEnv, Type, Val) ->
+    aere_sophia:format_value(sophia, TEnv, Type, Val);
+format_value(json, TEnv, Type, Val) ->
+    aere_sophia:format_value(json, TEnv, Type, Val).
 
 -spec setup_fate_state(FateCode, ReplState) -> EngineState
     when FateCode    :: aeb_fate_code:fcode(),
@@ -161,13 +185,9 @@ setup_fate_state(FateCode, RS) ->
     ES6.
 
 
--spec get_stack_trace(ReplState, EngineState) -> [{Contract, FunHash, File, Line}]
+-spec get_stack_trace(ReplState, EngineState) -> stacktrace()
     when ReplState   :: aefa_engine_state:state(),
-         EngineState :: aefa_engine_state:state(),
-         Contract    :: aec_keys:pubkey(),
-         FunHash     :: binary(),
-         File        :: string(),
-         Line        :: non_neg_integer().
+         EngineState :: aefa_engine_state:state().
 
 get_stack_trace(RS, ES0) ->
     ES       = aefa_engine_state:push_call_stack(ES0),
@@ -176,8 +196,12 @@ get_stack_trace(RS, ES0) ->
     DbgStack = aefa_debug:call_stack(Info),
     Calls    = [ {aefa_debug:contract_name(Contract, Info), get_fun_symbol(RS, FunHash)}
                    || {_, Contract, _, FunHash, _, _, _, _, _} <- Stack ],
-    [ {Contract, Symbol, File, Line}
-        || {{Contract, Symbol}, {File, Line}} <- lists:zip(Calls, DbgStack) ].
+    [ #{ contract => Contract
+       , function => Symbol
+       , file => File
+       , line => Line
+       } || {{Contract, Symbol}, {File, Line}} <- lists:zip(Calls, DbgStack)
+    ].
 
 
 -spec add_fun_symbol(ReplState, Hash, FunName) -> ReplState

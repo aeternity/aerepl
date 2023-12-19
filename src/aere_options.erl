@@ -8,6 +8,9 @@ option_parse_rules() ->
     , {call_value, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
     , {print_format, {atom, [sophia,json,fate]}}
     , {print_unit, boolean}
+    , {print_type, boolean}
+    , {loc_forwards, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
+    , {loc_backwards, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
     ].
 
 parse_option(Option, Args) ->
