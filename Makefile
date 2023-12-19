@@ -1,7 +1,8 @@
-export LOCALDEP_DIR $(notdir $(shell pwd))
-export AETERNITY_VERSION $(cat node/VERSION)
+# Needed by rebar_localdep
+export LOCALDEP_DIR = $(shell pwd)
 
-CXXFLAGS = -Wno-error=shadow -Wno-deprecated-copy -Wno-redundant-move -Wno-pessimizing-move
+# Node apps use it for versioning
+export AETERNITY_VERSION $(cat node/VERSION)
 
 .PHONY: all
 all:  node aerepl
