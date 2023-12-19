@@ -125,8 +125,14 @@ commands() ->
     ].
 
 
--spec resolve_command(atom()) -> command_spec() | undefined.
+-spec resolve_command(string() | binary() | atom()) -> command_spec() | undefined.
 
+resolve_command(Cmd) when is_binary(Cmd) ->
+    resolve_command(binary:bin_to_list(Cmd));
+resolve_command(Cmd) when is_list(Cmd) ->
+    try resolve_command(list_to_existing_atom(Cmd))
+    catch error:badarg -> undefined
+    end;
 resolve_command(Cmd) ->
     case resolve_command_by_name(Cmd, commands()) of
         undefined -> resolve_command_by_alias(Cmd, commands());
