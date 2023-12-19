@@ -18,6 +18,8 @@
 
 -type command_spec() :: {atom(), {[atom()], command_scheme(), string(), string()}}.
 
+-export_type([command_spec/0]).
+
 
 -spec commands() -> [command_spec()].
 
@@ -125,8 +127,14 @@ commands() ->
     ].
 
 
--spec resolve_command(atom()) -> command_spec() | undefined.
+-spec resolve_command(string() | binary() | atom()) -> command_spec() | undefined.
 
+resolve_command(Cmd) when is_binary(Cmd) ->
+    resolve_command(binary:bin_to_list(Cmd));
+resolve_command(Cmd) when is_list(Cmd) ->
+    try resolve_command(list_to_existing_atom(Cmd))
+    catch error:badarg -> undefined
+    end;
 resolve_command(Cmd) ->
     case resolve_command_by_name(Cmd, commands()) of
         undefined -> resolve_command_by_alias(Cmd, commands());
@@ -156,7 +164,7 @@ resolve_command_by_alias(Alias, [Spec = {_, {Aliases, _, _, _}} | Rest]) ->
     end.
 
 
--spec parse(string()) -> {ok, parse_result()} | {error, aere_theme:renerable()}.
+-spec parse(string()) -> {ok, parse_result()} | {error, aere_theme:renderable()}.
 %% @doc
 %% Parse an input string. This function is called on strings entered by the user in the repl
 

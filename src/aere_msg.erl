@@ -366,7 +366,7 @@ type(Type) ->
     TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER_RE, "", [global, {return, list}]),
     aere_msg:output(TypeStrClean).
 
--spec eval(Eval, aere_repl_state:options()) -> msg() when
+-spec eval(Eval, aere_repl_state:repl_options()) -> msg() when
       Eval :: ok | {msg, msg()} | aere_fate:eval_debug_result().
 eval(ok, _) ->
     [];
