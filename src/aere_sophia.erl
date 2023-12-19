@@ -16,6 +16,10 @@
 
 -include("aere_macros.hrl").
 
+-type parsing_result() :: [aeso_syntax:decl()] | {body, [aeso_syntax:stmt()]}.
+
+-export_type([parsing_result/0]).
+
 optimizations_off() ->
     [ {optimize_inliner, false},
       {optimize_inline_local_functions, false},
@@ -70,7 +74,7 @@ type_of_user_input(TEnv0) ->
     Type.
 
 -define(with_error_handle(X), try X catch {error, Errs} -> process_err(Errs) end).
--spec parse_top(string()) -> [aeso_syntax:decl()] | {body, [aeso_syntax:stmt()]} | none().
+-spec parse_top(string()) -> parsing_result() | none().
 parse_top(I) ->
     parse_top(I, []).
 -spec parse_top(string(), [term()]) -> [aeso_syntax:decl()] | {body, [aeso_syntax:stmt()]} | none().
@@ -93,6 +97,7 @@ parse_top(I, Opts) ->
                       end)
              ]),
     ?with_error_handle(aeso_parser:run_parser(Top, I, Opts)).
+
 parse_body(I) ->
     ?with_error_handle(
        case aeso_parser:run_parser(aeso_parser:body(), I) of

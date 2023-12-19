@@ -33,6 +33,7 @@
    , filesystem_not_cached/0
    , contract_exec_ended/0
    , undefined_variable/1
+   , unsupported_eval/1
    ]).
 
 %% Messages
@@ -315,6 +316,24 @@ filesystem_not_cached() ->
 -spec undefined_variable(string()) -> msg().
 undefined_variable(VarName) ->
     aere_theme:error(io_lib:format("Undefined variable `~s`", [VarName])).
+
+-spec unsupported_eval(aere_sophia:parse_result()) -> msg().
+unsupported_eval([{letfun, Ann, FName, Args, _RetT, _Body}]) ->
+    Wildcard = {id, [{origin, system}], "_"},
+    Hole = {id, [{origin, system}], "???"},
+    LamArgs = [{arg, Ann, Wildcard, Hole} || _A <- Args],
+    Lam = {lam, Ann, LamArgs, Wildcard},
+    LetLam = {letval, Ann, FName, Lam},
+
+    ErrMsg = aere_theme:error("Top-level function definitions are not supported.\n"),
+    HintMsg = aere_theme:info("Hint: maybe a non-recursive lambda would work:\n"),
+    ExampleMsg = aere_theme:info(prettypr:format(aeso_pretty:decl(LetLam))),
+
+    [ErrMsg, HintMsg, ExampleMsg];
+unsupported_eval([_, _ | _]) ->
+    aere_theme:error("Multiple queries are not supported.");
+unsupported_eval(_) ->
+    aere_theme:error("Unsupported query").
 
 -spec bye() -> msg().
 bye() -> aere_theme:output("bye!").

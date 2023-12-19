@@ -46,11 +46,10 @@ eval_code(Expr, RS) ->
             {ok, register_include(Inc, RS)};
         [{letval, _, Pat, Body}] ->
             {ok, register_letval(Pat, Body, RS)};
-        %% [{letfun, _, FName, Args, _, Body}] ->
-        %%     {ok, register_letfun(FName, Args, Body, RS)};
         [{type_def, _, Name, Args, Body}] ->
             {ok, register_typedef(Name, Args, Body, RS)};
-        _ -> error(too_much_stuff) %% FIXME
+        _ ->
+            throw({repl_error, aere_msg:unsupported_eval(Parse)})
     end.
 
 -spec set_state([aeso_syntax:stmt()], repl_state())
@@ -210,29 +209,6 @@ register_letval(Pat, Expr, S0) ->
     S3 = aere_repl_state:set_funs(maps:merge(OldFuns, NewFuns), S2),
 
     S3.
-
-%%%------------------
-
-%% -spec register_letfun(aeso_syntax:id(), [aeso_syntax:pat()], [aeso_syntax:guarded_expr()], repl_state())
-%%                      -> command_res().
-%% register_letfun(Id = {id, _, Name}, Args, Body, S0) ->
-%%     Ast = aere_mock:letfun_contract(Id, Args, Body, S0),
-%%     {TEnv, TypedAst} = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
-%%     ByteCode = aere_sophia:compile_contract(TypedAst),
-
-%%     Type = aere_sophia:type_of_user_input(TEnv),
-
-%%     NameMap = build_fresh_name_map(ByteCode),
-
-%%     Funs1 = generated_functions(ByteCode, NameMap),
-
-%%     FunNewName = maps:get(aeb_fate_code:symbol_identifier(binary:list_to_bin(Name)), NameMap),
-%%     FunVal = {tuple, {FunNewName, {tuple, {}}}}, %% TODO this is broken
-
-%%     S1 = register_vars([{Name, Type, FunVal}], S0),
-%%     S2 = aere_repl_state:set_funs(maps:merge(aere_repl_state:funs(S1), Funs1), S1),
-
-%%     {aere_theme:error("Warning: defining functions in REPL is WIP and may be unstable."), S2}.
 
 register_vars(NewVars, S) ->
     OldVars = aere_repl_state:vars(S),

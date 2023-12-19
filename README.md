@@ -25,20 +25,20 @@ Libraries:
 
 Clone the repo:
 
-```
+```bash
 git clone https://github.com/aeternity/aerepl.git
 ```
 
 Set up the environment. Make sure Erlang 25 is used.
 
-```
+```bash
 export ERLANG_ROCKSDB_OPTS="-DWITH_SYSTEM_ROCKSDB=ON -DWITH_LZ4=ON -DWITH_SNAPPY=ON -DWITH_BZ2=ON -DWITH_ZSTD=ON"
 export CXXFLAGS="-Wno-error=shadow -Wno-deprecated-copy -Wno-redundant-move -Wno-pessimizing-move"
 ```
 
 Build the project (the `make` step may need to be executed twice, see [this issue](https://github.com/aeternity/aerepl/issues/67)):
 
-```
+```bash
 cd aerepl
 make
 ```
@@ -206,17 +206,24 @@ AESO> :set print_unit true
 
 Currently the supported options are:
 
-| Option         | Arguments          | Description                                                         |
-|----------------|--------------------|:--------------------------------------------------------------------|
-| `display_gas`  | `true/false`       | If `true`, REPL will print gas used for evaluating each expression. |
-|----------------|--------------------|:--------------------------------------------------------------------|
-| `call_gas`     | non-neg int        | Determines the amount of gas to be supplied to each query.          |
-|----------------|--------------------|:--------------------------------------------------------------------|
-| `call_value`   | non-neg int        | Sets the `value`, the amount of tokens supplied with the query.     |
-|----------------|--------------------|:--------------------------------------------------------------------|
-| `print_format` | `sophia/fate/json` | Determines the syntax used to display values.                       |
-|----------------|--------------------|:--------------------------------------------------------------------|
-| `print_unit`   | `true/false`       | Whether to display unit (`()`).                                     |
+| Option          | Arguments          | Description                                                         |
+|-----------------|--------------------|:--------------------------------------------------------------------|
+| `display_gas`   | `true/false`       | If `true`, REPL will print gas used for evaluating each expression. |
+|-----------------|--------------------|:--------------------------------------------------------------------|
+| `call_gas`      | non-neg int        | Determines the amount of gas to be supplied to each query.          |
+|-----------------|--------------------|:--------------------------------------------------------------------|
+| `call_value`    | non-neg int        | Sets the `value`, the amount of tokens supplied with the query.     |
+|-----------------|--------------------|:--------------------------------------------------------------------|
+| `print_format`  | `sophia/fate/json` | Determines the syntax used to display values.                       |
+|-----------------|--------------------|:--------------------------------------------------------------------|
+| `print_unit`    | `true/false`       | Whether to display unit (`()`).                                     |
+|-----------------|--------------------|:--------------------------------------------------------------------|
+| `print_type`    | `true/false`       | Whether to display the type after each eval.                        |
+|-----------------|--------------------|:--------------------------------------------------------------------|
+| `loc_backwards` | non-neg int        | Number of previous lines to be displayed when using `location`.     |
+|-----------------|--------------------|:--------------------------------------------------------------------|
+| `loc_forwards`  | non-neg int        | Number of further lines to be displayed when using `location`.      |
+
 
 # Output format
 
@@ -335,7 +342,7 @@ the following fields:
 
 ## Cast
 
-- `{update_filesystem_cache, #{string() => bytes()}}` --- updates REPL's
+- `{update_filesystem_cache, #{string() => binary()}}` --- updates REPL's
   perception of the file system to the provided map. If this is set, all include
   and file load instructions will ignore system's file system, and will use this
   map instead.
