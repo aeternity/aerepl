@@ -157,8 +157,7 @@ handle_call(skip, _From, State) ->
     {reply, ok, State};
 
 handle_call(reset, _From, State) ->
-    Opts = aere_repl_state:options(State),
-    Args = maps:get(init_opts, Opts, []),
+    #{init_args := Args} = aere_repl_state:options(State),
     {ok, NewState} = init(Args),
     {reply, ok, NewState};
 
@@ -527,9 +526,8 @@ prompt(ServerName) ->
 %%% Helpers
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--spec ready_or_error(ReplState) -> ok | {reply, {error, ErrMsg}, ReplState}
-    when ReplState :: aere_repl_state:state(),
-         ErrMsg    :: aere_theme:renderable().
+-spec ready_or_error(ReplState) -> ok | no_return()
+    when ReplState :: aere_repl_state:state().
 
 ready_or_error(State) ->
     case aere_repl_state:blockchain_state(State) of
@@ -538,43 +536,59 @@ ready_or_error(State) ->
     end.
 
 
--spec server_error(ReplState, Error) -> {reply, {error, Msg}, ReplState}
+-spec server_error(ReplState, Error, erlang:stacktrace()) -> no_return()
+   when ReplState :: aere_repl_state:state(),
+        Error     :: term().
+
+server_error(ReplState, Error, Stacktrace) ->
+    throw(mk_server_error(ReplState, Error, Stacktrace)).
+
+
+-spec server_error(ReplState, Error) -> no_return()
+   when ReplState :: aere_repl_state:state(),
+        Error     :: term().
+
+server_error(ReplState, Error) ->
+    throw(mk_server_error(ReplState, Error)).
+
+
+-spec mk_server_error(ReplState, Error) -> {reply, {error, Msg}, ReplState}
     when ReplState :: aere_repl_state:state(),
          Error     :: term(),
          Msg       :: aere_theme:renderable().
 
-server_error(State, {repl_error, Err}) ->
+mk_server_error(State, {repl_error, Err}) ->
     Msg = ?RENDER(State, Err, Err), % TODO: structured errors
-    throw({reply, {error, Msg}, State});
+    {reply, {error, Msg}, State};
 
-server_error(State, {revert, Err}) ->
+mk_server_error(State, {revert, Err}) ->
     Msg = ?RENDER(State, Err, aere_msg:error(Err)),
-    throw({reply, {error, Msg}, State});
+    {reply, {error, Msg}, State};
 
-server_error(State, {aefa_fate, FateErr, _}) ->
+mk_server_error(State, {aefa_fate, FateErr, _}) ->
     Msg = ?RENDER(
              State,
              FateErr,
-             aere_msg:error(io_lib:format("FATE error: ~s", [FateErr]))
+             aere_msg:error(lists:flatten(io_lib:format("FATE error: ~s", [FateErr])))
             ),
-    throw({reply, {error, Msg}, State});
+    {reply, {error, Msg}, State};
 
-server_error(State, Err) ->
+mk_server_error(State, Err) ->
     Msg = ?RENDER(
              State,
              Err,
-             aere_msg:error(io_lib:format("Unknown error: ~p", [Err]))
+             aere_msg:error(lists:flatten(io_lib:format("Unknown error: ~p", [Err])))
             ),
-    throw({reply, {error, Msg}, State}).
+    {reply, {error, Msg}, State}.
 
 
--spec server_error(ReplState, Error, erlang:stacktrace()) ->
+-spec mk_server_error(ReplState, Error, erlang:stacktrace()) ->
           {reply, {error, Msg}, ReplState}
     when ReplState :: aere_repl_state:state(),
          Error     :: term(),
          Msg       :: term().
 
-server_error(State, Err, Stacktrace) ->
+mk_server_error(State, Err, Stacktrace) ->
     Msg = ?RENDER(
              State,
              {Err, Stacktrace},
