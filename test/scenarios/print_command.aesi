@@ -4,27 +4,27 @@ datatype d = Char
 
 datatype d = String
 
-:print types
+:lookup types
 // d : type
 
 let x = 'c'
 
-:print vars
+:lookup vars
 // x : char
 
 let x = 1
 
-:print vars
+:lookup vars
 // x : int
 
 let y = 2
 
-:print vars
+:lookup vars
 // y : int
 // x : int
 
 let y = "string"
 
-:print vars
+:lookup vars
 // y : string
 // x : int

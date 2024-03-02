@@ -1,4 +1,4 @@
-:print options
+:lookup options
 // call_gas = 100000000000000000
 // call_value = 0
 // print_gas = false
@@ -15,7 +15,7 @@
 
 :set print_unit true
 
-:print options
+:lookup options
 // call_gas = 100
 // call_value = 10
 // print_gas = true
@@ -55,7 +55,7 @@
 
 :set call_value 0
 
-:print options
+:lookup options
 // call_gas = 0
 // call_value = 0
 // print_gas = true
@@ -64,7 +64,7 @@
 
 :reset
 
-:print options
+:lookup options
 // call_gas = 100000000000000000
 // call_value = 0
 // print_gas = false

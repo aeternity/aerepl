@@ -7,23 +7,23 @@ datatype t = T
 function f(x) = x + 1
 // Warning: defining functions in REPL is WIP and may be unstable. 
 
-:print vars
+:lookup vars
 // f : (int) => int
 // x : int
 
-:print types
+:lookup types
 // t : type
 
-:print includes
+:lookup includes
 // test/contracts/c.aes
 
 :load test/contracts/d.aes
 
-:print vars
+:lookup vars
 //
 
-:print types
+:lookup types
 //
 
-:print includes
+:lookup includes
 // test/contracts/d.aes

@@ -15,23 +15,23 @@ function f(x) = x + 1
 
 :set call_value 100
 
-:print vars
+:lookup vars
 // f : (int) => int
 // y : int
 // x : int
 
-:print types
+:lookup types
 // al : type
 // t : type
 
-:print includes
+:lookup includes
 // List.aes
 // test/contracts/c.aes
 
-:print files
+:lookup files
 // test/contracts/c.aes
 
-:print options
+:lookup options
 // call_gas = 100000000000000000
 // call_value = 100
 // display_gas = false
@@ -40,19 +40,19 @@ function f(x) = x + 1
 
 :reset
 
-:print vars
+:lookup vars
 //
 
-:print types
+:lookup types
 //
 
-:print includes
+:lookup includes
 //
 
-:print files
+:lookup files
 //
 
-:print options
+:lookup options
 // call_gas = 100000000000000000
 // call_value = 0
 // display_gas = false

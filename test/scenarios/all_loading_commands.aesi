@@ -1,39 +1,39 @@
 :load test/contracts/c.aes
 
-:print files
+:lookup files
 // test/contracts/c.aes
 
-:print includes
+:lookup includes
 // test/contracts/c.aes
 
 :p includes
 // test/contracts/c.aes
 
-:print files
+:lookup files
 // test/contracts/c.aes
 
-:print includes
+:lookup includes
 // test/contracts/c.aes
 
 include "test/contracts/d.aes"
 // File not loaded: test/contracts/d.aes
 
-:print includes
+:lookup includes
 // test/contracts/c.aes
 
 :load test/contracts/c.aes test/contracts/d.aes
 
-:print includes
+:lookup includes
 // test/contracts/d.aes
 
 include "test/contracts/c.aes"
 
 :reload
 
-:print files
+:lookup files
 // test/contracts/c.aes
 // test/contracts/d.aes
 
-:print includes
+:lookup includes
 // test/contracts/d.aes
 // test/contracts/c.aes
