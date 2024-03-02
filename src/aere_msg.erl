@@ -501,6 +501,8 @@ format_err(Err, _Opts) ->
 
 format({error, Err}, Opts) ->
     format_err(Err, Opts);
+format(ok, _Opts) ->
+    [];
 format({eval_result, #{result := Res, type := Type, used_gas := UsedGas}}, Opts) ->
     #{ print_gas  := Printgas,
        print_unit   := PrintUnit,

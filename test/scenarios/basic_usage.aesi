@@ -1,11 +1,11 @@
-:set display_gas true
+:set print_gas true
 //
 
 2 + 2
 // 4
 // USED GAS: 74
 
-:set display_gas false
+:set print_gas false
 //
 
 2 + 1 + 1
@@ -32,7 +32,7 @@ let e1 = 1
 let [e2, e3] : t3(t1) = [2, 3]
 
 e1 + e2 + e3
-// 6 
+// 6
 
 include "List.aes"
 
@@ -40,4 +40,4 @@ List.map((x) => x + 1, [1, 2, 3])
 // [2, 3, 4]
 
 function g(x) = x * 10
-// Warning: defining functions in REPL is WIP and may be unstable. 
+// Warning: defining functions in REPL is WIP and may be unstable.

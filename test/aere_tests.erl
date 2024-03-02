@@ -131,10 +131,14 @@ eval_inputs([], Outputs) ->
     lists:reverse(Outputs);
 eval_inputs([Input | Rest], Outputs) ->
     case aere_gen_server:input(Input) of
-        {ok, Msg} ->
-            eval_inputs(Rest, [aere_theme:render(Msg) | Outputs]);
-        {error, ErrMsg} ->
-            eval_inputs(Rest, [aere_theme:render(ErrMsg) | Outputs]);
+        {ok, Res} ->
+            Fmt = aere_gen_server:format(Res),
+            Msg = aere_theme:render(Fmt),
+            eval_inputs(Rest, [binary_to_list(Msg) | Outputs]);
+        {error, Err} ->
+            Fmt = aere_gen_server:format({error, Err}),
+            Msg = aere_theme:render(Fmt),
+            eval_inputs(Rest, [binary_to_list(Msg) | Outputs]);
         no_output ->
             eval_inputs(Rest, ["" | Outputs]);
         finish ->

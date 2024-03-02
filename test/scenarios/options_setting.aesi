@@ -1,7 +1,7 @@
 :print options
 // call_gas = 100000000000000000
 // call_value = 0
-// display_gas = false
+// print_gas = false
 // print_format = sophia
 // print_unit = false
 
@@ -9,7 +9,7 @@
 
 :set call_value 10
 
-:set display_gas true
+:set print_gas true
 
 :set print_format fate
 
@@ -18,7 +18,7 @@
 :print options
 // call_gas = 100
 // call_value = 10
-// display_gas = true
+// print_gas = true
 // print_format = fate
 // print_unit = true
 
@@ -41,9 +41,9 @@
 // Bad setting format
 // call_value INTEGER(non-neg)
 
-:set display_gas 0
+:set print_gas 0
 // Bad setting format
-// display_gas BOOLEAN
+// print_gas BOOLEAN
 
 :set print_unit 1
 // Bad setting format
@@ -58,7 +58,7 @@
 :print options
 // call_gas = 0
 // call_value = 0
-// display_gas = true
+// print_gas = true
 // print_format = json
 // print_unit = true
 
@@ -67,6 +67,6 @@
 :print options
 // call_gas = 100000000000000000
 // call_value = 0
-// display_gas = false
+// print_gas = false
 // print_format = sophia
 // print_unit = false
