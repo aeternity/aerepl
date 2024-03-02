@@ -40,10 +40,8 @@ optimizations_off() ->
       {optimize_inline_store, false},
       {optimize_float_switch_bod, false} ].
 
-process_err(Errs) when is_list(Errs) ->
-    throw({repl_error, aere_msg:error(lists:concat([aeso_errors:err_msg(E) || E <- Errs]))});
-process_err(E) -> %% idk, rethrow
-    throw(E).
+process_err(E) ->
+    throw({repl_sophia, E}).
 
 
 typecheck(Ast) ->
@@ -53,7 +51,7 @@ typecheck(Ast, Opts) ->
         {TEnv, _TAstFolded, TAstUnfolded, _Warns} ->
             {TEnv, TAstUnfolded}
     catch _:{error, Errs} ->
-              throw({repl_error, process_err(Errs)})
+              process_err(Errs)
     end.
 
 compile_contract(TypedAst) ->
@@ -65,9 +63,14 @@ compile_contract(TypedAst) ->
         aeso_fcode_to_fate:compile(ChildConEnv, FCode, SavedFreshNames, Opts)
     catch {error, Ef} -> process_err(Ef) end.
 
+type_of_user_input(none) ->
+    error(no_type_env);
 type_of_user_input(TEnv0) ->
-    %% TODO: This is a hack, not a solution. If not done this way, the error
-    %% contract_treated_as_namespace_entrypoint will show when calling lookup_env1
+    %% TODO: This is a hack, not a solution. What happens here is that
+    %% we set up the current namespace to the mock contract. If not
+    %% done this way, the error
+    %% contract_treated_as_namespace_entrypoint will show when calling
+    %% lookup_env1.
     TEnv = setelement(7, TEnv0, [?MOCK_CONTRACT]),
 
     {_, {_, {type_sig, _, _, _, _, Type}}} = aeso_ast_infer_types:lookup_env1(TEnv, term, [], [?MOCK_CONTRACT, ?USER_INPUT]),

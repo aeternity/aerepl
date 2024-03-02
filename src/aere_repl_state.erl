@@ -7,20 +7,17 @@
 -include("aere_macros.hrl").
 
 -type print_format() :: sophia | fate | json.
--type return_mode() :: value | format | render.
 -type repl_options() ::
         #{ % Theme used for rendering
            theme        := aere_theme:theme()
-         , % Whether to measure gas usage on each eval
-           display_gas  := boolean()
          , % How much gas to use for each eval
            call_gas     := pos_integer()
          , % What should `Call.value` return
            call_value   := non_neg_integer()
+         , % Whether to measure gas usage on each eval
+           print_gas  := boolean()
          , % How to display eval results and types
            print_format := print_format()
-         , % Whether to render results and how, or return Erlang values
-           return_mode  := return_mode()
          , % Whether to print () if the result is a 0-tuple
            print_unit   := boolean()
          , % Whether to attach type to each eval result
@@ -120,11 +117,10 @@
 -spec init_options() -> repl_options().
 init_options() ->
     #{ theme => aere_theme:default_theme()
-     , display_gas   => false
      , call_gas      => 100000000000000000
      , call_value    => 0
+     , print_gas   => false
      , print_format  => sophia
-     , return_mode   => value
      , print_unit    => false
      , print_type    => false
      , loc_backwards => 5

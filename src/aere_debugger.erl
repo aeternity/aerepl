@@ -13,6 +13,9 @@
 -type source_location() ::
         #{ file := string()
          , line := non_neg_integer()
+         , preview_above := [binary()]
+         , preview_line := binary()
+         , preview_below := [binary()]
          }.
 
 -export_type([source_location/0]).
@@ -24,7 +27,7 @@
 
 add_breakpoint(State, FileName, Line) ->
     LoadedFiles = maps:keys(aere_repl_state:loaded_files(State)),
-    [ throw({repl_error, aere_msg:breakpoint_file_not_loaded(FileName)})
+    [ throw({repl_breakpoint_file_not_loaded, FileName})
         || not lists:member(FileName, LoadedFiles) ],
     OldBPs = aere_repl_state:breakpoints(State),
     BP     = {FileName, Line},
@@ -38,7 +41,7 @@ add_breakpoint(State, FileName, Line) ->
 
 delete_breakpoint(State, Index) ->
     BPs = aere_repl_state:breakpoints(State),
-    [ throw({repl_error, aere_msg:breakpoint_out_of_range(Index)})
+    [ throw({repl_breakpoint_out_of_range, Index})
         || Index < 1 orelse Index > length(BPs) ],
     {Left, [_ | Right]} = lists:split(Index - 1, BPs),
     aere_repl_state:set_breakpoints(Left ++ Right, State).
@@ -52,7 +55,7 @@ delete_breakpoint(State, Index) ->
 delete_breakpoint(State, File, Line) ->
     BPs = aere_repl_state:breakpoints(State),
     NewBPs = [B || B = {F, L} <- BPs, F =/= File orelse L =/= Line],
-    [ throw({repl_error, aere_msg:breakpoint_wrong_location(File, Line)})
+    [ throw({repl_breakpoint_wrong_location, File, Line})
         || length(BPs) == length(NewBPs) ],
     aere_repl_state:set_breakpoints(NewBPs, State).
 
@@ -68,7 +71,7 @@ resume_eval(RS, Kind) ->
         {abort, _} ->
             Chain = aere_repl_state:chain_api(RS),
             NewRS = aere_repl_state:set_blockchain_state({ready, Chain}, RS),
-            {{msg, aere_msg:contract_exec_ended()}, NewRS};
+            {contract_exec_ended, NewRS};
         _ ->
             ES0 = breakpoint_engine_state(RS),
             ES1 = resume(ES0, Kind),
@@ -99,7 +102,7 @@ lookup_variable(RS, VarName) ->
     ES = breakpoint_engine_state(RS),
     case aefa_debug:get_variable_register(VarName, aefa_engine_state:debug_info(ES)) of
         undefined ->
-            throw({repl_error, aere_msg:undefined_variable(VarName)});
+            throw({repl_undefined_variable, VarName});
         Reg ->
             {Val, _} = aefa_fate:lookup_var(Reg, ES),
             io_lib:format("~p", [Val])
@@ -130,8 +133,27 @@ source_location(RS) ->
     ES = breakpoint_engine_state(RS),
     Dbg = aefa_engine_state:debug_info(ES),
     {FileName, CurrentLine} = aefa_debug:debugger_location(Dbg),
+    #{ loc_backwards := LocBackwards
+     , loc_forwards := LocForwards
+     } = aere_repl_state:options(RS),
+
+    File     = aere_files:read_file(FileName, RS),
+    Lines    = string:split(File, "\n", all),
+    SelectLines   = [ {Idx, Line}
+                      || {Idx, Line} <- lists:enumerate(Lines),
+                         Idx > CurrentLine - LocBackwards,
+                         Idx < CurrentLine + LocForwards
+                    ],
+
+    ViewBackwards = [<<L/binary, "\n">> || {I, L} <- SelectLines, I < CurrentLine],
+    ViewHere = hd([<<L/binary, "\n">> || {I, L} <- SelectLines, I == CurrentLine]),
+    ViewForwards = [<<L/binary, "\n">> || {I, L} <- SelectLines, I > CurrentLine],
+
     #{file => FileName,
       line => CurrentLine
+     , preview_above => ViewBackwards
+     , preview_line => ViewHere
+     , preview_below => ViewForwards
      }.
 
 
@@ -152,5 +174,5 @@ breakpoint_engine_state(RS) ->
     case aere_repl_state:blockchain_state(RS) of
         {breakpoint, ES} -> ES;
         {abort, ES}      -> ES;
-        _                -> throw({repl_error, aere_msg:not_at_breakpoint()})
+        _                -> throw(repl_not_at_breakpoint)
     end.

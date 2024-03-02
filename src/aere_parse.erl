@@ -174,6 +174,9 @@ parse(Input) ->
             {ok, skip};
         ":" ->
             {ok, skip};
+        ":wololo" ->
+            put(wololo, wololo), % you see nothing
+            {ok, skip};
         [$:|CommandAndArgs] ->
             parse_command(CommandAndArgs);
         _ ->
@@ -189,13 +192,13 @@ parse_command(CommandAndArgs) ->
             try parse_command_scheme(Scheme, ArgStr) of
                 {ok, []}   -> {ok, Command};
                 {ok, Args} -> {ok, list_to_tuple([Command | Args])};
-                error      -> {error, aere_msg:bad_command_args(Command, ArgDoc)}
+                error      -> {error, {bad_command_args, Command, ArgDoc}}
             catch
                 {parse_error, {bad_integer, _}} ->
-                    {error, aere_msg:bad_command_args(Command, ArgDoc)}
+                    {error, {bad_command_args, Command, ArgDoc}}
             end;
         undefined ->
-            {error, aere_msg:no_such_command(Cmd)}
+            {error, {no_such_command, Cmd}}
     end.
 
 

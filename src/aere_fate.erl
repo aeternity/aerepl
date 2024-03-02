@@ -26,13 +26,16 @@
          , type      := term()
          , used_gas  := non_neg_integer()
          }.
+
+-type revert() ::
+        #{ err_msg    := binary()
+         , stacktrace := stacktrace()
+         }.
+
 -type eval_debug_result() ::
-        {ok, eval_result()}
+        {eval_result, eval_result()}
       | break
-      | {revert,
-         #{ err_msg      := binary()
-          , stacktrace   := stacktrace()
-          }}.
+      | {revert, revert()}.
 
 -export_type([stacktrace_entry/0, stacktrace/0, eval_result/0, eval_debug_result/0]).
 
@@ -46,12 +49,12 @@ run_contract(FateCode, RS) ->
     Info = aefa_debug:set_breakpoints([], aefa_engine_state:debug_info(ES0)),
     ES1  = aefa_engine_state:set_debug_info(Info, ES0),
     case eval_state(ES1, RS) of
-        {{ok, Res}, RS1} ->
-            {Res, RS1};
+        {{eval_result, Res}, RS1} ->
+            { Res, RS1 };
         {{revert, #{err_msg := ErrMsg, stacktrace := StackTrace}}, _} ->
-            throw({repl_error, aere_msg:abort(ErrMsg, StackTrace)});
+            throw({repl_fate_revert, ErrMsg, StackTrace});
         {break, _} ->
-            throw({internal_error, "Breakpoint found outside of debug mode"})
+            error(breakpoint_outside_debug)
     end.
 
 -spec run_contract_debug(FateCode, ReplState) -> {Result, ReplState} when
@@ -85,7 +88,11 @@ eval_state(ES0, RS0) ->
         Res      = aefa_engine_state:accumulator(ES1),
         ChainApi = aefa_engine_state:chain_api(ES1),
         Opts     = aere_repl_state:options(RS0),
-        UsedGas  = maps:get(call_gas, Opts) - aefa_engine_state:gas(ES1) - 10, %% RETURN(R) costs 10
+
+        %% REPL adds a RETURN(R) instruction which costs 10 gas
+        ReplGasOverhead = 10,
+
+        UsedGas  = maps:get(call_gas, Opts) - aefa_engine_state:gas(ES1) - ReplGasOverhead,
 
         case aefa_debug:debugger_status(aefa_engine_state:debug_info(ES1)) of
             break ->
@@ -97,28 +104,30 @@ eval_state(ES0, RS0) ->
                 ContractState  = {StateType, StateVal},
                 RS1            = aere_repl_state:set_contract_state(ContractState, RS0),
                 RS2            = aere_repl_state:set_blockchain_state({ready, ChainApi}, RS1),
-                {{ok,
-                  #{result    => format_value(Res, RS2),
-                    value     => Res,
-                    used_gas  => UsedGas,
-                    type      => Type}},
-                 RS2}
+                { { eval_result
+                  , #{ result    => format_value(Res, RS2)
+                     , value     => Res
+                     , used_gas  => UsedGas
+                     , type      => Type}
+                  }
+                , RS2
+                }
         end
     catch
         {aefa_fate, revert, ErrMsg, ES} ->
             RSE = aere_repl_state:set_blockchain_state({abort, ES}, RS0),
             StackTrace = get_stack_trace(RS0, ES),
-            {{revert,
-              #{err_msg => ErrMsg,
-                stacktrace => StackTrace
-               }},
-              RSE
+            { { revert
+              , #{ err_msg => ErrMsg
+                 , stacktrace => StackTrace
+                 }
+              }
+            , RSE
             }
     end.
 
 format_value(Val, RS) ->
-    #{ print_format := PrintFormat
-     } = aere_repl_state:options(RS),
+    #{print_format := PrintFormat} = aere_repl_state:options(RS),
     TEnv = aere_repl_state:type_env(RS),
     Type = aere_sophia:type_of_user_input(TEnv),
     format_value(PrintFormat, TEnv, Type, Val).
@@ -143,14 +152,16 @@ setup_fate_state(FateCode, RS) ->
     #{call_gas := Gas, call_value := Value} = aere_repl_state:options(RS),
     {_, StateVal} = aere_repl_state:contract_state(RS),
 
-    Version = #{ vm => aere_version:vm_version(), abi => aere_version:abi_version() },
+    Version = #{ vm => aere_version:vm_version()
+               , abi => aere_version:abi_version()
+               },
     Binary = aeb_fate_code:serialize(FateCode, []),
-    Code = #{byte_code => Binary,
-             compiler_version => aere_version:sophia_version(),
-             source_hash => <<>>,%crypto:hash(sha256, OriginalSourceCode ++ [0] ++ C),
-             type_info => [],
-             abi_version => aeb_fate_abi:abi_version(),
-             payable => false %maps:get(payable, FCode)
+    Code = #{ byte_code => Binary
+            , compiler_version => aere_version:sophia_version()
+            , source_hash => <<>> %crypto:hash(sha256, OriginalSourceCode ++ [0] ++ C),
+            , type_info => []
+            , abi_version => aeb_fate_abi:abi_version()
+            , payable => false %maps:get(payable, FCode)
             },
     Contract = aect_contracts:new(Owner, 0, Version, aeser_contract_code:serialize(Code), 0),
     ChainApi = aefa_chain_api:put_contract(Contract, ChainApi0),
@@ -252,7 +263,7 @@ extract_fun_from_contract(Pubkey, Chain, Name) ->
             SerName = aeb_fate_code:symbol_identifier(binary:list_to_bin(Name)),
             extract_fun_from_bytecode(Code, SerName);
         error ->
-            throw({repl_error, aere_msg:contract_not_found()})
+            throw(repl_contract_not_found)
     end.
 
 
@@ -264,7 +275,7 @@ extract_fun_from_bytecode(Code, Name) ->
     Functions = aeb_fate_code:functions(Code),
     case maps:get(Name, Functions, not_found) of
         not_found ->
-            throw({repl_error, aere_msg:function_not_found_in(Name)});
+            throw({repl_function_not_found_in, Name});
         _ ->
             Functions1 = maps:filter(fun(F, _) -> F == Name end, Functions),
             Code0 = aeb_fate_code:new(),

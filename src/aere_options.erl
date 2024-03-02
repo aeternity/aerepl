@@ -3,9 +3,9 @@
 -export([option_parse_rules/0, parse_option/2, format_option_scheme/1]).
 
 option_parse_rules() ->
-    [ {display_gas, boolean}
-    , {call_gas, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
+    [ {call_gas, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
     , {call_value, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
+    , {print_gas, boolean}
     , {print_format, {atom, [sophia,json,fate]}}
     , {print_unit, boolean}
     , {print_type, boolean}

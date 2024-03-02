@@ -16,7 +16,7 @@ read_file(FileName, S) ->
             File;
         {error, Err} ->
             Failed = [{FileName, file:format_error(Err)}],
-            throw({repl_error, aere_msg:files_load_error(Failed)})
+            throw({repl_files_load_error, Failed})
     end.
 
 
@@ -27,7 +27,7 @@ read_files(FileNames, S) ->
     Failed = [{FileName, file:format_error(Err)} || {FileName, {error, Err}} <- lists:zip(FileNames, Files)],
     case Failed of
         [] -> lists:zip(FileNames, [File || {ok, File} <- Files]);
-        _  -> throw({repl_error, aere_msg:files_load_error(Failed)})
+        _  -> throw({repl_files_load_error, Failed})
     end.
 
 

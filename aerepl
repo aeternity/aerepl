@@ -13,12 +13,13 @@ load_paths() ->
 
 main(_Args) ->
     load_paths(),
-    {ok, _Sup} = aere_supervisor:start_link([{options, #{return_mode => render}}]),
+    {ok, _Sup} = aere_supervisor:start_link([]),
     start().
 
 start() ->
     Banner = aere_gen_server:banner(),
-    io:format("~s\n\n", [Banner]),
+    BannerStr = aere_gen_server:render(Banner),
+    io:format("~s\n\n", [BannerStr]),
     loop().
 
 loop() ->
@@ -26,24 +27,26 @@ loop() ->
     try aere_gen_server:input(Input) of
         {ok, finish} ->
             finish;
-        {ok, Msg} ->
-            print_msg(Msg),
+        {ok, Res} ->
+            print_msg(Res),
             loop();
         {error, Err} ->
-            print_msg(Err),
+            print_msg({error, Err}),
             loop()
     catch
         _:E:Stack ->
-            print_msg(aere_theme:render(aere_msg:internal(E, Stack))),
+            print_msg(aere_theme:render(aere_msg:internal_error(E, Stack))),
             loop()
     end.
 
 print_msg(ok) -> ok;
 print_msg(<<"">>) -> ok;
-print_msg({error, Msg}) ->
+print_msg(Msg) when is_binary(Msg) ->
     io:format("~s\n", [Msg]);
-print_msg(Msg) ->
-    io:format("~s\n", [Msg]).
+print_msg(Item) ->
+    Msg = aere_gen_server:format(Item),
+    Str = aere_gen_server:render(Msg),
+    print_msg(Str).
 
 
 %% Get single line or multiline input from the user and return it as a single string

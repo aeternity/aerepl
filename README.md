@@ -208,11 +208,11 @@ Currently the supported options are:
 
 | Option          | Arguments          | Description                                                         |
 |-----------------|--------------------|:--------------------------------------------------------------------|
-| `display_gas`   | `true/false`       | If `true`, REPL will print gas used for evaluating each expression. |
-|-----------------|--------------------|:--------------------------------------------------------------------|
 | `call_gas`      | non-neg int        | Determines the amount of gas to be supplied to each query.          |
 |-----------------|--------------------|:--------------------------------------------------------------------|
 | `call_value`    | non-neg int        | Sets the `value`, the amount of tokens supplied with the query.     |
+|-----------------|--------------------|:--------------------------------------------------------------------|
+| `print_gas`     | `true/false`       | If `true`, REPL will print gas used for evaluating each expression. |
 |-----------------|--------------------|:--------------------------------------------------------------------|
 | `print_format`  | `sophia/fate/json` | Determines the syntax used to display values.                       |
 |-----------------|--------------------|:--------------------------------------------------------------------|

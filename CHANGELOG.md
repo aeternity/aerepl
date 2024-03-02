@@ -5,6 +5,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [3.3.0] - 2024.02.03
+
+### Added
+- `format` generic server call for formatting outputs as renderables
+- `version_info` generic server call
+### Changed
+- Generic server now returns structured data and errors which have to be
+  formatted manually using `format` call
+- `location` display has been improved
+- `display_gas` is renamed to `print_gas` for consistency
+- Fixed numerous bugs and crashes
+### Removed
+- In-repl functions
+
+
+
 ## [3.2.0] - 2023.12.19
 
 ### Added

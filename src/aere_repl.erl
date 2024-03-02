@@ -20,6 +20,7 @@
 
 -include("aere_macros.hrl").
 
+
 -type repl_state() :: aere_repl_state:state().
 
 -type fun_ref() :: {definition, aeso_syntax:qid()}
@@ -27,16 +28,25 @@
                  | {deployed, aeso_syntax:expr(), aeso_syntax:name()}.
 
 -type command_res() :: finish | repl_state() | no_return().
--type command_res(T) :: {T, repl_state()} | command_res().
+-type command_res(T, Data) :: {{T, Data}, repl_state()} | command_res().
+-type command_res(T) :: command_res(T, map()).
 
 
+-spec infer_type(Expr, repl_state()) -> command_res(type, Result)
+              when Expr :: aeso_syntax:expr(),
+                   Result :: aeso_syntax:type().
 infer_type(Expr, RS) ->
     Stmts = aere_sophia:parse_body(Expr),
     Contract = aere_mock:eval_contract(Stmts, RS),
-    {TEnv, _} = aere_sophia:typecheck(Contract, [dont_unfold, allow_higher_order_entrypoints]),
+    TCOpts = [dont_unfold, allow_higher_order_entrypoints],
+    {TEnv, _} = aere_sophia:typecheck(Contract, TCOpts),
     Type = aere_sophia:type_of_user_input(TEnv),
-    Type.
+    {type, Type}.
 
+
+-spec eval_code(Expr, repl_state()) -> command_res(eval, Result)
+              when Expr :: aeso_syntax:expr(),
+                   Result :: term(). % todo
 eval_code(Expr, RS) ->
     Parse = aere_sophia:parse_top(Expr),
     case Parse of
@@ -49,8 +59,9 @@ eval_code(Expr, RS) ->
         [{type_def, _, Name, Args, Body}] ->
             {ok, register_typedef(Name, Args, Body, RS)};
         _ ->
-            throw({repl_error, aere_msg:unsupported_eval(Parse)})
+            throw({repl_unsupported_eval, Parse})
     end.
+
 
 -spec set_state([aeso_syntax:stmt()], repl_state())
                -> command_res().
@@ -58,9 +69,10 @@ set_state(BodyStr, RS) ->
     Body         = aere_sophia:parse_body(BodyStr),
     Contract     = aere_mock:eval_contract(Body, RS),
     {TEnv, TAst} = aere_sophia:typecheck(Contract),
+    RS0           = aere_repl_state:set_type_env(TEnv, RS),
     Type         = aere_sophia:type_of_user_input(TEnv),
     ByteCode     = aere_sophia:compile_contract(TAst),
-    RS1          = aere_fate:add_fun_symbols_from_code(RS, ByteCode),
+    RS1          = aere_fate:add_fun_symbols_from_code(RS0, ByteCode),
 
     {#{value := StateVal}, RS2} = aere_fate:run_contract(ByteCode, RS1),
 
@@ -69,7 +81,9 @@ set_state(BodyStr, RS) ->
     RS5 = aere_repl_state:set_funs(#{}, RS4),
     RS5.
 
+
 %%%------------------
+
 
 -spec eval_expr([aeso_syntax:stmt()], repl_state())
                -> command_res(Result)
@@ -92,16 +106,24 @@ update_filesystem_cache(Fs, S0) when is_map(Fs) ->
         {ok, S1} ->
             S1;
         error ->
-            throw({repl_error, aere_msg:filesystem_not_cached()})
+            throw(repl_filesystem_not_cached)
     end.
+
+
+parse_opts(S) ->
+    LdFiles  = aere_repl_state:loaded_files(S),
+    ParseOpts = [{include, {explicit_files, LdFiles}}],
+    ParseOpts.
+
 
 load_modules([], S0) ->
     S0;
 load_modules(Filenames, S0) ->
     Modules = aere_files:read_files(Filenames, S0),
     S1 = register_modules(Modules, S0),
-    S2 = register_include(element(1, lists:last(Modules)), S1),
+    S2 = register_include(element(1, hd(Modules)), S1),
     S2.
+
 
 reload_modules(RS) ->
     LdFiles  = aere_repl_state:loaded_files(RS),
@@ -111,21 +133,24 @@ reload_modules(RS) ->
     RS2 = lists:foldl(fun register_include/2, RS1, IncFiles),
     RS2.
 
+
 -spec register_modules([{string(), binary()}], repl_state())
                       -> command_res().
 register_modules(Modules, S0) ->
     FileMap = maps:from_list(Modules),
+    S1 = clear_context(S0),
+    S2 = aere_repl_state:set_loaded_files(FileMap, S1),
+    ParseOpts = parse_opts(S2),
     [ begin
-          Ast0 = aere_sophia:parse_file(File, []),
+          Ast0 = aere_sophia:parse_file(File, ParseOpts),
           aere_sophia:typecheck(aere_mock:ast_fillup_contract(Ast0)),
           File
       end
       || {_, File} <- Modules
     ],
 
-    S1 = clear_context(S0),
-    S2 = aere_repl_state:set_loaded_files(FileMap, S1),
     S2.
+
 
 %% Removes all variables, functions, types and contracts
 clear_context(S0) ->
@@ -142,6 +167,7 @@ clear_context(S0) ->
     S7 = aere_repl_state:set_blockchain_state({ready, Chain1}, S6),
     S7.
 
+
 register_include(Include, S0) when is_binary(Include) ->
     register_include(binary:bin_to_list(Include), S0);
 register_include(Include, S0) ->
@@ -150,7 +176,7 @@ register_include(Include, S0) ->
     IncFiles = aere_repl_state:included_files(S0),
     case maps:get(Include, maps:merge(default_loaded_files(S0), LdFiles), not_loaded) of
         not_loaded ->
-            throw({repl_error, aere_msg:file_not_loaded(Include)});
+            throw({repl_file_not_loaded, Include});
         File ->
             S1 = case lists:member(Include, IncFiles) of
                      true -> S0;
@@ -160,7 +186,8 @@ register_include(Include, S0) ->
                                             {FName, Code} <- maps:to_list(LdFiles),
                                             lists:member(FName, IncFiles)
                                         ]),
-                         {Ast0, _IncludeSet1} = aere_sophia:parse_file(File, IncludeSet, [keep_included, {src_file, Include}]),
+                         ParseOpts = [keep_included, {src_file, Include} | parse_opts(S0)],
+                         {Ast0, _IncludeSet1} = aere_sophia:parse_file(File, IncludeSet, ParseOpts),
                          SX = aere_repl_state:set_included_files([Include|IncFiles], S0),
                          SY = aere_repl_state:set_included_code(IncCode ++ Ast0, SX),
                          SY
@@ -170,7 +197,9 @@ register_include(Include, S0) ->
             S1
     end.
 
+
 %%%------------------
+
 
 -spec register_letval(aeso_syntax:pat(), aeso_syntax:expr(), repl_state())
                      -> command_res().
@@ -249,8 +278,8 @@ replace_function_name(E, _) ->
                       -> command_res().
 register_typedef({id, _, Name}, Args, Def, S0) ->
     case Name of
-        "state" -> throw({repl_error, aere_msg:state_typedef()});
-        "event" -> throw({repl_error, aere_msg:event_typedef()});
+        "state" -> throw(repl_state_typedef);
+        "event" -> throw(repl_event_typedef);
         _       -> ok
     end,
 
@@ -307,7 +336,7 @@ disassemble(What, S0) ->
         {local, _Name} ->
             error(not_supported);
         error ->
-            throw({repl_error, aere_msg:bad_fun_ref()})
+            throw(repl_bad_fun_ref)
     end.
 
 -spec parse_fun_ref(string()) -> fun_ref() | error.
@@ -341,17 +370,17 @@ get_ready_chain(RS) ->
         {ready, Chain} ->
             Chain;
         _ ->
-            throw({repl_error, aere_msg:chain_not_ready()})
+            throw(repl_chain_not_ready)
     end.
 
 set_option(Option, Args, RS) ->
     Opts = aere_repl_state:options(RS),
     Locked = maps:get(locked_opts, Opts, []),
     LockedOption = lists:member(Option, [locked_opts|Locked]),
-    LockedOption andalso throw({repl_error, aere_msg:locked_option()}),
+    LockedOption andalso throw({repl_locked_option, Option}),
     case aere_options:parse_option(Option, Args) of
         error ->
-            throw({repl_error, aere_msg:option_usage(Option)});
+            throw({repl_option_usage, Option});
         Val ->
             NewOpts = Opts#{Option => Val},
             aere_repl_state:set_options(NewOpts, RS)
@@ -364,20 +393,20 @@ get_state(RS) ->
     Files = aere_repl_state:loaded_files(RS),
     Incs  = aere_repl_state:included_files(RS),
     BPs   = aere_repl_state:breakpoints(RS),
-    #{ "vars"        => Vars,
-       %% "funs"        => /1, Funs},
-       "types"       => Types,
-       "options"     => Opts,
-       "files"       => Files,
-       "includes"    => Incs,
-       "breakpoints" => BPs
+    #{ "vars"        => {vars, Vars}
+       %% , "funs"        => /1, Funs}
+     , "types"       => {types, Types}
+     , "options"     => {options, Opts}
+     , "files"       => {files, Files}
+     , "includes"    => {includes, Incs}
+     , "breakpoints" => {breakpoints, BPs}
      }.
 
 lookup_state(RS, What) ->
     DataPack = get_state(RS),
     case maps:get(What, DataPack, unknown) of
         unknown ->
-            throw({repl_error, aere_msg:list_unknown(maps:keys(DataPack))});
+            throw({repl_bad_lookup, maps:keys(DataPack)});
         Data ->
              Data
     end.
