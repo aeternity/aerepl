@@ -1,11 +1,16 @@
-:load test/contracts/abort.aes
+{ ":load test/contracts/abort.aes"
+, {match, ok}
+}.
 
-let c = Chain.create() : C
+{ "let c = Chain.create() : C"
+, {match, ok}
+}.
 
-c.f(5)
-// ABORT: x = 5
-// 1    C:q:test/contracts/abort.aes:6
-// 2    C:h:test/contracts/abort.aes:9
-// 3    C:g:test/contracts/abort.aes:11
-// 4    C:f:test/contracts/abort.aes:13
-// 5    $REPL_contract:$REPL_user_input:aerepl:1
+{ "c.f(5)"
+, {match, {revert, '$1'},
+   [ { '==', {map_get, stacktrace, '$1'}
+     , []
+     }
+   ]
+  }
+}.

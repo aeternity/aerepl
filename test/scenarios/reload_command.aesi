@@ -1,29 +1,41 @@
-:load test/contracts/c.aes
+":load test/contracts/c.aes".
+"let x = 1".
+"datatype t = T".
 
-let x = 1
+{ ":lookup vars"
+, { match
+  , [ {"f", {fun_t, '_', [], [{id, '_', "int"}], {id, '_', "int"}}}
+    , {"x", {id, '_', "int"}}
+    ]
+  }
+}.
 
-datatype t = T
+{ ":lookup types"
+, {expect, ["t"]}
+}.
 
-function f(x) = x + 1
-// Warning: defining functions in REPL is WIP and may be unstable. 
+{ ":lookup includes"
+, {expect, ["test/contracts/c.aes"]}
+}.
 
-:lookup vars
-// f : (int) => int
-// x : int
+{ ":lookup files"
+, {expect, ["test/contracts/c.aes"]}
+}.
 
-:lookup types
-// t : type
+":reload".
 
-:lookup includes
-// test/contracts/c.aes
+{ ":lookup vars"
+, {expect, []}
+}.
 
-:reload
+{ ":lookup types"
+, {expect, []}
+}.
 
-:lookup vars
-//
+{ ":lookup includes"
+, {expect, ["test/contracts/c.aes"]}
+}.
 
-:lookup types
-//
-
-:lookup includes
-// test/contracts/c.aes
+{ ":lookup files"
+, {expect, ["test/contracts/c.aes"]}
+}.

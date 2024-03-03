@@ -1,60 +1,70 @@
-:load test/contracts/c.aes
+":load test/contracts/c.aes".
+"let x = 1".
+"let y = 2".
+"type al = int".
+"datatype t = T".
+"include \"List.aes\"".
+":set call_value 100".
 
-let x = 1
+{ ":lookup vars"
+, { match
+  , [ {"f", {fun_t, '_', [], [{id, '_', "int"}], {id, '_', "int"}}}
+    , {"y", {id, '_', "int"}}
+    , {"x", {id, '_', "int"}}
+    ]
+  }
+}.
 
-let y = 2
+{ ":lookup types"
+, {match, ["al", "t"]}
+}.
 
-type al = int
+{ ":lookup includes"
+, {match, ["List.aes", "test/contracts/c.aes"]}
+}.
 
-datatype t = T
+{ ":lookup files"
+, {match, ["test/contracts/c.aes"]}
+}.
 
-include "List.aes"
+{ ":lookup options"
+, { expect
+  , {options,
+     #{ call_gas => 100000000000000000
+      , call_value => 100
+      , print_gas => false
+      , print_format => sophia
+      , print_unit => false
+      }}
+  }
+}.
 
-function f(x) = x + 1
-// Warning: defining functions in REPL is WIP and may be unstable. 
+":reset".
 
-:set call_value 100
+{ ":lookup vars"
+, {match, []}
+}.
 
-:lookup vars
-// f : (int) => int
-// y : int
-// x : int
+{ ":lookup types"
+, {match, []}
+}.
 
-:lookup types
-// al : type
-// t : type
+{ ":lookup includes"
+, {match, []}
+}.
 
-:lookup includes
-// List.aes
-// test/contracts/c.aes
+{ ":lookup files"
+, {match, []}
+}.
 
-:lookup files
-// test/contracts/c.aes
-
-:lookup options
-// call_gas = 100000000000000000
-// call_value = 100
-// display_gas = false
-// print_format = sophia
-// print_unit = false
-
-:reset
-
-:lookup vars
-//
-
-:lookup types
-//
-
-:lookup includes
-//
-
-:lookup files
-//
-
-:lookup options
-// call_gas = 100000000000000000
-// call_value = 0
-// display_gas = false
-// print_format = sophia
-// print_unit = false
+{ ":lookup options"
+, { expect
+  , {options,
+     #{ call_gas => 100000000000000000
+     , call_value => 100
+     , display_gas => false
+     , print_format => sophia
+     , print_unit => false
+     }}
+  }
+}.

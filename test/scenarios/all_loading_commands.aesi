@@ -1,39 +1,47 @@
-:load test/contracts/c.aes
+{ ":load test/contracts/c.aes"
+, {match, ok}
+}.
 
-:lookup files
-// test/contracts/c.aes
+{ ":lookup files"
+, {match, ["test/contracts/c.aes"]}
+}.
 
-:lookup includes
-// test/contracts/c.aes
+{ ":lookup includes"
+, {match, ["test/contracts/c.aes"]}
+}.
 
-:p includes
-// test/contracts/c.aes
+{ ":lookup files"
+, {match, ["test/contracts/c.aes"]}
+}.
 
-:lookup files
-// test/contracts/c.aes
+{ ":lookup includes"
+, {match, ["test/contracts/c.aes"]}
+}.
 
-:lookup includes
-// test/contracts/c.aes
+{ "include \"test/contracts/d.aes\""
+, {error, {repl_file_not_loaded, "test/contracts/d.aes"}}
+}.
 
-include "test/contracts/d.aes"
-// File not loaded: test/contracts/d.aes
+{ ":lookup includes"
+, {match, ["test/contracts/c.aes"]}
+}.
 
-:lookup includes
-// test/contracts/c.aes
+{ ":load test/contracts/d.aes test/contracts/c.aes"
+, {match, ok}
+}.
 
-:load test/contracts/c.aes test/contracts/d.aes
+{ ":lookup includes"
+, {match, ["test/contracts/d.aes"]}
+}.
 
-:lookup includes
-// test/contracts/d.aes
+{ ":reload"
+, {match, ok}
+}
 
-include "test/contracts/c.aes"
+{ ":lookup files"
+, {match, ["test/contracts/d.aes", "test/contracts/c.aes"]}
+}
 
-:reload
-
-:lookup files
-// test/contracts/c.aes
-// test/contracts/d.aes
-
-:lookup includes
-// test/contracts/d.aes
-// test/contracts/c.aes
+{ ":lookup includes"
+, {match, ["test/contracts/d.aes"]}
+}.

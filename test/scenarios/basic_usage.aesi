@@ -1,43 +1,43 @@
-:set print_gas true
-//
+":set print_gas true".
 
-2 + 2
-// 4
-// USED GAS: 74
+{ "2 + 2"
+, {render, "4\nUSED GAS: 74"}
+}.
 
-:set print_gas false
-//
+":set print_gas false".
 
-2 + 1 + 1
-// 4
+{ "2 + 1 + 1"
+, {render, "4"}
+}.
 
-:bq 121
-// No such command `bq`
+{ ":blahblah 121"
+, {error, {no_such_command, blahblah}}
+}.
 
-:
-//
+{ ":"
+, {match, skip}
+}.
 
-:load nonexistent_file.aes
-// Could not load files:
-// nonexistent_file.aes: no such file or directory
+{ ":load nonexistent_file.aes"
+, {error, {could_not_load_files, "nonexistent_file.aes: no such file or directory"}}
+}.
 
-type t1 = int
+"type t1 = int".
+"type t2('a) = list('a)".
+"type t3('a) = t2('a)".
+"let e1 = 1".
+"let [e2, e3] : t3(t1) = [2, 3]".
 
-type t2('a) = list('a)
+{ "e1 + e2 + e3"
+, {match, {int, '_', 6}}
+}.
 
-type t3('a) = t2('a)
+"include \"List.aes\"".
 
-let e1 = 1
+{ "List.map((x) => x + 1, [1, 2, 3])"
+, {match, {list, '_', [{int, '_', 2},{int, '_', 3},{int, '_', 4}]}}
+}.
 
-let [e2, e3] : t3(t1) = [2, 3]
-
-e1 + e2 + e3
-// 6
-
-include "List.aes"
-
-List.map((x) => x + 1, [1, 2, 3])
-// [2, 3, 4]
-
-function g(x) = x * 10
-// Warning: defining functions in REPL is WIP and may be unstable.
+%% { "function g(x) = x * 10"
+%% ,
+%% }

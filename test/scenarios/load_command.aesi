@@ -1,29 +1,36 @@
-:load test/contracts/c.aes
+":load test/contracts/c.aes".
 
-let x = 1
+"let x = 1".
 
-datatype t = T
+"datatype t = T".
 
-function f(x) = x + 1
-// Warning: defining functions in REPL is WIP and may be unstable. 
+"function f(x) = x + 1".
 
-:lookup vars
-// f : (int) => int
-// x : int
+{ ":lookup vars"
+, {match,
+  [ {"f", {fun_t, '_', [], [{id, '_', "int"}], {id, '_', "int"}}}
+  , {"x", {id, '_', "int"}}
+  ]
+}.
 
-:lookup types
-// t : type
+{ ":lookup types"
+, {match, ["t"]}
+}.
 
-:lookup includes
-// test/contracts/c.aes
+{ ":lookup includes"
+, {match, ["test/contracts/c.aes"]}
+}.
 
-:load test/contracts/d.aes
+":load test/contracts/d.aes".
 
-:lookup vars
-//
+{ ":lookup vars"
+, {match, []}
+}.
 
-:lookup types
-//
+{ ":lookup types"
+, {match, []}
+}.
 
-:lookup includes
-// test/contracts/d.aes
+{ ":lookup includes"
+, {match, ["test/contracts/d.aes"]}
+}.

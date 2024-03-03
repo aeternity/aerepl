@@ -1,72 +1,103 @@
-:lookup options
-// call_gas = 100000000000000000
-// call_value = 0
-// print_gas = false
-// print_format = sophia
-// print_unit = false
+{ ":lookup options"
+, { expect
+  , {options,
+     #{ call_gas => 100000000000000000
+      , call_value => 0
+      , print_gas => false
+      , print_format => sophia
+      , print_unit => false
+      }}
+  }
+}.
 
-:set call_gas 100
+":set call_gas 100".
+":set call_value 10".
+":set print_gas true".
+":set print_format fate".
+":set print_unit true".
 
-:set call_value 10
+{ ":lookup options"
+, { expect
+  , {options,
+     #{ call_gas => 100
+      , call_value => 10
+      , print_gas => true
+      , print_format => fate
+      , print_unit => true
+      }}
+  }
+}.
 
-:set print_gas true
+{ ":set print_format form"
+, {error, wat}
+}.
+%% Bad setting format
+%% print_format sophia|json|fate
 
-:set print_format fate
+{ ":set call_gas false"
+, {error, wat}
+}.
+%% Bad setting format
+%% call_gas INTEGER(non-neg)
 
-:set print_unit true
+{ ":set unknown_opt 1"
+, {error, wat}
+}.
+%% Unknown setting: unknown_opt
 
-:lookup options
-// call_gas = 100
-// call_value = 10
-// print_gas = true
-// print_format = fate
-// print_unit = true
+{ ":set call_gas -5"
+, {error, wat}
+}.
+%% Bad setting format
+%% call_gas INTEGER(non-neg)
 
-:set print_format form
-// Bad setting format
-// print_format sophia|json|fate
+{ ":set call_value -7"
+, {error, wat}
+}.
+%% Bad setting format
+%% call_value INTEGER(non-neg)
 
-:set call_gas false
-// Bad setting format
-// call_gas INTEGER(non-neg)
+{ ":set print_gas 0"
+, {error, wat}
+}.
+%% Bad setting format
+%% print_gas BOOLEAN
 
-:set unknown_opt 1
-// Unknown setting: unknown_opt
+{ ":set print_unit 1"
+, {error, wat}
+}.
+%% Bad setting format
+%% print_unit BOOLEAN
 
-:set call_gas -5
-// Bad setting format
-// call_gas INTEGER(non-neg)
+{ ":set print_format json"
+, {error, wat}
+}.
 
-:set call_value -7
-// Bad setting format
-// call_value INTEGER(non-neg)
+":set call_gas 0".
+":set call_value 0".
 
-:set print_gas 0
-// Bad setting format
-// print_gas BOOLEAN
+{ ":lookup options"
+, { expect
+  , {options,
+     #{ call_gas => 0
+      , call_value => 0
+      , print_gas => true
+      , print_format => json
+      , print_unit => true
+      }}
+  }
+}.
 
-:set print_unit 1
-// Bad setting format
-// print_unit BOOLEAN
+":reset".
 
-:set print_format json
-
-:set call_gas 0
-
-:set call_value 0
-
-:lookup options
-// call_gas = 0
-// call_value = 0
-// print_gas = true
-// print_format = json
-// print_unit = true
-
-:reset
-
-:lookup options
-// call_gas = 100000000000000000
-// call_value = 0
-// print_gas = false
-// print_format = sophia
-// print_unit = false
+{ ":lookup options"
+, { expect
+  , {options,
+     #{ call_gas => 100000000000000000
+      , call_value => 0
+      , print_gas => false
+      , print_format => sophia
+      , print_unit => false
+      }}
+  }
+}.
