@@ -204,7 +204,7 @@ files_load_error(Failed) ->
                         , aere_theme:output(": ")
                         , aere_theme:output(Err)
                         ] || {File, Err} <- Failed ],
-    FlatList = lists:flatten(lists:join(aere_theme:output("\n"), FilesAndReasons)),
+    FlatList = lists:join(aere_theme:output("\n"), FilesAndReasons),
     [aere_theme:error("Could not load files:\n") | FlatList].
 
 -spec state_typedef() -> msg().
@@ -503,7 +503,7 @@ format({error, Err}, Opts) ->
     format_err(Err, Opts);
 format(ok, _Opts) ->
     [];
-format({eval_result, #{result := Res, type := Type, used_gas := UsedGas}}, Opts) ->
+format({eval_return, #{result := Res, type := Type, used_gas := UsedGas}}, Opts) ->
     #{ print_gas  := Printgas,
        print_unit   := PrintUnit,
        print_type   := PrintType

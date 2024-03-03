@@ -20,7 +20,7 @@
         }.
 -type stacktrace() :: list(stacktrace_entry()).
 
--type eval_result() ::
+-type eval_return() ::
         #{ result    := term()
          , value     := term()
          , type      := term()
@@ -32,24 +32,32 @@
          , stacktrace := stacktrace()
          }.
 
+-type eval_result() ::
+        {eval_return, eval_return()}.
+
 -type eval_debug_result() ::
-        {eval_result, eval_result()}
+        {eval_return, eval_return()}
       | break
       | {revert, revert()}.
 
--export_type([stacktrace_entry/0, stacktrace/0, eval_result/0, eval_debug_result/0]).
+-export_type([ stacktrace_entry/0
+             , stacktrace/0
+             , eval_return/0
+             , eval_result/0
+             , eval_debug_result/0
+             ]).
 
 -spec run_contract(FateCode, ReplState) -> {Res, ReplState} | no_return()
     when FateCode  :: aeb_fate_code:fcode(),
          ReplState :: aere_repl_state:state(),
-         Res       :: eval_result().
+         Res       :: eval_return().
 
 run_contract(FateCode, RS) ->
     ES0  = setup_fate_state(FateCode, RS),
     Info = aefa_debug:set_breakpoints([], aefa_engine_state:debug_info(ES0)),
     ES1  = aefa_engine_state:set_debug_info(Info, ES0),
     case eval_state(ES1, RS) of
-        {{eval_result, Res}, RS1} ->
+        {{eval_return, Res}, RS1} ->
             { Res, RS1 };
         {{revert, #{err_msg := ErrMsg, stacktrace := StackTrace}}, _} ->
             throw({repl_fate_revert, ErrMsg, StackTrace});
@@ -104,7 +112,7 @@ eval_state(ES0, RS0) ->
                 ContractState  = {StateType, StateVal},
                 RS1            = aere_repl_state:set_contract_state(ContractState, RS0),
                 RS2            = aere_repl_state:set_blockchain_state({ready, ChainApi}, RS1),
-                { { eval_result
+                { { eval_return
                   , #{ result    => format_value(Res, RS2)
                      , value     => Res
                      , used_gas  => UsedGas

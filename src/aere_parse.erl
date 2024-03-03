@@ -164,7 +164,7 @@ resolve_command_by_alias(Alias, [Spec = {_, {Aliases, _, _, _}} | Rest]) ->
     end.
 
 
--spec parse(string()) -> {ok, parse_result()} | {error, aere_theme:renderable()}.
+-spec parse(string()) -> {ok, parse_result()} | {error, term()}.
 %% @doc
 %% Parse an input string. This function is called on strings entered by the user in the repl
 

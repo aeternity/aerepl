@@ -481,9 +481,9 @@ format(ServerName, Item) ->
     Fmt.
 
 
--spec input(string()) -> {ok, Result} | {error, ErrMsg} when
+-spec input(string()) -> {ok, Result} | {error, Err} when
       Result :: result(any()),
-      ErrMsg :: binary().
+      Err :: term().
 input(Input) ->
     input(?MODULE, Input).
 input(ServerName, Input) ->

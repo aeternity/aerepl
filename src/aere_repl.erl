@@ -27,14 +27,9 @@
                  | {local, aeso_syntax:name()}
                  | {deployed, aeso_syntax:expr(), aeso_syntax:name()}.
 
--type command_res() :: finish | repl_state() | no_return().
--type command_res(T, Data) :: {{T, Data}, repl_state()} | command_res().
--type command_res(T) :: command_res(T, map()).
 
-
--spec infer_type(Expr, repl_state()) -> command_res(type, Result)
-              when Expr :: aeso_syntax:expr(),
-                   Result :: aeso_syntax:type().
+-spec infer_type(Expr, repl_state()) -> {type, aeso_syntax:type()}
+              when Expr :: string().
 infer_type(Expr, RS) ->
     Stmts = aere_sophia:parse_body(Expr),
     Contract = aere_mock:eval_contract(Stmts, RS),
@@ -44,11 +39,11 @@ infer_type(Expr, RS) ->
     {type, Type}.
 
 
--spec eval_code(Expr, repl_state()) -> command_res(eval, Result)
-              when Expr :: aeso_syntax:expr(),
-                   Result :: term(). % todo
-eval_code(Expr, RS) ->
-    Parse = aere_sophia:parse_top(Expr),
+-spec eval_code(Sophia, repl_state()) -> {Result, repl_state()}
+              when Sophia :: string(),
+                   Result :: aere_fate:eval_result() | ok.
+eval_code(Sophia, RS) ->
+    Parse = aere_sophia:parse_top(Sophia),
     case Parse of
         {body, Body} ->
             eval_expr(Body, RS);
@@ -64,7 +59,7 @@ eval_code(Expr, RS) ->
 
 
 -spec set_state([aeso_syntax:stmt()], repl_state())
-               -> command_res().
+               -> repl_state().
 set_state(BodyStr, RS) ->
     Body         = aere_sophia:parse_body(BodyStr),
     Contract     = aere_mock:eval_contract(Body, RS),
@@ -86,7 +81,7 @@ set_state(BodyStr, RS) ->
 
 
 -spec eval_expr([aeso_syntax:stmt()], repl_state())
-               -> command_res(Result)
+               -> {Result, repl_state()}
               when Result :: aere_fate:eval_debug_result().
 eval_expr(Body, RS) ->
     Ast           = aere_mock:eval_contract(Body, RS),
@@ -135,7 +130,7 @@ reload_modules(RS) ->
 
 
 -spec register_modules([{string(), binary()}], repl_state())
-                      -> command_res().
+                      -> repl_state().
 register_modules(Modules, S0) ->
     FileMap = maps:from_list(Modules),
     S1 = clear_context(S0),
@@ -153,6 +148,8 @@ register_modules(Modules, S0) ->
 
 
 %% Removes all variables, functions, types and contracts
+-spec clear_context(repl_state())
+                   -> repl_state().
 clear_context(S0) ->
     Contracts = [PK || {_Name, _Type, {contract, PK}} <- aere_repl_state:vars(S0)],
     Chain0 = get_ready_chain(S0),
@@ -202,7 +199,7 @@ register_include(Include, S0) ->
 
 
 -spec register_letval(aeso_syntax:pat(), aeso_syntax:expr(), repl_state())
-                     -> command_res().
+                     -> repl_state().
 register_letval(Pat, Expr, S0) ->
     NewVars = lists:filter(
                 fun(Var) -> Var /= "_" end,
@@ -275,7 +272,7 @@ replace_function_name(E, _) ->
     E.
 
 -spec register_typedef(aeso_syntax:id(), [aeso_syntax:tvar()], aeso_syntax:typedef(), repl_state())
-                      -> command_res().
+                      -> repl_state().
 register_typedef({id, _, Name}, Args, Def, S0) ->
     case Name of
         "state" -> throw(repl_state_typedef);
