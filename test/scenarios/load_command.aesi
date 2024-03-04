@@ -4,34 +4,41 @@
 
 "datatype t = T".
 
-"function f(x) = x + 1".
-
 { ":lookup vars"
 , {match,
-   [ {"f", {fun_t, '_', [], [{id, '_', "int"}], {id, '_', "int"}}}
-   , {"x", {id, '_', "int"}}
-   ]
+   { vars
+   , [ {"x", {id, '_', "int"}, 1}
+     ]
+   }
   }
 }.
 
 { ":lookup types"
-, {match, ["t"]}
+, {match, {types, [{'_', "t", [], '_'}]}}
 }.
 
 { ":lookup includes"
-, {match, ["test/contracts/c.aes"]}
+, {match, {includes, ["test/contracts/c.aes"]}}
+}.
+
+{ ":lookup files"
+, {match, {files, #{"test/contracts/c.aes" => '_'}}}
 }.
 
 ":load test/contracts/d.aes".
 
 { ":lookup vars"
-, {match, []}
+, {match, {vars, []}}
 }.
 
 { ":lookup types"
-, {match, []}
+, {match, {types, []}}
 }.
 
 { ":lookup includes"
-, {match, ["test/contracts/d.aes"]}
+, {match, {includes, ["test/contracts/d.aes"]}}
+}.
+
+{ ":lookup files"
+, {match, {files, #{"test/contracts/d.aes" => '_'}}}
 }.

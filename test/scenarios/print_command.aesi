@@ -1,33 +1,50 @@
 "datatype d = Int".
-
 "datatype d = Char".
-
 "datatype d = String".
 
 { ":lookup types"
-, {expect, ["d"]}
+, {match,
+   { types
+   , [ {'_', "d", [], {variant_t, [{constr_t, '_', {con, '_', "String"}, []}]}}
+     , {'_', "d", [], {variant_t, [{constr_t, '_', {con, '_', "Char"}, []}]}}
+     , {'_', "d", [], {variant_t, [{constr_t, '_', {con, '_', "Int"}, []}]}}
+     ]
+   }
+  }
 }.
 
 "let x = 'c'".
 
 { ":lookup vars"
-, {match, {vars, [{"x", {id, '_', "char"}}]}}
+, {match, {vars, [{"x", {id, '_', "char"}, $c}]}}
 }.
 
 "let x = 1".
 
 { ":lookup vars"
-, {match, {vars, [{"x", {id, '_', "int"}}]}}
+, {match, {vars, [{"x", {id, '_', "int"}, 1}]}}
 }.
 
 "let y = 2".
 
 { ":lookup vars"
-, {match, {vars, [{"x", {id, '_', "int"}}, {"y", {id, '_', "int"}}]}}
+, {match,
+   { vars
+   , [ {"y", {id, '_', "int"}, 2}
+     , {"x", {id, '_', "int"}, 1}
+     ]
+   }
+  }
 }.
 
 "let y = \"string\"".
 
 { ":lookup vars"
-, {match, {vars, [{"x", {id, '_', "int"}}, {"y", {id, '_', "string"}}]}}
+, { match
+  , { vars
+    , [ {"y", {id, '_', "string"}, <<"string">>}
+      , {"x", {id, '_', "int"}, 1}
+      ]
+    }
+  }
 }.

@@ -3,7 +3,7 @@
 }.
 
 { ":state ST(1)"
-, {error, {repl_sophia, "1:2:Unbound variable `ST`"}}
+, {error_render, "1:2:Unbound variable `ST`"}
 }.
 
 { ":state 1"
@@ -11,7 +11,7 @@
 }.
 
 { ":type state"
-, {match, {id, '_', "int"}}
+, {match, {type, {id, '_', "int"}}}
 }.
 
 { "datatype dt = D(int)"
@@ -35,7 +35,7 @@
 }.
 
 { "x"
-, {match, {app, '_', {con, '_', "D"}, [{int, '_', 1}]}}
+, { render, "D(1)" }
 }.
 
 { ":state X(1)"
@@ -43,5 +43,5 @@
 }.
 
 { ":t x"
-, {error, {repl_sophia, "1:2:Unbound variable `x`"}}
+, {error_render, "1:2:Unbound variable `x`"}
 }.

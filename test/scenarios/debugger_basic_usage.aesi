@@ -5,7 +5,7 @@
 "let c = Chain.create() : C".
 
 { "c.h()"
-, {match, {int, '_', 15}}
+, {match, {eval_return, #{value => 15}}}
 }.
 
 { ":b test/contracts/debug.aes 14"
@@ -21,9 +21,9 @@
 }.
 
 { ":print_var x"
-, {match, {int, '_', 1}}
+, {match, {value, 1}}
 }.
 
 { ":c"
-, {match, {int, '_', 15}}
+, {match, {eval_return, #{value => 15}}}
 }.

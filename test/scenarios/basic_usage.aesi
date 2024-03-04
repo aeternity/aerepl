@@ -1,11 +1,3 @@
-":set print_gas true".
-
-{ "2 + 2"
-, {render, "4\nUSED GAS: 74"}
-}.
-
-":set print_gas false".
-
 { "2 + 1 + 1"
 , {render, "4"}
 }.
@@ -15,11 +7,11 @@
 }.
 
 { ":"
-, {match, skip}
+, {match, ok}
 }.
 
 { ":load nonexistent_file.aes"
-, {error, {could_not_load_files, "nonexistent_file.aes: no such file or directory"}}
+, {error, {repl_files_load_error, [{"nonexistent_file.aes", "no such file or directory"}]}}
 }.
 
 "type t1 = int".
@@ -29,13 +21,13 @@
 "let [e2, e3] : t3(t1) = [2, 3]".
 
 { "e1 + e2 + e3"
-, {match, {int, '_', 6}}
+, {match, {eval_return, #{value => 6}}}
 }.
 
 "include \"List.aes\"".
 
 { "List.map((x) => x + 1, [1, 2, 3])"
-, {match, {list, '_', [{int, '_', 2},{int, '_', 3},{int, '_', 4}]}}
+, {match, {eval_return, #{value => [2,3,4]}}}
 }.
 
 %% { "function g(x) = x * 10"

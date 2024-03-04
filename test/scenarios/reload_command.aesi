@@ -4,38 +4,39 @@
 
 { ":lookup vars"
 , { match
-  , [ {"f", {fun_t, '_', [], [{id, '_', "int"}], {id, '_', "int"}}}
-    , {"x", {id, '_', "int"}}
-    ]
+  , { vars
+    , [ {"x", {id, '_', "int"}, 1}
+      ]
+    }
   }
 }.
 
 { ":lookup types"
-, {expect, ["t"]}
+, {match, {types, [{'_', "t", [], '_'}]}}
 }.
 
 { ":lookup includes"
-, {expect, ["test/contracts/c.aes"]}
+, {expect, {includes, ["test/contracts/c.aes"]}}
 }.
 
 { ":lookup files"
-, {expect, ["test/contracts/c.aes"]}
+, {match, {files, #{"test/contracts/c.aes" => '_'}}}
 }.
 
 ":reload".
 
 { ":lookup vars"
-, {expect, []}
+, {expect, {vars, []}}
 }.
 
 { ":lookup types"
-, {expect, []}
+, {expect, {types, []}}
 }.
 
 { ":lookup includes"
-, {expect, ["test/contracts/c.aes"]}
+, {expect, {includes, ["test/contracts/c.aes"]}}
 }.
 
 { ":lookup files"
-, {expect, ["test/contracts/c.aes"]}
+, {match, {files, #{"test/contracts/c.aes" => '_'}}}
 }.

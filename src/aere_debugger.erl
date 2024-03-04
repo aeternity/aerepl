@@ -96,7 +96,7 @@ resume(ES, Kind) ->
 
 -spec lookup_variable(ReplState, VariableName) -> string() | no_return()
     when ReplState    :: aere_repl_state:state(),
-         VariableName :: string().
+         VariableName :: term().
 
 lookup_variable(RS, VarName) ->
     ES = breakpoint_engine_state(RS),
@@ -105,7 +105,7 @@ lookup_variable(RS, VarName) ->
             throw({repl_undefined_variable, VarName});
         Reg ->
             {Val, _} = aefa_fate:lookup_var(Reg, ES),
-            io_lib:format("~p", [Val])
+            Val %% TODO: some fate type?
     end.
 
 

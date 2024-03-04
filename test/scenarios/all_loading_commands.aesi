@@ -3,19 +3,19 @@
 }.
 
 { ":lookup files"
-, {match, ["test/contracts/c.aes"]}
+, {match, {files, #{"test/contracts/c.aes" => '_'}}}
 }.
 
 { ":lookup includes"
-, {match, ["test/contracts/c.aes"]}
+, {match, {includes, ["test/contracts/c.aes"]}}
 }.
 
 { ":lookup files"
-, {match, ["test/contracts/c.aes"]}
+, {match, {files, #{"test/contracts/c.aes" => '_'}}}
 }.
 
 { ":lookup includes"
-, {match, ["test/contracts/c.aes"]}
+, {match, {includes, ["test/contracts/c.aes"]}}
 }.
 
 { "include \"test/contracts/d.aes\""
@@ -23,7 +23,7 @@
 }.
 
 { ":lookup includes"
-, {match, ["test/contracts/c.aes"]}
+, {match, {includes, ["test/contracts/c.aes"]}}
 }.
 
 { ":load test/contracts/d.aes test/contracts/c.aes"
@@ -31,7 +31,7 @@
 }.
 
 { ":lookup includes"
-, {match, ["test/contracts/d.aes"]}
+, {match, {includes, ["test/contracts/d.aes"]}}
 }.
 
 { ":reload"
@@ -39,9 +39,9 @@
 }.
 
 { ":lookup files"
-, {match, ["test/contracts/d.aes", "test/contracts/c.aes"]}
+, {match, {files, #{"test/contracts/d.aes" => '_', "test/contracts/c.aes" => '_'}}}
 }.
 
 { ":lookup includes"
-, {match, ["test/contracts/d.aes"]}
+, {match, {includes, ["test/contracts/d.aes"]}}
 }.

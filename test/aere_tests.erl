@@ -25,7 +25,6 @@ eval_test_() ->
     {setup, fun load_paths/0, [{generator, fun tests/0}]}.
 
 tests() ->
-    aere_gen_server:start_link([]),
     [{"Testing the " ++ atom_to_list(TestScenario) ++ " scenario",
       fun() ->
               File = "test/scenarios/" ++ atom_to_list(TestScenario) ++ ".aesi",
@@ -35,7 +34,7 @@ tests() ->
                       {error, enoent} -> error(File ++ " not found")
                   end,
 
-              test_commands(Commands)
+              test_scenario(TestScenario, Commands)
       end} || TestScenario <- scenarios()] ++
     [ { "Testing the uniqueness of long repl commands",
         fun() ->
@@ -50,20 +49,42 @@ tests() ->
             ?assertEqual([], duplicated(Commands))
         end } ].
 
+
+test_scenario(Scenario, Commands) ->
+    {ok, REPL} = aere_gen_server:start_link({local, Scenario}, []),
+    try test_commands(REPL, Commands)
+    after aere_gen_server:stop(REPL)
+    end.
+
+
 validate_output(succeed, Output) ->
     io:format("Expecting success:\n~p\n", [Output]),
     ?assertNotMatch({error, _}, Output);
-validate_output({error, Err}, Output) ->
+
+validate_output({error, Err}, Output = {error, GotErr}) ->
     io:format("Expecting error:\n~p\n", [Err]),
-    io:format("Got:\n~p\n", [Output]),
+    io:format("Got:\n~p\n", [GotErr]),
     ?assertEqual({error, Err}, Output);
-validate_output({expect, Expect}, {ok, Output}) ->
+
+validate_output({error_render, ErrMsg}, Output) when is_list(ErrMsg )->
+    validate_output({error_render, list_to_binary(ErrMsg)}, Output);
+
+validate_output({error_render, ErrMsg}, Output) ->
+    io:format("Expecting error message:\n~s\n", [ErrMsg]),
+    Fmt = aere_msg:format_err(Output),
+    Str = aere_theme:render(Fmt),
+    io:format("Got:\n~s\n", [Str]),
+    ?assertEqual(ErrMsg, Str);
+
+validate_output({expect, Expect}, Output) ->
     io:format("Expecting output:\n~p\n", [Expect]),
     io:format("Got:\n~p\n", [Output]),
     ?assertEqual(Expect, Output);
+
 validate_output({match, Match}, Output) ->
     validate_output({match, Match, []}, Output);
-validate_output({match, Match, Guards}, {ok, Output}) ->
+
+validate_output({match, Match, Guards}, Output) ->
     io:format("Expecting match:\n~p\n", [Match]),
     io:format("With guards:\n~p\n", [Guards]),
     io:format("Got:\n~p\n", [Output]),
@@ -72,24 +93,31 @@ validate_output({match, Match, Guards}, {ok, Output}) ->
     ets:insert(T, {match_success, Output}),
     Result = ets:select(T, [{{'$0', Match}, Guards, ['$0']}]),
     try ?assertEqual([match_success], Result)
-    after ets:delete(T)
+    after ets:delete(T),
+          ok
     end;
+
 validate_output({render, Render}, Output) when is_list(Render) ->
     validate_output({render, list_to_binary(Render)}, Output);
-validate_output({render, Render}, {ok, Output}) ->
-    Fmt = aere_gen_server:format(Output),
+
+validate_output({render, Render}, Output) ->
+    io:format("Expecting output message:\n~p\n", [Render]),
+    Fmt = aere_msg:format(Output),
     Str = aere_theme:render(Fmt),
+    io:format("Got:\n~s\n", [Str]),
     ?assertEqual(Render, Str).
 
 
-test_commands([Command | Rest]) when is_list(Command) ->
-    test_commands([{Command, succeed} | Rest]);
-test_commands([{Command, Test}|Rest]) ->
+test_commands(REPL, [Command | Rest]) when is_list(Command) ->
+    test_commands(REPL, [{Command, succeed} | Rest]);
+test_commands(REPL, [{Command, Test}|Rest]) ->
     io:format("\n*** Command: ~s\n", [Command]),
-    validate_output(Test, eval(Command)),
-    test_commands(Rest);
-test_commands([]) ->
+    Output = eval(REPL, Command),
+    validate_output(Test, Output),
+    test_commands(REPL, Rest);
+test_commands(_REPL, []) ->
     ok.
+
 
 -spec duplicated(list()) -> list().
 duplicated(List) ->
@@ -115,5 +143,6 @@ scenarios() ->
     , debugger_basic_usage
     ].
 
-eval(I) ->
-    aere_gen_server:input(I).
+eval(REPL, I) ->
+    Output = aere_gen_server:input(REPL, I),
+    Output.

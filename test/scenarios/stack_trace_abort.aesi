@@ -9,7 +9,31 @@
 { "c.f(5)"
 , {match, {revert, '$1'},
    [ { '==', {map_get, stacktrace, '$1'}
-     , []
+     , [ #{ function => <<"q">>
+          , line => 6
+          , file => "test/contracts/abort.aes"
+          , contract => "C"
+          }
+       , #{ function => <<"h">>
+          , line => 9
+          , file => "test/contracts/abort.aes"
+          , contract => "C"
+          }
+       , #{function => <<"g">>
+          , line => 11
+          , file => "test/contracts/abort.aes"
+          , contract => "C"
+          }
+       , #{ function => <<"f">>
+          , line => 13
+          , file => "test/contracts/abort.aes"
+          , contract => "C"
+          }
+       , #{ function => <<"$REPL_user_input">>
+          , line => 1, file => []
+          , contract => "$REPL_contract"
+          }
+       ]
      }
    ]
   }

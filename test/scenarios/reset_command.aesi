@@ -8,23 +8,29 @@
 
 { ":lookup vars"
 , { match
-  , [ {"f", {fun_t, '_', [], [{id, '_', "int"}], {id, '_', "int"}}}
-    , {"y", {id, '_', "int"}}
-    , {"x", {id, '_', "int"}}
-    ]
+  , {vars, [ {"y", {id, '_', "int"}, 2}
+           , {"x", {id, '_', "int"}, 1}
+           ]
+    }
   }
 }.
 
 { ":lookup types"
-, {match, ["al", "t"]}
+, {match,
+   { types
+   , [ {'_', "t", [], '_'}
+     , {'_', "al", [], '_'}
+     ]
+   }
+  }
 }.
 
 { ":lookup includes"
-, {match, ["List.aes", "test/contracts/c.aes"]}
+, {match, {includes, ["List.aes", "test/contracts/c.aes"]}}
 }.
 
 { ":lookup files"
-, {match, ["test/contracts/c.aes"]}
+, {match, {files, #{"test/contracts/c.aes" => '_'}}}
 }.
 
 { ":lookup options"
@@ -42,27 +48,27 @@
 ":reset".
 
 { ":lookup vars"
-, {match, []}
+, {match, {vars, []}}
 }.
 
 { ":lookup types"
-, {match, []}
+, {match, {types, []}}
 }.
 
 { ":lookup includes"
-, {match, []}
+, {match, {includes, []}}
 }.
 
 { ":lookup files"
-, {match, []}
+, {match, {files, #{}}}
 }.
 
 { ":lookup options"
 , { match
   , {options,
      #{ call_gas => 100000000000000000
-      , call_value => 100
-      , display_gas => false
+      , call_value => 0
+      , print_gas => false
       , print_format => sophia
       , print_unit => false
       }}

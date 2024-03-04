@@ -13,6 +13,8 @@
         , start/2
         , start_link/1
         , start_link/2
+        , stop/1
+        , stop/3
         ]).
 
 %% GenServer API
@@ -119,6 +121,12 @@ start_link(Args) ->
 
 start_link(Name, Args) ->
     gen_server:start_link(Name, ?MODULE, Args, []).
+
+stop(ServerRef) ->
+    gen_server:stop(ServerRef).
+
+stop(ServerRef, Reason, Timeout) ->
+    gen_server:stop(ServerRef, Reason, Timeout).
 
 
 init(Args) ->
@@ -493,7 +501,7 @@ input(ServerName, Input) ->
         {ok, Command} ->
             bump_nonce(ServerName),
             Result = gen_server:call(ServerName, Command),
-            {ok, Result}
+            Result
     end.
 
 

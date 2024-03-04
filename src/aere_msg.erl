@@ -61,7 +61,9 @@
    ]).
 
 %% General
--export([format/2]).
+-export([ format/1, format/2
+        , format_err/1, format_err/2
+        ]).
 
 -type msg() :: aere_theme:renderable().
 
@@ -441,6 +443,10 @@ debug_vars(Vars) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-spec format_err(term()) -> msg().
+format_err(Item) ->
+    format(Item, aere_repl_state:init_options()).
+
 -spec format_err(term(), aere_repl_state:repl_options()) -> msg().
 
 format_err({repl_internal, Err, St}, _Opts) ->
@@ -496,6 +502,10 @@ format_err(Err, _Opts) ->
     Str = lists:flatten(io_lib:format("~p", [Err])),
     internal_error({unknown_error, Str}).
 
+
+-spec format(term()) -> msg().
+format(Item) ->
+    format(Item, aere_repl_state:init_options()).
 
 -spec format(term(), aere_repl_state:repl_options()) -> msg().
 

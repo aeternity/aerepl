@@ -25,13 +25,10 @@ start() ->
 loop() ->
     Input = get_input(),
     try aere_gen_server:input(Input) of
-        {ok, finish} ->
+        finish ->
             finish;
-        {ok, Res} ->
+        Res ->
             print_msg(Res),
-            loop();
-        {error, Err} ->
-            print_msg({error, Err}),
             loop()
     catch
         _:E:Stack ->

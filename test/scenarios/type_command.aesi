@@ -62,5 +62,5 @@
 "let x = { owner = Call.origin, value = 1 }".
 
 { ":t x"
-, {match, {type, {id, '_', "balance"}}}
+, {match, {type, {qid, '_', ['_', "balance"]}}}
 }.

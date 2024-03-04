@@ -29,50 +29,47 @@
 }.
 
 { ":set print_format form"
-, {error, wat}
+, {error, {repl_option_usage, print_format}}
 }.
 %% Bad setting format
 %% print_format sophia|json|fate
 
 { ":set call_gas false"
-, {error, wat}
+, {error, {repl_option_usage, call_gas}}
 }.
 %% Bad setting format
 %% call_gas INTEGER(non-neg)
 
 { ":set unknown_opt 1"
-, {error, wat}
+, {error, {repl_option_usage, unknown_opt}}
 }.
 %% Unknown setting: unknown_opt
 
 { ":set call_gas -5"
-, {error, wat}
+, {error, {repl_option_usage, call_gas}}
 }.
 %% Bad setting format
 %% call_gas INTEGER(non-neg)
 
 { ":set call_value -7"
-, {error, wat}
+, {error, {repl_option_usage, call_value}}
 }.
 %% Bad setting format
 %% call_value INTEGER(non-neg)
 
 { ":set print_gas 0"
-, {error, wat}
+, {error, {repl_option_usage, print_gas}}
 }.
 %% Bad setting format
 %% print_gas BOOLEAN
 
 { ":set print_unit 1"
-, {error, wat}
+, {error, {repl_option_usage, print_unit}}
 }.
 %% Bad setting format
 %% print_unit BOOLEAN
 
-{ ":set print_format json"
-, {error, wat}
-}.
-
+":set print_format json".
 ":set call_gas 0".
 ":set call_value 0".
 
