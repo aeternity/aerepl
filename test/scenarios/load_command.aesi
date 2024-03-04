@@ -8,9 +8,10 @@
 
 { ":lookup vars"
 , {match,
-  [ {"f", {fun_t, '_', [], [{id, '_', "int"}], {id, '_', "int"}}}
-  , {"x", {id, '_', "int"}}
-  ]
+   [ {"f", {fun_t, '_', [], [{id, '_', "int"}], {id, '_', "int"}}}
+   , {"x", {id, '_', "int"}}
+   ]
+  }
 }.
 
 { ":lookup types"

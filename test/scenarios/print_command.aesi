@@ -11,23 +11,23 @@
 "let x = 'c'".
 
 { ":lookup vars"
-, {match, [{"x", {id, '_', "char"}}]}
+, {match, {vars, [{"x", {id, '_', "char"}}]}}
 }.
 
 "let x = 1".
 
 { ":lookup vars"
-, {match, [{"x", {id, '_', "int"}}]}
+, {match, {vars, [{"x", {id, '_', "int"}}]}}
 }.
 
 "let y = 2".
 
 { ":lookup vars"
-, {match, [{"x", {id, '_', "int"}}, {"y", {id, '_', "int"}}]}
+, {match, {vars, [{"x", {id, '_', "int"}}, {"y", {id, '_', "int"}}]}}
 }.
 
 "let y = \"string\"".
 
 { ":lookup vars"
-, {match, [{"x", {id, '_', "int"}}, {"y", {id, '_', "string"}}]}
+, {match, {vars, [{"x", {id, '_', "int"}}, {"y", {id, '_', "string"}}]}}
 }.

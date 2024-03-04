@@ -28,7 +28,7 @@
 }.
 
 { ":lookup options"
-, { expect
+, { match
   , {options,
      #{ call_gas => 100000000000000000
       , call_value => 100
@@ -58,13 +58,13 @@
 }.
 
 { ":lookup options"
-, { expect
+, { match
   , {options,
      #{ call_gas => 100000000000000000
-     , call_value => 100
-     , display_gas => false
-     , print_format => sophia
-     , print_unit => false
-     }}
+      , call_value => 100
+      , display_gas => false
+      , print_format => sophia
+      , print_unit => false
+      }}
   }
 }.

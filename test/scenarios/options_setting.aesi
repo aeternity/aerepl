@@ -1,5 +1,5 @@
 { ":lookup options"
-, { expect
+, { match
   , {options,
      #{ call_gas => 100000000000000000
       , call_value => 0
@@ -17,7 +17,7 @@
 ":set print_unit true".
 
 { ":lookup options"
-, { expect
+, { match
   , {options,
      #{ call_gas => 100
       , call_value => 10
@@ -77,7 +77,7 @@
 ":set call_value 0".
 
 { ":lookup options"
-, { expect
+, { match
   , {options,
      #{ call_gas => 0
       , call_value => 0
@@ -91,7 +91,7 @@
 ":reset".
 
 { ":lookup options"
-, { expect
+, { match
   , {options,
      #{ call_gas => 100000000000000000
       , call_value => 0

@@ -36,11 +36,11 @@
 
 { ":reload"
 , {match, ok}
-}
+}.
 
 { ":lookup files"
 , {match, ["test/contracts/d.aes", "test/contracts/c.aes"]}
-}
+}.
 
 { ":lookup includes"
 , {match, ["test/contracts/d.aes"]}

@@ -1,5 +1,5 @@
 {"datatype state = ST(int)"
-, {error, typedef_state}
+, {error, repl_state_typedef}
 }.
 
 { ":state ST(1)"

@@ -69,11 +69,17 @@ validate_output({match, Match, Guards}, {ok, Output}) ->
     io:format("Got:\n~p\n", [Output]),
     %% TODO: do we really need ETS for that?
     T = ets:new(match_test, []),
-    ets:insert(T, {output, Output}),
+    ets:insert(T, {match_success, Output}),
     Result = ets:select(T, [{{'$0', Match}, Guards, ['$0']}]),
-    try ?assertEqual([output], Result)
+    try ?assertEqual([match_success], Result)
     after ets:delete(T)
-    end.
+    end;
+validate_output({render, Render}, Output) when is_list(Render) ->
+    validate_output({render, list_to_binary(Render)}, Output);
+validate_output({render, Render}, {ok, Output}) ->
+    Fmt = aere_gen_server:format(Output),
+    Str = aere_theme:render(Fmt),
+    ?assertEqual(Render, Str).
 
 
 test_commands([Command | Rest]) when is_list(Command) ->
