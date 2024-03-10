@@ -14,7 +14,7 @@ first.
 Tools:
 
 - `git`
-- OTP 25
+- OTP 25 or 26
 - C++ compiler
 
 Libraries:
@@ -29,7 +29,7 @@ Clone the repo:
 git clone https://github.com/aeternity/aerepl.git
 ```
 
-Set up the environment. Make sure Erlang 25 is used.
+Set up the environment:
 
 ```bash
 export ERLANG_ROCKSDB_OPTS="-DWITH_SYSTEM_ROCKSDB=ON -DWITH_LZ4=ON -DWITH_SNAPPY=ON -DWITH_BZ2=ON -DWITH_ZSTD=ON"
@@ -65,7 +65,7 @@ docker run -i aeternity/aerepl:local
 
 Use `make podman` for a podman build.
 
-# Basic usage
+# CLI usage
 
 æREPL usage patterns are highly inspired by
 [GHCi](https://wiki.haskell.org/GHC/GHCi). Most of the syntax is a direct
@@ -296,8 +296,8 @@ Use `aere_gen_server:start/1` to start up the server. `aere_gen_server:start/2`
 allows to start a server under a custom name. The argument is property list with
 the following fields:
 
-- `options` --- parameter map for the repl configuration with the following fields:
-  - TODO
+- `options` --- parameter map for the repl configuration. See "Configuration"
+  for more details.
 
 ## Call
 
