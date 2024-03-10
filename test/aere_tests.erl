@@ -141,6 +141,7 @@ scenarios() ->
     , options_setting
     , stack_trace_abort
     , debugger_basic_usage
+    , accounts
     ].
 
 eval(REPL, I) ->
