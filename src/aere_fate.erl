@@ -137,6 +137,16 @@ eval_state(ES0, RS0) ->
                  }
               }
             , RSE
+            };
+        {aefa_fate, ErrMsg, ES} -> % Out of gas, for example
+            RSE = aere_repl_state:set_break_state(abort, ES, RS0),
+            StackTrace = get_stack_trace(RS0, ES),
+            { { revert
+              , #{ err_msg => ErrMsg
+                 , stacktrace => StackTrace
+                 }
+              }
+            , RSE
             }
     end.
 
@@ -189,6 +199,7 @@ setup_fate_state(Source, FateCode, RS) ->
     Function = aeb_fate_code:symbol_identifier(<<?USER_INPUT>>),
 
     ContractPubkey = aect_contracts:pubkey(Contract),
+    CallerFate = aeb_fate_data:make_address(Caller),
 
     Store = aefa_stores:initial_contract_store(),
     Functions = maps:merge(Funs, aeb_fate_code:functions(FateCode)),
@@ -207,7 +218,7 @@ setup_fate_state(Source, FateCode, RS) ->
             #{ContractPubkey => {FateCode, aere_version:vm_version()}}, % Code cache
             aere_version:vm_version()
         ),
-    ES1 = aefa_engine_state:update_for_remote_call(ContractPubkey, FateCode, aere_version:vm_version(), Caller, ES0),
+    ES1 = aefa_engine_state:update_for_remote_call(ContractPubkey, FateCode, aere_version:vm_version(), CallerFate, ES0),
     ES2 = aefa_fate:set_local_function(Function, false, ES1),
     ES3 = aefa_fate:bind_args([Arg || {_, _, Arg} <- Vars], ES2),
     ES4 = aefa_engine_state:set_functions(Functions, ES3),

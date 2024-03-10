@@ -1,7 +1,51 @@
 #!/usr/bin/env escript
 %% -*- erlang -*-
 %%! -smp enable -setcookie aerepl_cookie -mnesia debug verbose
+
+
+-export([main/1, cli/0, aerepl/1]).
 -mode(compile).
+
+main(Args) ->
+    load_paths(),
+    argparse:run(Args, cli(), #{progname => "aerepl"}).
+
+
+cli() ->
+    #{
+      handler => {?MODULE, aerepl},
+      arguments =>
+          [ #{name => accounts, long => "account", short => $a, nargs => 2, action => append,
+              default => [], type => {custom, fun parse_account/1}}
+          , #{name => call_gas, long => "call_gas", type => {integer, [{min, 0}]}}
+          , #{name => call_value, long => "call_value", type => {integer, [{min, 0}]}}
+          , #{name => call_gas_price, long => "call_gas_price", type => {integer, [{min, 0}]}}
+          , #{name => call_origin, long => "call_origin"}
+          , #{name => call_contract_creator, long => "call_contract_creator"}
+          , #{name => call_fee, long => "call_fee", type => {integer, [{min, 0}]}}
+          , #{name => call_height, long => "call_height", type => {integer, [{min, 1}]}}
+          , #{name => print_gas, long => "print_gas", type => boolean}
+          , #{name => print_format, long => "print_format", type => {atom, [sophia,json,fate]}}
+          , #{name => print_unit, long => "print_unit", type => boolean}
+          , #{name => print_type, long => "print_type", type => boolean}
+          , #{name => loc_forwards, long => "loc_forwards", type => {integer, [{min, 0}]}}
+          , #{name => loc_backwards, long => "loc_backwards", type => {integer, [{min, 0}]}}
+          ]}.
+
+% Parses either account pk or balance. Argparse does not let it do better...
+parse_account(X) ->
+    try list_to_integer(X) of
+        Balance ->
+            {balance, Balance}
+    catch error:badarg ->
+            PKEnc = list_to_binary(X),
+            case aeser_api_encoder:safe_decode(account_pubkey, PKEnc) of
+                {ok, PK} ->
+                    {pubkey, PK};
+                _ ->
+                    error({badarg, X})
+            end
+    end.
 
 load_paths() ->
     ScriptDir = filename:dirname(escript:script_name()),
@@ -11,12 +55,16 @@ load_paths() ->
      || Path <- Paths],
     ok.
 
-main(_Args) ->
-    load_paths(),
-    {ok, _Sup} = aere_supervisor:start_link([]),
-    start().
+aerepl(Args) ->
+    Accounts =
+        [ maps:from_list(AccountSpec)
+         || AccountSpec <- maps:get(accounts, Args, [])
+        ],
+    Opts = maps:remove(accounts, Args),
+    aerepl(Accounts, Opts).
 
-start() ->
+aerepl(Accounts, Opts) ->
+    {ok, _Sup} = aere_supervisor:start_link([{accounts, Accounts}, {options, Opts}]),
     Banner = aere_gen_server:banner(),
     BannerStr = aere_gen_server:render(Banner),
     io:format("~s\n\n", [BannerStr]),

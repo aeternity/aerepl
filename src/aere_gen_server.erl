@@ -76,6 +76,8 @@
         , print_vars/1
         , stacktrace/0
         , stacktrace/1
+        , set_balance/2
+        , set_balance/3
         , version/0
         , version/1
         , banner/0
@@ -288,6 +290,13 @@ handle_call(stacktrace, _From, State) ->
        {reply, {stacktrace, aere_debugger:stacktrace(State)}, State}
       );
 
+handle_call({set_balance, PK, Balance}, _From, State) ->
+    ready_or_error(State),
+    ?HANDLE_ERRS(
+       State,
+      {reply, ok, aere_repl_state:set_balance(PK, Balance, State)}
+     );
+
 handle_call(version, _From, State) ->
     ?HANDLE_ERRS(
       State,
@@ -465,6 +474,11 @@ stacktrace() ->
     stacktrace(?MODULE).
 stacktrace(ServerName) ->
     gen_server:call(ServerName, stacktrace).
+
+set_balance(PK, Balance) ->
+    set_balance(?MODULE, PK, Balance).
+set_balance(ServerName, PK, Balance) ->
+    gen_server:call(ServerName, {set_balance, PK, Balance}).
 
 version() ->
     version(?MODULE).

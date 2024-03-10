@@ -9,15 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `format` generic server call for formatting outputs as renderables
-- `version_info` generic server call
+- `version` generic server call
+- `set_account` generic server call for setting balance of arbitrary account
+- Option `call_gas_price` to set result of `Call.gas_price`
+- Option `call_origin` to set the account to execute the repl query (affects
+  `Call.origin` and `Call.caller`)
+- Option `call_contract_creator` to set result of `Contract.creator`
+- Option `call_fee` to set result of `Call.fee`
+- Option `call_height` to set result of `Chain.block_height`
+- Startup parameter `accounts` to specify initial account balances
+- CLI arguments to set the newly added `accounts` parameter
 ### Changed
 - Generic server now returns structured data and errors which have to be
   formatted manually using `format` call
 - `location` display has been improved
 - `display_gas` is renamed to `print_gas` for consistency
 - Fixed numerous bugs and crashes
+- Adjusted output of `:location`
 ### Removed
-- In-repl functions
+- In-repl Sophia functions
 
 
 

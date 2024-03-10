@@ -206,23 +206,34 @@ AESO> :set print_unit true
 
 Currently the supported options are:
 
-| Option          | Arguments          | Description                                                         |
-|-----------------|--------------------|:--------------------------------------------------------------------|
-| `call_gas`      | non-neg int        | Determines the amount of gas to be supplied to each query.          |
-|-----------------|--------------------|:--------------------------------------------------------------------|
-| `call_value`    | non-neg int        | Sets the `value`, the amount of tokens supplied with the query.     |
-|-----------------|--------------------|:--------------------------------------------------------------------|
-| `print_gas`     | `true/false`       | If `true`, REPL will print gas used for evaluating each expression. |
-|-----------------|--------------------|:--------------------------------------------------------------------|
-| `print_format`  | `sophia/fate/json` | Determines the syntax used to display values.                       |
-|-----------------|--------------------|:--------------------------------------------------------------------|
-| `print_unit`    | `true/false`       | Whether to display unit (`()`).                                     |
-|-----------------|--------------------|:--------------------------------------------------------------------|
-| `print_type`    | `true/false`       | Whether to display the type after each eval.                        |
-|-----------------|--------------------|:--------------------------------------------------------------------|
-| `loc_backwards` | non-neg int        | Number of previous lines to be displayed when using `location`.     |
-|-----------------|--------------------|:--------------------------------------------------------------------|
-| `loc_forwards`  | non-neg int        | Number of further lines to be displayed when using `location`.      |
+| Option                  | Arguments          | Description                                                         |
+|-------------------------|--------------------|:--------------------------------------------------------------------|
+| `call_gas`              | non-neg int        | Determines the amount of gas to be supplied to each query.          |
+|-------------------------|--------------------|:--------------------------------------------------------------------|
+| `call_value`            | non-neg int        | The `value`, the amount of tokens supplied with the query.          |
+|-------------------------|--------------------|:--------------------------------------------------------------------|
+| `call_gas_price`        | non-neg int        | The result of `Call.gas_price`                                      |
+|-------------------------|--------------------|:--------------------------------------------------------------------|
+| `call_origin`           | pubkey             | The account to initiate execution of in-REPL code.                  |
+|                         |                    | Defines `Call.origin` and initial `Call.caller`.                    |
+|-------------------------|--------------------|:--------------------------------------------------------------------|
+| `call_contract_creator` | pubkey             | The result of `Contract.creator`.                                   |
+|-------------------------|--------------------|:--------------------------------------------------------------------|
+| `call_fee`              | non-neg int        | The result of `Call.fee`.                                           |
+|-------------------------|--------------------|:--------------------------------------------------------------------|
+| `call_height`           | non-neg int        | The result of `Chain.block_height`.                                 |
+|-------------------------|--------------------|:--------------------------------------------------------------------|
+| `print_gas`             | `true/false`       | If `true`, REPL will print gas used for evaluating each expression. |
+|-------------------------|--------------------|:--------------------------------------------------------------------|
+| `print_format`          | `sophia/fate/json` | Determines the syntax used to display values.                       |
+|-------------------------|--------------------|:--------------------------------------------------------------------|
+| `print_unit`            | `true/false`       | Whether to display unit (`()`).                                     |
+|-------------------------|--------------------|:--------------------------------------------------------------------|
+| `print_type`            | `true/false`       | Whether to display the type after each eval.                        |
+|-------------------------|--------------------|:--------------------------------------------------------------------|
+| `loc_backwards`         | non-neg int        | Number of previous lines to be displayed when using `location`.     |
+|-------------------------|--------------------|:--------------------------------------------------------------------|
+| `loc_forwards`          | non-neg int        | Number of further lines to be displayed when using `location`.      |
 
 
 # Output format
@@ -298,6 +309,8 @@ the following fields:
 
 - `options` --- parameter map for the repl configuration. See "Configuration"
   for more details.
+- `accounts :: list(#{pubkey() => integer()})` --- list of initial accounts and
+  their balances
 
 ## Call
 
@@ -338,6 +351,8 @@ the following fields:
 - `{print_var, string()}` --- returns in-code location of where the variable was introduced
 - `print_vars` --- returns values of all variables in scope
 - `stacktrace` --- returns the current stacktrace
+- `{set_account, pubkey(), integer()}` --- sets balance for an in-repl account
+- `version` --- returns version information
 - `banner` --- returns an ASCII "banner" presenting the REPL's logo and various
   version information
 
@@ -353,7 +368,10 @@ the following fields:
 All above calls and casts are exposed as function calls for
 convenience. Additionally, the following are offered:
 
+- `format` --- formats outputs of other commands into renderable texts to be
+  used by the `render` function
 - `render` --- renders a renderable output to a string using REPL's theme
+- `banner` --- returns a nicely rendered banner for CLI interfaces
 - `input` --- parses a text command and interprets it as one of the calls
   above. Useful for CLI-like interfaces.
 - `prompt` --- proposes prompt to display in the CLI based on the REPL's

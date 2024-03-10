@@ -5,7 +5,7 @@
 -type parse_result() :: {atom(), string() | [string()]}
                       | no_return().
 
--type arg_type() :: integer | atom | string.
+-type arg_type() :: integer | atom | string | pubkey.
 
 -type arg() :: integer() | atom() | string().
 
@@ -127,6 +127,10 @@ commands() ->
     , {stacktrace,
         {[bt], [], "",
         [ "Print the stacktrace at the current point of execution." ]}}
+    , {set_balance,
+       {[], [{required, pubkey}, {required, integer}], "PUBKEY AMOUNT",
+        [ "Sets balance of the given account" ]
+       }}
     ].
 
 
@@ -199,6 +203,8 @@ parse_command(CommandAndArgs) ->
                 error      -> {error, {bad_command_args, Command, ArgDoc}}
             catch
                 {parse_error, {bad_integer, _}} ->
+                    {error, {bad_command_args, Command, ArgDoc}};
+                {parse_error, {bad_pubkey, _}} ->
                     {error, {bad_command_args, Command, ArgDoc}}
             end;
         undefined ->
@@ -243,6 +249,13 @@ parse_args(_, _) ->
 
 
 -spec apply_type(string(), arg_type()) -> arg().
+
+apply_type(X, pubkey) ->
+    PKEnc = list_to_binary(X),
+    case aeser_api_encoder:safe_decode(account_pubkey, PKEnc) of
+        {ok, PK} -> PK;
+        _ -> throw({parse_error, {bad_pubkey, X}})
+    end;
 
 apply_type(X, integer) ->
     try

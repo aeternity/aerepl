@@ -125,6 +125,7 @@
         , update_cached_fs/2
         , add_user_input_file/2
         , remove_user_input_file/1
+        , set_balance/3
         ]).
 
 -spec init_options() -> repl_options().
@@ -370,3 +371,9 @@ add_user_input_file(Source, RS = #rs{loaded_files = LoadedFiles}) when is_binary
 -spec remove_user_input_file(state()) -> state().
 remove_user_input_file(RS = #rs{loaded_files = LoadedFiles}) ->
     set_loaded_files(maps:remove(?USER_INPUT_FILE, LoadedFiles), RS).
+
+-spec set_balance(aec_accounts:pubkey(), non_neg_integer(), state()) -> state().
+set_balance(PK, Balance, RS) ->
+    Trees0 = trees(RS),
+    Trees1 = aere_chain:new_account(PK, Balance, Trees0),
+    set_ready_state(Trees1, RS).
