@@ -10,10 +10,20 @@
 -type repl_options() ::
         #{ % Theme used for rendering
            theme        := aere_theme:theme()
+         , % What should be the Call.origin
+           call_origin   => aec_accounts:pubkey()
+         , % What should be the Contract.creator.
+           call_contract_creator   => aec_accounts:pubkey()
          , % How much gas to use for each eval
            call_gas     := pos_integer()
          , % What should `Call.value` return
            call_value   := non_neg_integer()
+         , % Call fee
+           call_fee   := non_neg_integer()
+         , % Cost of a single unit of gas (in aetto)
+           call_gas_price => non_neg_integer()
+         , % Block height of the call. If you make it decrease, it's your fault.
+           call_height => non_neg_integer()
          , % Whether to measure gas usage on each eval
            print_gas  := boolean()
          , % How to display eval results and types
@@ -37,14 +47,12 @@
 -type contract_state() :: {aeso_syntax:type(), aeb_fate_data:fate_type()}.
 -type type_def() :: {string(), string(), [aeso_syntax:tvar()], aeso_syntax:typedef()}.
 -type type_scope() :: {string(), {string(), non_neg_integer()}}.
--type chain_state() :: {ready, aefa_chain_api:state()}
-                     | {breakpoint, aefa_engine_state:state()}
-                     | {abort, aefa_engine_state:state()}.
+-type chain_state() :: {ready, aec_trees:trees()}
+                     | {break, aere_debugger:break_state()}.
 -type filesystem() :: local | {cached, #{string() => binary()}}.
 
 -record(rs,
         { blockchain_state       :: chain_state()
-        , repl_account           :: binary()
         , options                :: repl_options()
         , contract_state         :: contract_state()
         , vars           = []    :: [var()]
@@ -67,13 +75,12 @@
    [ state/0, type_scope/0, type_def/0, repl_options/0
    , function_symbols/0, breakpoints/0]).
 
--export([ init_state/0, init_state/1
+-export([ init_state/0, init_state/2
         , init_options/0
         ]).
 
 %% Getters
 -export([ blockchain_state/1
-        , repl_account/1
         , options/1
         , contract_state/1
         , vars/1
@@ -92,7 +99,6 @@
 
 %% Setters
 -export([ set_blockchain_state/2
-        , set_repl_account/2
         , set_options/2
         , set_contract_state/2
         , set_vars/2
@@ -110,44 +116,48 @@
         ]).
 
 -export([ chain_api/1
+        , trees/1
+        , last_ready_trees/1
+        , set_break_state/3
+        , restore_ready_state/1
+        , set_ready_state/2
         , bump_nonce/1
         , update_cached_fs/2
+        , add_user_input_file/2
+        , remove_user_input_file/1
         ]).
 
 -spec init_options() -> repl_options().
 init_options() ->
     #{ theme => aere_theme:default_theme()
-     , call_gas      => 100000000000000000
-     , call_value    => 0
-     , print_gas   => false
-     , print_format  => sophia
-     , print_unit    => false
-     , print_type    => false
-     , loc_backwards => 5
-     , loc_forwards  => 5
-     , locked_opts   => []
-     , init_args     => []
+     , call_origin    => <<0:256>>
+     , call_contract_creator => <<0:256>>
+     , call_gas       => 100000000000000000
+     , call_value     => 0
+     , call_gas_price => 1
+     , call_fee       => 0
+     , call_height    => 1
+     , print_gas      => false
+     , print_format   => sophia
+     , print_unit     => false
+     , print_type     => false
+     , loc_backwards  => 5
+     , loc_forwards   => 5
+     , locked_opts    => []
+     , init_args      => []
     }.
 
 -spec init_state() -> state().
 init_state() ->
-    init_state(init_options()).
+    init_state([], init_options()).
 
--spec init_state(repl_options()) -> state().
-init_state(Opts) ->
+-spec init_state(AccountsInit, repl_options()) -> state() when
+      AccountsInit :: list(aere_chain:account_init_spec()).
+init_state(Accounts, Opts) ->
     Trees0 = aec_trees:new(),
-    {PK, Trees} = aere_chain:new_account(100000000000000000000000000000, Trees0),
-    ChainState = aefa_chain_api:new(
-                   #{ gas_price => 1,
-                      fee       => 0,
-                      trees     => Trees,
-                      origin    => PK,
-                      tx_env    => aere_chain:default_tx_env(1)
-                   }
-                  ),
+    Trees1 = aere_chain:init_accounts(Accounts, Trees0),
     S0 = #rs{
-       blockchain_state = {ready, ChainState},
-       repl_account     = PK,
+       blockchain_state = {ready, Trees1},
        options          = maps:merge(init_options(), Opts),
        filesystem       = maps:get(filesystem, Opts, local),
        contract_state   = ?DEFAULT_CONTRACT_STATE
@@ -161,14 +171,6 @@ blockchain_state(#rs{blockchain_state = BlockchainState}) ->
 -spec set_blockchain_state(chain_state(), state()) -> state().
 set_blockchain_state(X, S) ->
     S#rs{blockchain_state = X}.
-
--spec repl_account(state()) -> binary().
-repl_account(#rs{repl_account = ReplAccount}) ->
-    ReplAccount.
-
--spec set_repl_account(binary(), state()) -> state().
-set_repl_account(X, S) ->
-    S#rs{repl_account = X}.
 
 -spec options(state()) -> repl_options().
 options(#rs{options = Options}) ->
@@ -285,12 +287,68 @@ set_function_symbols(Symbols, S) ->
 %% Advanced getters
 
 -spec chain_api(state()) -> aefa_chain_api:state().
-chain_api(#rs{blockchain_state = {ready, Api}}) ->
+chain_api(#rs{ blockchain_state = {ready, Trees}
+             , options = Opts
+             }) ->
+    {PK, Trees1} =
+        %% If account is undefined, generate a new one.
+        case maps:get(call_origin, Opts, anonymous) of
+            anonymous -> aere_chain:new_account(100000000000000000000000000002137, Trees);
+            PK_ThankYouErlangForYourAwesomeScoping ->
+                {PK_ThankYouErlangForYourAwesomeScoping, Trees}
+        end,
+    Api = aefa_chain_api:new(
+            #{ gas_price => maps:get(call_gas_price, Opts),
+               fee       => maps:get(call_fee, Opts, 0),
+               trees     => Trees1,
+               origin    => PK,
+               tx_env    => aere_chain:default_tx_env(
+                              maps:get(call_height, Opts)
+                             )
+             }
+           ),
     Api;
-chain_api(#rs{blockchain_state = {breakpoint, ES}}) ->
-    aefa_engine_state:chain_api(ES);
-chain_api(#rs{blockchain_state = {abort, ES}}) ->
+chain_api(#rs{blockchain_state = {break, #{engine_state := ES}}}) ->
     aefa_engine_state:chain_api(ES).
+
+-spec trees(state()) -> aec_trees:trees().
+trees(RS) ->
+    ChainApi = chain_api(RS),
+    Trees = aefa_chain_api:final_trees(ChainApi),
+    Trees.
+
+-spec last_ready_trees(state()) -> aec_trees:trees().
+last_ready_trees(#rs{blockchain_state = {ready, Trees}}) ->
+    Trees;
+last_ready_trees(#rs{blockchain_state = {break, #{last_ready_trees := Trees}}}) ->
+    Trees.
+
+-spec set_break_state(Reason, ES, state()) -> state() when
+      Reason :: breakpoint | abort,
+      ES :: aefa_engine_state:state().
+
+set_break_state(Reason, ES, RS) ->
+    Trees = last_ready_trees(RS),
+    BreakState =
+        #{ reason => Reason
+         , engine_state => ES
+         , last_ready_trees => Trees
+         },
+    set_blockchain_state({break, BreakState}, RS).
+
+
+-spec restore_ready_state(state()) -> state().
+
+restore_ready_state(RS) ->
+    Trees = last_ready_trees(RS),
+    set_ready_state(Trees, RS).
+
+-spec set_ready_state(Trees, state()) -> state() when
+      Trees :: aec_trees:trees().
+
+set_ready_state(Trees, RS) ->
+    set_blockchain_state({ready, Trees}, RS).
+
 
 -spec bump_nonce(state()) -> state().
 bump_nonce(S = #rs{query_nonce = N}) ->
@@ -301,3 +359,11 @@ update_cached_fs(_, #rs{filesystem = local}) ->
     error;
 update_cached_fs(Fs, S) when is_map(Fs) ->
     {ok,  S#rs{filesystem = {cached, Fs}}}.
+
+add_user_input_file(Source, RS) when is_list(Source) ->
+    add_user_input_file(list_to_binary(Source), RS);
+add_user_input_file(Source, RS = #rs{loaded_files = LoadedFiles}) when is_binary(Source) ->
+    set_loaded_files(LoadedFiles#{?USER_INPUT_FILE => Source}, RS).
+
+remove_user_input_file(RS = #rs{loaded_files = LoadedFiles}) ->
+    set_loaded_files(maps:remove(?USER_INPUT_FILE, LoadedFiles), RS).

@@ -39,18 +39,18 @@ infer_type(Expr, RS) ->
     {type, Type}.
 
 
--spec eval_code(Sophia, repl_state()) -> {Result, repl_state()}
-              when Sophia :: string(),
+-spec eval_code(SophiaSrc, repl_state()) -> {Result, repl_state()}
+              when SophiaSrc :: string(),
                    Result :: aere_fate:eval_result() | ok.
-eval_code(Sophia, RS) ->
-    Parse = aere_sophia:parse_top(Sophia),
+eval_code(SophiaSrc, RS) ->
+    Parse = aere_sophia:parse_top(SophiaSrc),
     case Parse of
         {body, Body} ->
-            eval_expr(Body, RS);
+            eval_expr(SophiaSrc, Body, RS);
         [{include, _, {string, _, Inc}}] ->
             {ok, register_include(Inc, RS)};
         [{letval, _, Pat, Body}] ->
-            {ok, register_letval(Pat, Body, RS)};
+            {ok, register_letval(SophiaSrc, Pat, Body, RS)};
         [{type_def, _, Name, Args, Body}] ->
             {ok, register_typedef(Name, Args, Body, RS)};
         _ ->
@@ -58,8 +58,7 @@ eval_code(Sophia, RS) ->
     end.
 
 
--spec set_state([aeso_syntax:stmt()], repl_state())
-               -> repl_state().
+-spec set_state(string(), repl_state()) -> repl_state().
 set_state(BodyStr, RS) ->
     Body         = aere_sophia:parse_body(BodyStr),
     Contract     = aere_mock:eval_contract(Body, RS),
@@ -69,7 +68,7 @@ set_state(BodyStr, RS) ->
     ByteCode     = aere_sophia:compile_contract(TAst),
     RS1          = aere_fate:add_fun_symbols_from_code(RS0, ByteCode),
 
-    {#{value := StateVal}, RS2} = aere_fate:run_contract(ByteCode, RS1),
+    {#{value := StateVal}, RS2} = aere_fate:run_contract(BodyStr, ByteCode, RS1),
 
     RS3 = aere_repl_state:set_contract_state({Type, StateVal}, RS2),
     RS4 = aere_repl_state:set_vars([], RS3),
@@ -80,16 +79,16 @@ set_state(BodyStr, RS) ->
 %%%------------------
 
 
--spec eval_expr([aeso_syntax:stmt()], repl_state())
+-spec eval_expr(Src :: string(), [aeso_syntax:stmt()], repl_state())
                -> {Result, repl_state()}
               when Result :: aere_fate:eval_debug_result().
-eval_expr(Body, RS) ->
+eval_expr(Src, Body, RS) ->
     Ast           = aere_mock:eval_contract(Body, RS),
     {TEnv, TAst}  = aere_sophia:typecheck(Ast, [allow_higher_order_entrypoints]),
     ByteCode      = aere_sophia:compile_contract(TAst),
     RS1           = aere_fate:add_fun_symbols_from_code(RS, ByteCode),
     RS2           = aere_repl_state:set_type_env(TEnv, RS1),
-    {Result, RS3} = aere_fate:run_contract_debug(ByteCode, RS2),
+    {Result, RS3} = aere_fate:run_contract_debug(Src, ByteCode, RS2),
     {Result, RS3}.
 
 %%%------------------
@@ -154,6 +153,7 @@ clear_context(S0) ->
     Contracts = [PK || {_Name, _Type, {contract, PK}} <- aere_repl_state:vars(S0)],
     Chain0 = get_ready_chain(S0),
     Chain1 = aere_fate:remove_contracts_from_chain(Chain0, Contracts),
+    Trees = aefa_chain_api:final_trees(Chain1),
     put(contract_code_cache, undefined),
     S1 = aere_repl_state:set_vars([], S0),
     S2 = aere_repl_state:set_funs(#{}, S1),
@@ -161,7 +161,7 @@ clear_context(S0) ->
     S4 = aere_repl_state:set_type_scope([], S3),
     S5 = aere_repl_state:set_included_files([], S4),
     S6 = aere_repl_state:set_included_code([], S5),
-    S7 = aere_repl_state:set_blockchain_state({ready, Chain1}, S6),
+    S7 = aere_repl_state:set_blockchain_state({ready, Trees}, S6),
     S7.
 
 
@@ -198,9 +198,9 @@ register_include(Include, S0) ->
 %%%------------------
 
 
--spec register_letval(aeso_syntax:pat(), aeso_syntax:expr(), repl_state())
+-spec register_letval(Src :: string(), aeso_syntax:pat(), aeso_syntax:expr(), repl_state())
                      -> repl_state().
-register_letval(Pat, Expr, S0) ->
+register_letval(Src, Pat, Expr, S0) ->
     NewVars = lists:filter(
                 fun(Var) -> Var /= "_" end,
                 aeso_syntax_utils:used_ids([aere_mock:pat_as_decl(Pat)])),
@@ -211,7 +211,7 @@ register_letval(Pat, Expr, S0) ->
     ByteCode = aere_sophia:compile_contract(TypedAstUnfolded),
 
     S00 = aere_repl_state:set_type_env(TEnv, S0),
-    {#{value := Res}, S} = aere_fate:run_contract(ByteCode, S00),
+    {#{value := Res}, S} = aere_fate:run_contract(Src, ByteCode, S00),
 
     {Vals, Types, S1} =
         case NewVars of
@@ -311,8 +311,8 @@ unfold_types_in_type(T, S0) ->
 
 -spec disassemble(string(), repl_state()) -> term() | no_return(). %% -> bytecode
 disassemble(What, S0) ->
-    Chain0 = aere_repl_state:chain_api(S0),
-    S1 = aere_repl_state:set_blockchain_state({ready, Chain0}, S0),
+    Trees = aere_repl_state:trees(S0),
+    S1 = aere_repl_state:set_blockchain_state({ready, Trees}, S0),
     case parse_fun_ref(What) of
         {deployed, Expr, Name} ->
             Contract = aere_mock:eval_contract(Expr, S1),
@@ -320,7 +320,7 @@ disassemble(What, S0) ->
             S1_0 = aere_repl_state:set_type_env(TEnv, S1),
             MockByteCode = aere_sophia:compile_contract(TAst),
             {#{value := {contract, Pubkey}}, S2} =
-                aere_fate:run_contract(MockByteCode, S1_0),
+                aere_fate:run_contract(What, MockByteCode, S1_0),
             Chain = aere_repl_state:chain_api(S2),
             aere_fate:extract_fun_from_contract(Pubkey, Chain, Name);
         {definition, Id} ->
@@ -328,7 +328,7 @@ disassemble(What, S0) ->
             {TEnv, TAst} = aere_sophia:typecheck(Contract, [allow_higher_order_entrypoints]),
             S1_0 = aere_repl_state:set_type_env(TEnv, S1),
             MockByteCode = aere_sophia:compile_contract(TAst),
-            {#{value := {tuple, {FName, _}}}, _} = aere_fate:run_contract(MockByteCode, S1_0),
+            {#{value := {tuple, {FName, _}}}, _} = aere_fate:run_contract(What, MockByteCode, S1_0),
             aere_fate:extract_fun_from_bytecode(MockByteCode, FName);
         {local, _Name} ->
             error(not_supported);
@@ -364,8 +364,8 @@ default_loaded_files(S) ->
 
 get_ready_chain(RS) ->
     case aere_repl_state:blockchain_state(RS) of
-        {ready, Chain} ->
-            Chain;
+        {ready, _} ->
+            aere_repl_state:chain_api(RS);
         _ ->
             throw(repl_chain_not_ready)
     end.

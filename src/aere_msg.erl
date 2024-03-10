@@ -304,7 +304,7 @@ not_at_breakpoint() ->
 
 -spec contract_exec_ended() -> msg().
 contract_exec_ended() ->
-    aere_theme:output("Contract execution was either aborted or exited.").
+    aere_theme:info("Contract execution was either aborted or exited.").
 
 -spec breakpoint_out_of_range(pos_integer()) -> msg().
 breakpoint_out_of_range(Index) ->
@@ -398,6 +398,15 @@ fate(Fate) ->
       Location :: aere_debugger:source_location().
 location(#{ file := FileName
           , line := CurrentLine
+          , preview_line := no_src
+          }) ->
+    [ aere_theme:output("at "), aere_theme:file(FileName),
+      aere_theme:output(":"), aere_theme:output(integer_to_list(CurrentLine)),
+      aere_theme:output("\n"),
+      aere_theme:info("no source information")
+    ];
+location(#{ file := FileName
+          , line := CurrentLine
           , preview_above := ViewBackwards
           , preview_line := ViewHere
           , preview_below := ViewForwards
@@ -429,7 +438,9 @@ location(#{ file := FileName
                         )
         ],
 
-    [ aere_theme:output("at "), aere_theme:file(FileName), aere_theme:output("\n")
+    [ aere_theme:output("at "), aere_theme:file(FileName),
+      aere_theme:output(":"), aere_theme:output(integer_to_list(CurrentLine)),
+      aere_theme:output("\n")
     , aere_theme:output(StrBack)
     , aere_theme:output(StrHere)
     , aere_theme:output(StrFront)

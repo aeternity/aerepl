@@ -99,7 +99,7 @@ parse_top(I, Opts) ->
                           _ -> {body, [Body]}
                       end)
              ]),
-    ?with_error_handle(aeso_parser:run_parser(Top, I, Opts)).
+    ?with_error_handle(aeso_parser:run_parser(Top, I, [{src_file, ?USER_INPUT_FILE}|Opts])).
 
 parse_body(I) ->
     ?with_error_handle(

@@ -1,4 +1,5 @@
 %% These names are not supposed to be accepted by the parser
+-define(USER_INPUT_FILE, "user input").
 -define(USER_INPUT, "$REPL_user_input").
 -define(MOCK_CONTRACT, "$REPL_contract").
 -define(TYPE_CONTAINER, "$REPL_type").

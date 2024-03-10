@@ -100,6 +100,9 @@ commands() ->
     , {delete_break_loc,
         {[dbl], [{required, string}, {required, integer}], "FILE LINE",
         [ "Delete a breakpoint by its location." ]}}
+    , {stop,
+       {[], [], "",
+        [ "Cancels execution at breakpoint. Rolls back all chain changes." ]}}
     , {stepin,
         {[si], [], "",
         [ "Resume execution after a breakpoint is hit, until the next line." ]}}
@@ -137,7 +140,8 @@ resolve_command(Cmd) when is_list(Cmd) ->
     end;
 resolve_command(Cmd) ->
     case resolve_command_by_name(Cmd, commands()) of
-        undefined -> resolve_command_by_alias(Cmd, commands());
+        undefined ->
+            resolve_command_by_alias(Cmd, commands());
         Spec      -> Spec
     end.
 

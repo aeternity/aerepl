@@ -58,6 +58,8 @@
         , delete_break/2
         , delete_break_loc/2
         , delete_break_loc/3
+        , stop_break/0
+        , stop_break/1
         , resume_continue/0
         , resume_continue/1
         , resume_stepover/0
@@ -131,8 +133,9 @@ stop(ServerRef, Reason, Timeout) ->
 
 init(Args) ->
     Opts = proplists:get_value(options, Args, #{}),
+    Accounts = proplists:get_value(accounts, Args, []),
     Opts1 = Opts#{init_args => Args},
-    {ok, aere_repl_state:init_state(Opts1)}.
+    {ok, aere_repl_state:init_state(Accounts, Opts1)}.
 
 
 handle_call(quit, _From, State) ->
@@ -240,6 +243,12 @@ handle_call({delete_break_loc, File, Line}, _From, State) ->
     ?HANDLE_ERRS(
        State,
        {reply, ok, aere_debugger:delete_breakpoint(State, File, Line)}
+      );
+
+handle_call(stop, _From, State) ->
+    ?HANDLE_ERRS(
+       State,
+       {reply, ok, aere_debugger:stop(State)}
       );
 
 handle_call(Resume, _From, State)
@@ -412,6 +421,11 @@ delete_break_loc(File, Line) ->
 delete_break_loc(ServerName, File, Line) ->
     gen_server:call(ServerName, {delete_break_loc, File, Line}).
 
+stop_break() ->
+    stop_break(?MODULE).
+stop_break(ServerName) ->
+    gen_server:call(ServerName, stop).
+
 resume_continue() ->
     resume_continue(?MODULE).
 resume_continue(ServerName) ->
@@ -508,7 +522,12 @@ input(ServerName, Input) ->
 prompt() ->
     prompt(?MODULE).
 prompt(ServerName) ->
-    {MetaState, _} = gen_server:call(ServerName, blockchain_state),
+    MetaState =
+        case gen_server:call(ServerName, blockchain_state) of
+            {ready, _} -> ready;
+            {break, #{reason := Reason}} -> Reason
+        end,
+
     prompt_str(MetaState).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

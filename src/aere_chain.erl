@@ -3,8 +3,16 @@
 -include("../node/apps/aecore/include/blocks.hrl").
 
 -export([ new_account/2
+        , init_accounts/2
         , default_tx_env/1
         ]).
+
+-type account_init_spec() ::
+        #{ pubkey => aec_accounts:pubkey()
+         , balance => non_neg_integer()
+         }.
+
+-export_type([account_init_spec/0]).
 
 -define(BENEFICIARY_PUBKEY, <<12345:?BENEFICIARY_PUB_BYTES/unit:8>>).
 
@@ -15,6 +23,18 @@ new_account(Balance, Trees) ->
     #{public := PubKey} = enacl:sign_keypair(),
     Trees1      = set_account(aec_accounts:new(PubKey, Balance), Trees),
     {PubKey, Trees1}.
+
+
+-spec init_accounts(Accounts, Trees) -> Trees when
+      Accounts :: [account_init_spec()],
+      Trees :: aec_trees:trees().
+init_accounts([], Trees) ->
+    Trees;
+init_accounts([#{pubkey := PK, balance := Balance}|Rest], Trees0) ->
+    Account = aec_accounts:new(PK, Balance),
+    Trees1 = set_account(Account, Trees0),
+    init_accounts(Rest, Trees1).
+
 
 -spec set_account(aec_accounts:account(), Trees) -> Trees when
       Trees :: aec_trees:trees().

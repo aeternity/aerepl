@@ -323,6 +323,7 @@ the following fields:
 - `{lookup, atom()}` --- prints information about REPL's state or configuration
 - `{disas, string()}` --- parses a reference to a function and prints its FATE
   code
+- `stop` --- if at breakpoint, cancels the execution and rolls back all changes
 - `{break, FileName :: string(), Line :: integer()}` --- adds a breakpoint
 - `{delete_break, integer()}` --- removes a breakpoint with a given id
 - `{delete_break_loc, string(), integer()}` --- removes all breakpoints from the
