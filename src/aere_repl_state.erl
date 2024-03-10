@@ -360,10 +360,13 @@ update_cached_fs(_, #rs{filesystem = local}) ->
 update_cached_fs(Fs, S) when is_map(Fs) ->
     {ok,  S#rs{filesystem = {cached, Fs}}}.
 
+-spec add_user_input_file(Src, state()) -> state() when
+      Src :: string() | binary().
 add_user_input_file(Source, RS) when is_list(Source) ->
     add_user_input_file(list_to_binary(Source), RS);
 add_user_input_file(Source, RS = #rs{loaded_files = LoadedFiles}) when is_binary(Source) ->
     set_loaded_files(LoadedFiles#{?USER_INPUT_FILE => Source}, RS).
 
+-spec remove_user_input_file(state()) -> state().
 remove_user_input_file(RS = #rs{loaded_files = LoadedFiles}) ->
     set_loaded_files(maps:remove(?USER_INPUT_FILE, LoadedFiles), RS).

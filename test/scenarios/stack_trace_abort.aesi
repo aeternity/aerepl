@@ -30,7 +30,8 @@
           , contract => "C"
           }
        , #{ function => <<"$REPL_user_input">>
-          , line => 1, file => []
+          , line => 1
+          , file => "user input"
           , contract => "$REPL_contract"
           }
        ]
