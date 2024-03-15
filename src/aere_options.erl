@@ -10,6 +10,7 @@ option_parse_rules() ->
     , {call_contract_creator, pubkey}
     , {call_fee, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
     , {call_height, {valid, integer, fun(I) -> I > 0 end, "positive"}}
+    , {nonce, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
     , {print_gas, boolean}
     , {print_format, {atom, [sophia,json,fate]}}
     , {print_unit, boolean}

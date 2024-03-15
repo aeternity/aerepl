@@ -8,6 +8,7 @@
         , extract_fun_from_contract/3
         , extract_fun_from_bytecode/2
         , remove_contracts_from_chain/2
+        , make_chain_api/2
         ]).
 
 -include("aere_macros.hrl").
@@ -54,7 +55,7 @@
          Result    :: eval_return().
 
 run_contract(Source, FateCode, RS0) ->
-    ES0  = setup_fate_state(Source, FateCode, RS0),
+    ES0  = make_engine_state(Source, FateCode, RS0),
     Info = aefa_debug:set_breakpoints([], aefa_engine_state:debug_info(ES0)),
     ES1  = aefa_engine_state:set_debug_info(Info, ES0),
     RS1  = aere_repl_state:add_user_input_file(Source, RS0),
@@ -73,7 +74,7 @@ run_contract(Source, FateCode, RS0) ->
       ReplState :: aere_repl_state:state(),
       Result    :: eval_debug_result().
 run_contract_debug(Source, FateCode, RS0) ->
-    ES0  = setup_fate_state(Source, FateCode, RS0),
+    ES0  = make_engine_state(Source, FateCode, RS0),
     Info = aefa_debug:set_debugger_status(continue, aefa_engine_state:debug_info(ES0)),
     ES1  = aefa_engine_state:set_debug_info(Info, ES0),
     RS1  = aere_repl_state:add_user_input_file(Source, RS0),
@@ -94,7 +95,7 @@ resume_contract_debug(ES, RS) ->
       Result :: eval_debug_result().
 eval_state(ES0, RS0) ->
     try
-        ES1      = aefa_fate:execute(ES0),
+        ES1 = aefa_fate:execute(ES0),
 
         case aefa_debug:debugger_status(aefa_engine_state:debug_info(ES1)) of
             break ->
@@ -119,7 +120,7 @@ eval_state(ES0, RS0) ->
                 ContractState  = {StateType, StateVal},
                 RS1            = aere_repl_state:set_contract_state(ContractState, RS0),
                 RS2            = aere_repl_state:set_ready_state(Trees, RS1),
-                RS3 = aere_repl_state:remove_user_input_file(RS2),
+                RS3            = aere_repl_state:remove_user_input_file(RS2),
                 { { eval_return
                   , #{ result    => format_value(Res, RS3)
                      , value     => Res
@@ -167,21 +168,47 @@ format_value(json, TEnv, Type, Val) ->
     aere_sophia:format_value(json, TEnv, Type, Val).
 
 
--spec setup_fate_state(Source, FateCode, ReplState) -> EngineState
-    when
+-spec make_chain_api(Trees, Opts) -> ChainApi when
+      Trees    :: aec_trees:trees(),
+      Opts     :: aere_repl_satate:options(),
+      ChainApi :: aefa_chain_api:state().
+
+make_chain_api(Trees, Opts) ->
+    {PK, Trees1} =
+        %% If account is undefined, generate a new one.
+        case maps:get(call_origin, Opts, anonymous) of
+            anonymous -> aere_chain:new_account(10000000000000000000000000000, Trees);
+            PK_ThankYouErlangForYourAwesomeScoping ->
+                {PK_ThankYouErlangForYourAwesomeScoping, Trees}
+        end,
+    Api = aefa_chain_api:new(
+            #{ gas_price => maps:get(call_gas_price, Opts),
+               fee       => maps:get(call_fee, Opts, 0),
+               trees     => Trees1,
+               origin    => PK,
+               tx_env    => aere_chain:default_tx_env(
+                              maps:get(call_height, Opts)
+                             )
+             }
+           ),
+    Api.
+
+
+-spec make_engine_state(Source, FateCode, ReplState) -> EngineState when
       Source      :: string(),
       FateCode    :: aeb_fate_code:fcode(),
       ReplState   :: aere_repl_state:state(),
       EngineState :: aefa_engine_state:state().
 
-setup_fate_state(Source, FateCode, RS) ->
+make_engine_state(Source, FateCode, RS) ->
     #{ call_gas := Gas
      , call_origin := Caller
      , call_value := Value
      , call_contract_creator := Creator
-     } = aere_repl_state:options(RS),
+     , nonce := Nonce
+     } = Opts = aere_repl_state:options(RS),
 
-    ChainApi0 = aere_repl_state:chain_api(RS),
+    Trees0 = aere_repl_state:trees(RS),
     Vars = aere_repl_state:vars(RS),
     Funs = aere_repl_state:funs(RS),
     {_, StateVal} = aere_repl_state:contract_state(RS),
@@ -195,10 +222,14 @@ setup_fate_state(Source, FateCode, RS) ->
             , contract_source => Source
             , type_info => []
             , abi_version => aeb_fate_abi:abi_version()
-            , payable => false %maps:get(payable, FCode)
+            , payable => false
             },
-    Contract = aect_contracts:new(Creator, 0, Version, aeser_contract_code:serialize(Code), 0),
-    ChainApi = aefa_chain_api:put_contract(Contract, ChainApi0),
+
+    {Contract, Trees1} = aere_chain:ensure_contract_code(Creator, Nonce, Version, Code, Trees0),
+
+    ChainApi0 = make_chain_api(Trees1, Opts),
+    ChainApi1 = aefa_chain_api:put_contract(Contract, ChainApi0),
+
     Function = aeb_fate_code:symbol_identifier(<<?USER_INPUT>>),
 
     ContractPubkey = aect_contracts:pubkey(Contract),
@@ -217,7 +248,7 @@ setup_fate_state(Source, FateCode, RS) ->
             Value,
             #{caller => Caller}, % Spec
             aefa_stores:put_contract_store(ContractPubkey, Store, aefa_stores:new()),
-            ChainApi,
+            ChainApi1,
             #{ContractPubkey => {FateCode, aere_version:vm_version()}}, % Code cache
             aere_version:vm_version()
         ),

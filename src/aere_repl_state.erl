@@ -24,6 +24,8 @@
            call_gas_price => non_neg_integer()
          , % Block height of the call. If you make it decrease, it's your fault.
            call_height => non_neg_integer()
+         , % Call nonce. Used for describing the public key of the REPL-evaluation contract
+           nonce := non_neg_integer()
          , % Whether to measure gas usage on each eval
            print_gas  := boolean()
          , % How to display eval results and types
@@ -138,6 +140,7 @@ init_options() ->
      , call_gas_price => 1
      , call_fee       => 0
      , call_height    => 1
+     , nonce          => 0
      , print_gas      => false
      , print_format   => sophia
      , print_unit     => false
@@ -291,24 +294,7 @@ set_function_symbols(Symbols, S) ->
 chain_api(#rs{ blockchain_state = {ready, Trees}
              , options = Opts
              }) ->
-    {PK, Trees1} =
-        %% If account is undefined, generate a new one.
-        case maps:get(call_origin, Opts, anonymous) of
-            anonymous -> aere_chain:new_account(100000000000000000000000000002137, Trees);
-            PK_ThankYouErlangForYourAwesomeScoping ->
-                {PK_ThankYouErlangForYourAwesomeScoping, Trees}
-        end,
-    Api = aefa_chain_api:new(
-            #{ gas_price => maps:get(call_gas_price, Opts),
-               fee       => maps:get(call_fee, Opts, 0),
-               trees     => Trees1,
-               origin    => PK,
-               tx_env    => aere_chain:default_tx_env(
-                              maps:get(call_height, Opts)
-                             )
-             }
-           ),
-    Api;
+    aere_fate:make_chain_api(Trees, Opts);
 chain_api(#rs{blockchain_state = {break, #{engine_state := ES}}}) ->
     aefa_engine_state:chain_api(ES).
 
