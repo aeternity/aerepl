@@ -1,0 +1,62 @@
+":set_balance ak_11111111111111111111111111111111273Yts 1000".
+":set_balance ak_2eNrUWisXS4FsbEfmd8AyzxgdzS22YGQBnR7NXNnzWC4ZZwDkb 2000".
+
+":set call_origin ak_11111111111111111111111111111111273Yts".
+
+{"Chain.balance(ak_2eNrUWisXS4FsbEfmd8AyzxgdzS22YGQBnR7NXNnzWC4ZZwDkb)"
+, {match, {eval_return, #{value => 2000}}}
+}.
+
+{"Chain.balance(ak_11111111111111111111111111111111273Yts)"
+, {match, {eval_return, #{value => 1000}}}
+}.
+
+
+{"Chain.balance(Call.origin)"
+, {match, {eval_return, #{value => 1000}}}
+}.
+
+{"Chain.balance(Call.caller)"
+, {match, {eval_return, #{value => 1000}}}
+}.
+
+"Chain.spend(ak_2eNrUWisXS4FsbEfmd8AyzxgdzS22YGQBnR7NXNnzWC4ZZwDkb, 500)".
+
+
+{"Chain.balance(ak_2eNrUWisXS4FsbEfmd8AyzxgdzS22YGQBnR7NXNnzWC4ZZwDkb)"
+, {match, {eval_return, #{value => 2500}}}
+}.
+
+{"Chain.balance(ak_11111111111111111111111111111111273Yts)"
+, {match, {eval_return, #{value => 500}}}
+}.
+
+
+{"Chain.balance(Call.origin)"
+, {match, {eval_return, #{value => 500}}}
+}.
+
+{"Chain.balance(Call.caller)"
+, {match, {eval_return, #{value => 500}}}
+}.
+
+
+":set call_origin ak_2eNrUWisXS4FsbEfmd8AyzxgdzS22YGQBnR7NXNnzWC4ZZwDkb".
+
+
+{"Chain.balance(ak_2eNrUWisXS4FsbEfmd8AyzxgdzS22YGQBnR7NXNnzWC4ZZwDkb)"
+, {match, {eval_return, #{value => 2500}}}
+}.
+
+{"Chain.balance(ak_11111111111111111111111111111111273Yts)"
+, {match, {eval_return, #{value => 500}}}
+}.
+
+
+{"Chain.balance(Call.origin)"
+, {match, {eval_return, #{value => 2500}}}
+}.
+
+{"Chain.balance(Call.caller)"
+, {match, {eval_return, #{value => 2500}}}
+}.
