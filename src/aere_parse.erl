@@ -204,7 +204,7 @@ parse_command(CommandAndArgs) ->
             catch
                 {parse_error, {bad_integer, _}} ->
                     {error, {bad_command_args, Command, ArgDoc}};
-                {parse_error, {bad_pubkey, _}} ->
+                {parse_error, {bad_account_pubkey, _}} ->
                     {error, {bad_command_args, Command, ArgDoc}}
             end;
         undefined ->
@@ -254,7 +254,7 @@ apply_type(X, pubkey) ->
     PKEnc = list_to_binary(X),
     case aeser_api_encoder:safe_decode(account_pubkey, PKEnc) of
         {ok, PK} -> PK;
-        _ -> throw({parse_error, {bad_pubkey, X}})
+        _ -> throw({parse_error, {bad_account_pubkey, X}})
     end;
 
 apply_type(X, integer) ->

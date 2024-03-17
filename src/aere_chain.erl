@@ -68,6 +68,8 @@ set_account(Account, Trees) ->
     aec_trees:set_accounts(Trees, AccTree).
 
 
+%% Ensures that there exists a contract with given creator, creation nonce and code.  If there
+%% isn't, creates a new one. If there is, replaces its code with the provided.
 -spec ensure_contract_code(Creator, Nonce, Version, Code, Trees) -> Trees when
       Creator  :: aec_keys:pubkey(),
       Nonce    :: aect_contracts:ct_nonce(),

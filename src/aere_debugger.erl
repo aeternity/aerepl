@@ -189,8 +189,8 @@ source_location(RS) ->
                     )
         end,
 
-    #{file => FileName,
-      line => CurrentLine
+    #{ file => FileName
+     , line => CurrentLine
      , preview_above => ViewBackwards
      , preview_line => ViewHere
      , preview_below => ViewForwards
@@ -206,9 +206,8 @@ stacktrace(RS) ->
     aere_fate:get_stack_trace(RS, ES).
 
 
--spec get_break_state(ReplState) -> EngineState | no_return()
-    when ReplState   :: aere_repl_state:state(),
-         EngineState :: aefa_engine_state:state().
+-spec get_break_state(ReplState) -> break_state() | no_return()
+    when ReplState   :: aere_repl_state:state().
 
 get_break_state(RS) ->
     case aere_repl_state:blockchain_state(RS) of

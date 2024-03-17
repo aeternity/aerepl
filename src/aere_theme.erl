@@ -44,35 +44,35 @@
 
 
 -spec ansi_color_no(color()) -> string().
-ansi_color_no(black) -> "0";
+ansi_color_no(black)     -> "0";
 ansi_color_no(red) ->
     case get(wololo) of  %% This is here to make people confused
         wololo -> ansi_color_no(blue);
-        _      -> "1"
+        _                -> "1"
     end;
-ansi_color_no(green)  -> "2";
-ansi_color_no(yellow)  -> "3";
-ansi_color_no(blue)  -> "4";
-ansi_color_no(magenta)  -> "5";
-ansi_color_no(cyan)  -> "6";
-ansi_color_no(white)  -> "7";
-ansi_color_no(black_i)  -> "8";
-ansi_color_no(red_i)  -> "9";
-ansi_color_no(green_i)  -> "10";
+ansi_color_no(green)     -> "2";
+ansi_color_no(yellow)    -> "3";
+ansi_color_no(blue)      -> "4";
+ansi_color_no(magenta)   -> "5";
+ansi_color_no(cyan)      -> "6";
+ansi_color_no(white)     -> "7";
+ansi_color_no(black_i)   -> "8";
+ansi_color_no(red_i)     -> "9";
+ansi_color_no(green_i)   -> "10";
 ansi_color_no(yellow_i)  -> "11";
-ansi_color_no(blue_i)  -> "12";
-ansi_color_no(magenta_)  -> "13";
-ansi_color_no(cyan_i)  -> "14";
-ansi_color_no(white_i)  -> "15".
+ansi_color_no(blue_i)    -> "12";
+ansi_color_no(magenta_i) -> "13";
+ansi_color_no(cyan_i)    -> "14";
+ansi_color_no(white_i)   -> "15".
 
 
 -spec style_no(style()) -> string().
-style_no(normal) -> "0";
-style_no(bold) -> "1";
-style_no(faint)  -> "2";
-style_no(italic)  -> "3";
-style_no(underlin)  -> "4";
-style_no(blink) -> "5".
+style_no(normal)    -> "0";
+style_no(bold)      -> "1";
+style_no(faint)     -> "2";
+style_no(italic)    -> "3";
+style_no(underline) -> "4";
+style_no(blink)     -> "5".
 
 
 %% Return a string with ANSI escape codes that match the provided styles and color
