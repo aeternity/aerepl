@@ -72,7 +72,7 @@ set_account(Account, Trees) ->
       Creator  :: aec_keys:pubkey(),
       Nonce    :: aect_contracts:ct_nonce(),
       Version  :: aect_contracts:vm_version(),
-      Code     :: term(),
+      Code     :: map(),
       Trees    :: aec_trees:trees().
 
 ensure_contract_code(Creator, Nonce, Version, Code, Trees) ->

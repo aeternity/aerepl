@@ -170,7 +170,7 @@ format_value(json, TEnv, Type, Val) ->
 
 -spec make_chain_api(Trees, Opts) -> ChainApi when
       Trees    :: aec_trees:trees(),
-      Opts     :: aere_repl_satate:options(),
+      Opts     :: aere_repl_state:options(),
       ChainApi :: aefa_chain_api:state().
 
 make_chain_api(Trees, Opts) ->
