@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `format` generic server call for formatting outputs as renderables
 - `version` generic server call
 - `set_account` generic server call for setting balance of arbitrary account
+- `stop` command to quit debugging state and revert the call
 - Option `call_gas_price` to set result of `Call.gas_price`
 - Option `call_origin` to set the account to execute the repl query (affects
   `Call.origin` and `Call.caller`)

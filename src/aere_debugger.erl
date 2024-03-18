@@ -74,14 +74,12 @@ delete_breakpoint(State, File, Line) ->
 
 
 -spec stop(ReplState) ->  ReplState | no_return()
-    when ReplState   :: aere_repl_state:state().
+    when ReplState :: aere_repl_state:state().
 
 stop(RS0) ->
-    case get_break_state(RS0) of
-        #{} ->
-            RS1 = aere_repl_state:remove_user_input_file(RS0),
-            aere_repl_state:restore_ready_state(RS1)
-    end.
+    #{} = get_break_state(RS0), % Just to make sure we are in break state
+    RS1 = aere_repl_state:remove_user_input_file(RS0),
+    aere_repl_state:restore_ready_state(RS1).
 
 
 -spec resume_eval(ReplState, ResumeKind) -> {Result, ReplState} | no_return()
@@ -117,9 +115,9 @@ resume(ES, Kind) ->
     aefa_engine_state:set_debug_info(Info, ES).
 
 
--spec lookup_variable(ReplState, VariableName) -> string() | no_return()
+-spec lookup_variable(ReplState, VariableName) -> aeb_fate_data:fate_type() | no_return()
     when ReplState    :: aere_repl_state:state(),
-         VariableName :: term().
+         VariableName :: string().
 
 lookup_variable(RS, VarName) ->
     #{engine_state := ES} = get_break_state(RS),
@@ -134,7 +132,7 @@ lookup_variable(RS, VarName) ->
 
 -spec get_variables(ReplState) -> Vars
     when ReplState  :: aere_repl_state:state(),
-         Vars :: list({string(), string()}).
+         Vars       :: list({string(), string()}).
 
 get_variables(RS) ->
     #{engine_state := ES} = get_break_state(RS),
@@ -207,7 +205,7 @@ stacktrace(RS) ->
 
 
 -spec get_break_state(ReplState) -> break_state() | no_return()
-    when ReplState   :: aere_repl_state:state().
+    when ReplState :: aere_repl_state:state().
 
 get_break_state(RS) ->
     case aere_repl_state:blockchain_state(RS) of
