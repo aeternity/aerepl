@@ -3,7 +3,7 @@
 %%! -smp enable -setcookie aerepl_cookie -mnesia debug verbose
 
 
--export([main/1, cli/0, aerepl/1]).
+-export([aerepl/1]).
 -mode(compile).
 
 main(Args) ->
