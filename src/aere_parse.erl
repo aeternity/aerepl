@@ -5,7 +5,7 @@
 -type parse_result() :: {atom(), string() | [string()]}
                       | no_return().
 
--type arg_type() :: integer | atom | string.
+-type arg_type() :: integer | atom | string | pubkey.
 
 -type arg() :: integer() | atom() | string().
 
@@ -100,6 +100,9 @@ commands() ->
     , {delete_break_loc,
         {[dbl], [{required, string}, {required, integer}], "FILE LINE",
         [ "Delete a breakpoint by its location." ]}}
+    , {stop,
+       {[], [], "",
+        [ "Cancels execution at breakpoint. Rolls back all chain changes." ]}}
     , {stepin,
         {[si], [], "",
         [ "Resume execution after a breakpoint is hit, until the next line." ]}}
@@ -124,6 +127,10 @@ commands() ->
     , {stacktrace,
         {[bt], [], "",
         [ "Print the stacktrace at the current point of execution." ]}}
+    , {set_balance,
+       {[], [{required, pubkey}, {required, integer}], "PUBKEY AMOUNT",
+        [ "Sets balance of the given account" ]
+       }}
     ].
 
 
@@ -137,7 +144,8 @@ resolve_command(Cmd) when is_list(Cmd) ->
     end;
 resolve_command(Cmd) ->
     case resolve_command_by_name(Cmd, commands()) of
-        undefined -> resolve_command_by_alias(Cmd, commands());
+        undefined ->
+            resolve_command_by_alias(Cmd, commands());
         Spec      -> Spec
     end.
 
@@ -164,7 +172,7 @@ resolve_command_by_alias(Alias, [Spec = {_, {Aliases, _, _, _}} | Rest]) ->
     end.
 
 
--spec parse(string()) -> {ok, parse_result()} | {error, aere_theme:renderable()}.
+-spec parse(string()) -> {ok, parse_result()} | {error, term()}.
 %% @doc
 %% Parse an input string. This function is called on strings entered by the user in the repl
 
@@ -173,6 +181,9 @@ parse(Input) ->
         [] ->
             {ok, skip};
         ":" ->
+            {ok, skip};
+        ":wololo" ->
+            put(wololo, wololo), % you see nothing
             {ok, skip};
         [$:|CommandAndArgs] ->
             parse_command(CommandAndArgs);
@@ -189,13 +200,15 @@ parse_command(CommandAndArgs) ->
             try parse_command_scheme(Scheme, ArgStr) of
                 {ok, []}   -> {ok, Command};
                 {ok, Args} -> {ok, list_to_tuple([Command | Args])};
-                error      -> {error, aere_msg:bad_command_args(Command, ArgDoc)}
+                error      -> {error, {bad_command_args, Command, ArgDoc}}
             catch
                 {parse_error, {bad_integer, _}} ->
-                    {error, aere_msg:bad_command_args(Command, ArgDoc)}
+                    {error, {bad_command_args, Command, ArgDoc}};
+                {parse_error, {bad_account_pubkey, _}} ->
+                    {error, {bad_command_args, Command, ArgDoc}}
             end;
         undefined ->
-            {error, aere_msg:no_such_command(Cmd)}
+            {error, {no_such_command, Cmd}}
     end.
 
 
@@ -236,6 +249,13 @@ parse_args(_, _) ->
 
 
 -spec apply_type(string(), arg_type()) -> arg().
+
+apply_type(X, pubkey) ->
+    PKEnc = list_to_binary(X),
+    case aeser_api_encoder:safe_decode(account_pubkey, PKEnc) of
+        {ok, PK} -> PK;
+        _ -> throw({parse_error, {bad_account_pubkey, X}})
+    end;
 
 apply_type(X, integer) ->
     try

@@ -1,43 +1,35 @@
-:set display_gas true
-//
+{ "2 + 1 + 1"
+, {render, "4"}
+}.
 
-2 + 2
-// 4
-// USED GAS: 74
+{ ":blahblah 121"
+, {error, {no_such_command, blahblah}}
+}.
 
-:set display_gas false
-//
+{ ":"
+, {match, ok}
+}.
 
-2 + 1 + 1
-// 4
+{ ":load nonexistent_file.aes"
+, {error, {repl_files_load_error, [{"nonexistent_file.aes", "no such file or directory"}]}}
+}.
 
-:bq 121
-// No such command `bq`
+"type t1 = int".
+"type t2('a) = list('a)".
+"type t3('a) = t2('a)".
+"let e1 = 1".
+"let [e2, e3] : t3(t1) = [2, 3]".
 
-:
-//
+{ "e1 + e2 + e3"
+, {match, {eval_return, #{value => 6}}}
+}.
 
-:load nonexistent_file.aes
-// Could not load files:
-// nonexistent_file.aes: no such file or directory
+"include \"List.aes\"".
 
-type t1 = int
+{ "List.map((x) => x + 1, [1, 2, 3])"
+, {match, {eval_return, #{value => [2,3,4]}}}
+}.
 
-type t2('a) = list('a)
-
-type t3('a) = t2('a)
-
-let e1 = 1
-
-let [e2, e3] : t3(t1) = [2, 3]
-
-e1 + e2 + e3
-// 6 
-
-include "List.aes"
-
-List.map((x) => x + 1, [1, 2, 3])
-// [2, 3, 4]
-
-function g(x) = x * 10
-// Warning: defining functions in REPL is WIP and may be unstable. 
+%% { "function g(x) = x * 10"
+%% ,
+%% }

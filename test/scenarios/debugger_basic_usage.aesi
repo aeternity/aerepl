@@ -1,20 +1,29 @@
-:load test/contracts/debug.aes
+{ ":load test/contracts/debug.aes"
+, {match, ok}
+}.
 
-let c = Chain.create() : C
+"let c = Chain.create() : C".
 
-c.h()
-// 15
+{ "c.h()"
+, {match, {eval_return, #{value => 15}}}
+}.
 
-:b test/contracts/debug.aes 14
+{ ":b test/contracts/debug.aes 14"
+, {match, ok}
+}.
 
-c.h()
-// Break
+{ "c.h()"
+, {match, break}
+}.
 
-:stepover
-// Break
+{ ":stepover"
+, {match, break}
+}.
 
-:print_var x
-// 1
+{ ":print_var x"
+, {match, {value, 1}}
+}.
 
-:c
-// 15
+{ ":c"
+, {match, {eval_return, #{value => 15}}}
+}.

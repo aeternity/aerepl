@@ -3,9 +3,15 @@
 -export([option_parse_rules/0, parse_option/2, format_option_scheme/1]).
 
 option_parse_rules() ->
-    [ {display_gas, boolean}
-    , {call_gas, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
+    [ {call_gas, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
     , {call_value, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
+    , {call_gas_price, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
+    , {call_origin, pubkey}
+    , {call_contract_creator, pubkey}
+    , {call_fee, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
+    , {call_height, {valid, integer, fun(I) -> I > 0 end, "positive"}}
+    , {nonce, {valid, integer, fun(I) -> I >= 0 end, "non-neg"}}
+    , {print_gas, boolean}
     , {print_format, {atom, [sophia,json,fate]}}
     , {print_unit, boolean}
     , {print_type, boolean}
@@ -47,12 +53,19 @@ parse_option_args(Scheme, Args) ->
                       end
             catch error:badarg -> error
             end;
+        {pubkey, [PKStr]} ->
+            PKEnc = list_to_binary(PKStr),
+            case aeser_api_encoder:safe_decode(account_pubkey, PKEnc) of
+                {ok, PK} -> PK;
+                _ -> error
+            end;
         _ ->
             error
     end.
 
 format_option_scheme(integer) -> "INTEGER";
 format_option_scheme(boolean) -> "BOOLEAN";
+format_option_scheme(pubkey) -> "PUBKEY";
 format_option_scheme({atom, Ats}) -> string:join(lists:map(fun atom_to_list/1, Ats), "|");
 format_option_scheme({valid, Kind, _, Expl}) ->
     format_option_scheme(Kind) ++ "(" ++ Expl ++ ")".

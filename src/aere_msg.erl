@@ -5,14 +5,15 @@
 %% Misc
 -export(
    [ output/1
-   , error/1
-   , internal/1
-   , internal/2
+   , error_msg/1
+   , internal_error/1
+   , internal_error/2
    ]).
 
 %% Errors
 -export(
    [ abort/2
+   , no_such_command/0
    , no_such_command/1
    , bad_command_args/2
    , file_not_loaded/1
@@ -22,7 +23,7 @@
    , chain_not_ready/0
    , chain_not_running/0
    , locked_option/0
-   , list_unknown/1
+   , bad_lookup/1
    , bad_fun_ref/0
    , contract_not_found/0
    , function_not_found_in/1
@@ -38,31 +39,36 @@
 
 %% Messages
 -export(
-   [ banner/0
+   [ banner/1
    , version_info/1
-   , eval/2
    , used_gas/1
    , stacktrace/1
    , type/1
    , lookup/2
    , fate/1
-   , location/2
+   , location/1
    , list_vars/1
    , list_types/1
    , list_options/1
    , list_loaded_files/1
    , list_includes/1
    , list_breakpoints/1
-   , help/0, help/1
+   , help_commands/1
+   , help_command/1
    , option_usage/1
    , bye/0
    , debug_vars/1
    ]).
 
+%% General
+-export([ format/1, format/2
+        , format_err/1, format_err/2
+        ]).
+
 -type msg() :: aere_theme:renderable().
 
--spec banner() -> msg().
-banner() ->
+-spec banner(VersionInfo :: map()) -> msg().
+banner(VersionInfo) ->
     Sophia =
         "    ____\n"
         "   / __ | ,             _     _\n"
@@ -77,9 +83,9 @@ banner() ->
 
     SophiaThemed = aere_theme:banner(Sophia),
     InteractiveThemed = aere_theme:banner_sub(Interactive),
-    VersionInfo = version_info(aere_version:version_info()),
+    VersionInfoThemed = version_info(VersionInfo),
 
-    [SophiaThemed, InteractiveThemed, VersionInfo].
+    [SophiaThemed, InteractiveThemed, VersionInfoThemed].
 
 version_info(
   #{ protocol_version := Protocol
@@ -110,8 +116,8 @@ used_gas(UsedGas) ->
     GasMsg = io_lib:format("USED GAS: ~p", [UsedGas]),
     aere_theme:info(GasMsg).
 
--spec error(string()) -> msg().
-error(Msg) -> aere_theme:error(trim(Msg)).
+-spec error_msg(string()) -> msg().
+error_msg(Msg) -> aere_theme:error(trim(Msg)).
 
 -spec abort(binary() | string(), [{term(), binary(), integer()}]) -> msg().
 abort(Bin, Stack) when is_binary(Bin) -> abort(binary:bin_to_list(Bin), Stack);
@@ -145,10 +151,10 @@ stacktrace(Stack) ->
         } <- lists:zip(lists:seq(1, length(Stack)), Stack)
     ].
 
--spec internal(term(), erlang:stacktrace()) -> msg().
-internal(Error, Stacktrace) ->
-    [ aere_theme:output("Command failed:\n")
-    , aere_theme:error(lists:flatten(io_lib:format("~p", [Error])))
+-spec internal_error(term(), erlang:stacktrace()) -> msg().
+internal_error(Error, Stacktrace) ->
+    [ aere_theme:error("INTERNAL ERROR: ")
+    , aere_theme:output(lists:flatten(io_lib:format("~p", [Error])))
     , aere_theme:output("\n")
     , case Stacktrace of
           [] -> aere_theme:output("<no stacktrace>");
@@ -156,13 +162,16 @@ internal(Error, Stacktrace) ->
       end
     ].
 
--spec internal(term()) -> msg().
-internal(Error) ->
-    internal(Error, []).
+-spec internal_error(term()) -> msg().
+internal_error(Error) ->
+    internal_error(Error, []).
 
+-spec no_such_command() -> msg().
+no_such_command() ->
+   aere_theme:error("No such command").
 -spec no_such_command(atom()) -> msg().
 no_such_command(Command) ->
-    [ aere_theme:output("No such command ")
+    [ aere_theme:error("No such command ")
     , aere_theme:command(io_lib:format("`~p`", [Command]))
     ].
 
@@ -197,7 +206,7 @@ files_load_error(Failed) ->
                         , aere_theme:output(": ")
                         , aere_theme:output(Err)
                         ] || {File, Err} <- Failed ],
-    FlatList = lists:flatten(lists:join(aere_theme:output("\n"), FilesAndReasons)),
+    FlatList = lists:join(aere_theme:output("\n"), FilesAndReasons),
     [aere_theme:error("Could not load files:\n") | FlatList].
 
 -spec state_typedef() -> msg().
@@ -273,8 +282,8 @@ list_breakpoints(BPs) ->
       , aere_theme:output(io_lib:format(Msg, [F, L]))
       ] || {I, {F, L}} <- Enum(BPs) ].
 
--spec list_unknown([string()]) -> msg().
-list_unknown(ToList) ->
+-spec bad_lookup([string()]) -> msg().
+bad_lookup(ToList) ->
     aere_theme:error("Possible items to print: " ++ string:join(ToList, ", ")).
 
 -spec bad_fun_ref() -> msg().
@@ -295,7 +304,7 @@ not_at_breakpoint() ->
 
 -spec contract_exec_ended() -> msg().
 contract_exec_ended() ->
-    aere_theme:output("Contract execution was either aborted or exited.").
+    aere_theme:info("Contract execution was either aborted or exited.").
 
 -spec breakpoint_out_of_range(pos_integer()) -> msg().
 breakpoint_out_of_range(Index) ->
@@ -338,21 +347,23 @@ unsupported_eval(_) ->
 -spec bye() -> msg().
 bye() -> aere_theme:output("bye!").
 
--spec help() -> msg().
-help() ->
+-spec help_commands(Commands :: [aere_parse:command_spec()]) -> msg().
+help_commands(Commands) ->
     Help =
         [ "Type a Sophia expression to evaluate it. Commands supported by the REPL:"
         ] ++
         [ "- :" ++ atom_to_list(Command)
-          || {Command, _} <- aere_parse:commands()
+          || {Command, _} <- Commands
         ] ++
         ["Type `:help COMMAND` to learn about the given command"],
 
     aere_theme:info(string:join(Help, "\n")).
 
--spec help(aere_parse:command_spec()) -> msg().
-help(Spec) ->
-    {Cmd, {Aliases, _, ArgDoc, Doc}} = Spec,
+-spec help_command(aere_parse:command_spec()) -> msg().
+help_command(undefined) ->
+    no_such_command();
+help_command(CommandSpec) ->
+    {Cmd, {Aliases, _, ArgDoc, Doc}} = CommandSpec,
     AliasesStr = string:join([":" ++ atom_to_list(A) || A <- Aliases], ", "),
     command_usage(Cmd, ArgDoc) ++
         [aere_theme:info("\nALIASES: "), aere_theme:command(AliasesStr)] ++
@@ -365,35 +376,6 @@ type(Type) ->
     TypeStr = aeso_ast_infer_types:pp_type("", Type),
     TypeStrClean = re:replace(TypeStr, ?TYPE_CONTAINER_RE, "", [global, {return, list}]),
     aere_msg:output(TypeStrClean).
-
--spec eval(Eval, aere_repl_state:repl_options()) -> msg() when
-      Eval :: ok | {msg, msg()} | aere_fate:eval_debug_result().
-eval(ok, _) ->
-    [];
-eval({msg, Msg}, _) ->
-    Msg;
-eval({ok, #{result := Res, type := Type, used_gas := UsedGas}}, Opts) ->
-    #{ display_gas  := DisplayGas,
-       print_unit   := PrintUnit,
-       print_type   := PrintType
-     } = Opts,
-    TypeStr = aeso_ast_infer_types:pp_type("", Type),
-    PrintRes =
-        case Type of
-            {id, _, "unit"} -> PrintUnit;
-            {tuple_t, _, []} -> PrintUnit;
-            _ -> true
-        end,
-
-    [ [aere_theme:output(Res) || PrintRes]
-    , [aere_theme:info(" : " ++ TypeStr) || PrintRes andalso PrintType]
-    , ["\n" || PrintRes andalso DisplayGas]
-    , [used_gas(UsedGas) || DisplayGas]
-    ];
-eval(break, _Opts) ->
-    aere_msg:output("Break");
-eval({revert, #{err_msg := ErrMsg, stacktrace := Stacktrace}}, _Opts) ->
-    abort(ErrMsg, Stacktrace).
 
 -spec lookup(string(), list(term())) -> msg().
 lookup(What, Data) ->
@@ -412,33 +394,187 @@ fate(Fate) ->
     FateStr = lists:flatten(aeb_fate_asm:pp(Fate)),
     aere_msg:output(FateStr).
 
--spec location(Location, aere_repl_state:state()) -> msg() when
+-spec location(Location) -> msg() when
       Location :: aere_debugger:source_location().
-location(#{file := FileName, line := CurrentLine}, RS) ->
-    #{ loc_backwards := LocBackwards
-     , loc_forwards := LocForwards
-     } = aere_repl_state:options(RS),
-    File     = aere_files:read_file(FileName, RS),
-    Lines    = string:split(File, "\n", all),
-    Enumerate     = fun(List) -> lists:zip(lists:seq(1, length(List)), List) end,
-    SelectLines   = [ {Idx, Line}
-                      || {Idx, Line} <- Enumerate(Lines),
-                         Idx > CurrentLine - LocBackwards,
-                         Idx < CurrentLine + LocForwards
-                    ],
+location(#{ file := FileName
+          , line := CurrentLine
+          , preview_line := no_src
+          }) ->
+    [ aere_theme:output("at "), aere_theme:file(FileName),
+      aere_theme:output(":"), aere_theme:output(integer_to_list(CurrentLine)),
+      aere_theme:output("\n"),
+      aere_theme:info("no source information")
+    ];
+location(#{ file := FileName
+          , line := CurrentLine
+          , preview_above := ViewBackwards
+          , preview_line := ViewHere
+          , preview_below := ViewForwards
+          }) ->
 
-    LineSign =
-        fun(Id) when Id == CurrentLine -> ">";
-           (_)                         -> "|"
-        end,
-    MaxDigits     = length(integer_to_list(length(Lines))),
-    FormatLineNum = fun(Num) -> string:right(integer_to_list(Num), MaxDigits) end,
-    FormatLine    = fun(N, Ln) -> [LineSign(N), " ", FormatLineNum(N), " ", Ln] end,
-    NewLines = [FormatLine(Idx, Line) || {Idx, Line} <- SelectLines],
-    aere_msg:output(lists:join("\n", NewLines)).
+    MaxLineNo = CurrentLine + length(ViewForwards),
+    Digits = if MaxLineNo == 0 -> 1;
+                true -> floor(math:log10(MaxLineNo)) + 1
+             end,
+    Pad = fun(N) ->
+                  string:right(integer_to_list(N), Digits)
+          end,
+
+    StrBack =
+        [[Pad(I), "| ", L]
+          || {I, L} <- lists:enumerate(
+                         CurrentLine - length(ViewBackwards),
+                         ViewBackwards
+                        )
+        ],
+
+    StrHere = [Pad(CurrentLine), "> ", ViewHere],
+
+    StrFront =
+        [ [ Pad(I), "| ", L]
+          || {I, L} <- lists:enumerate(
+                         CurrentLine + 1,
+                         ViewForwards
+                        )
+        ],
+
+    [ aere_theme:output("at "), aere_theme:file(FileName),
+      aere_theme:output(":"), aere_theme:output(integer_to_list(CurrentLine)),
+      aere_theme:output("\n")
+    , aere_theme:output(StrBack)
+    , aere_theme:output(StrHere)
+    , aere_theme:output(StrFront)
+    ].
 
 -spec debug_vars(list({string(), string()})) -> msg().
 debug_vars(Vars) ->
     Dump = [io_lib:format("~s:\t~s", [K, V]) || {K, V} <- Vars],
 
     output(lists:join("\n", Dump)).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-spec format_err(term()) -> msg().
+format_err(Item) ->
+    format(Item, aere_repl_state:init_options()).
+
+-spec format_err(term(), aere_repl_state:repl_options()) -> msg().
+
+format_err({repl_internal, Err, St}, _Opts) ->
+    internal_error(Err, St);
+format_err({repl_unsupported_eval, Parse}, _Opts) ->
+    unsupported_eval(Parse);
+format_err(repl_filesystem_not_cached, _Opts) ->
+    filesystem_not_cached();
+format_err({repl_file_not_loaded, Include}, _Opts) ->
+    file_not_loaded(Include);
+format_err(repl_state_typedef, _Opts) ->
+    state_typedef();
+format_err(repl_event_typedef, _Opts) ->
+    event_typedef();
+format_err(repl_bad_fun_ref, _Opts) ->
+    bad_fun_ref();
+format_err(repl_chain_not_ready, _Opts) ->
+    chain_not_ready();
+format_err({repl_option_usage, Option}, _Opts) ->
+    option_usage(Option);
+format_err({repl_locked_option, _Option}, _Opts) ->
+    locked_option();
+format_err({repl_bad_lookup, Lookupable}, _Opts) ->
+    bad_lookup(Lookupable);
+format_err({repl_breakpoint_file_not_loaded, FileName}, _Opts) ->
+    breakpoint_file_not_loaded(FileName);
+format_err({repl_breakpoint_out_of_range, Index}, _Opts) ->
+    breakpoint_out_of_range(Index);
+format_err({repl_breakpoint_wrong_location, File, Line}, _Opts) ->
+    breakpoint_wrong_location(File, Line);
+format_err({repl_undefined_variable, VarName}, _Opts) ->
+    undefined_variable(VarName);
+format_err(repl_not_at_breakpoint, _Opts) ->
+    not_at_breakpoint();
+format_err({repl_fate_revert, ErrMsg, StackTrace}, _Opts) ->
+    abort(ErrMsg, StackTrace);
+format_err(repl_contract_not_found, _Opts) ->
+    contract_not_found();
+format_err({repl_function_not_found_in, Name}, _Opts) ->
+    function_not_found_in(Name);
+format_err({repl_files_load_error, FileErrs}, _Opts) ->
+    files_load_error(FileErrs);
+format_err({repl_sophia, Errs}, _Opts) when is_list(Errs) ->
+    Msg = lists:concat([aeso_errors:err_msg(E) || E <- Errs]),
+    error_msg(Msg);
+format_err({repl_sophia, Err}, _Opts) ->
+    error_msg(aeso_errors:err_msg(Err));
+format_err({bad_command_args, Command, ArgsDoc}, _Opts) ->
+    bad_command_args(Command, ArgsDoc);
+format_err({no_such_command, Cmd}, _Opts) ->
+    no_such_command(Cmd);
+format_err(Err, _Opts) ->
+    Str = lists:flatten(io_lib:format("~p", [Err])),
+    internal_error({unknown_error, Str}).
+
+
+-spec format(term()) -> msg().
+format(Item) ->
+    format(Item, aere_repl_state:init_options()).
+
+-spec format(term(), aere_repl_state:repl_options()) -> msg().
+
+format({error, Err}, Opts) ->
+    format_err(Err, Opts);
+format(ok, _Opts) ->
+    [];
+format({eval_return, #{result := Res, type := Type, used_gas := UsedGas}}, Opts) ->
+    #{ print_gas  := Printgas,
+       print_unit   := PrintUnit,
+       print_type   := PrintType
+     } = Opts,
+    TypeStr = aeso_ast_infer_types:pp_type("", Type),
+    PrintRes =
+        case Type of
+            {id, _, "unit"} -> PrintUnit;
+            {tuple_t, _, []} -> PrintUnit;
+            _ -> true
+        end,
+
+    [ [aere_theme:output(Res) || PrintRes]
+    , [aere_theme:info(" : " ++ TypeStr) || PrintRes andalso PrintType]
+    , [aere_theme:output("\n") || PrintRes andalso Printgas]
+    , [used_gas(UsedGas) || Printgas]
+    ];
+format({revert, #{err_msg := ErrMsg, stacktrace := Stacktrace}}, _Opts) ->
+    abort(ErrMsg, Stacktrace);
+format(break, _Opts) ->
+    aere_msg:output("Break");
+format(contract_exec_ended, _Opts) ->
+    contract_exec_ended();
+format({type, Type}, _Opts) ->
+    type(Type);
+format({help_commands, Commands}, _Opts) ->
+    help_commands(Commands);
+format({help_command, Command}, _Opts) ->
+    help_command(Command);
+format({location, LocInfo}, _Opts) ->
+    location(LocInfo);
+format({value, Var}, _Opts) ->
+    aere_theme:output(Var);
+format({debug_vars, Vars}, _Opts) ->
+    debug_vars(Vars);
+format({stacktrace, Stacktrace}, _Opts) ->
+    stacktrace(Stacktrace);
+format({vars, Vars}, _Opts) ->
+    list_vars(Vars);
+format({types, Types}, _Opts) ->
+    list_types(Types);
+format({options, Options}, _Opts) ->
+    list_options(Options);
+format({files, Files}, _Opts) ->
+    list_loaded_files(Files);
+format({includes, Includes}, _Opts) ->
+    list_includes(Includes);
+format({breakpoints, BPs}, _Opts) ->
+    list_breakpoints(BPs);
+format({version_info, Vsn}, _Opts) ->
+    version_info(Vsn);
+format({fate, FCode}, _Opts) ->
+    fate(FCode).

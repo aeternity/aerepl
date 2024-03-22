@@ -1,30 +1,50 @@
-datatype d = Int
+"datatype d = Int".
+"datatype d = Char".
+"datatype d = String".
 
-datatype d = Char
+{ ":lookup types"
+, {match,
+   { types
+   , [ {'_', "d", [], {variant_t, [{constr_t, '_', {con, '_', "String"}, []}]}}
+     , {'_', "d", [], {variant_t, [{constr_t, '_', {con, '_', "Char"}, []}]}}
+     , {'_', "d", [], {variant_t, [{constr_t, '_', {con, '_', "Int"}, []}]}}
+     ]
+   }
+  }
+}.
 
-datatype d = String
+"let x = 'c'".
 
-:print types
-// d : type
+{ ":lookup vars"
+, {match, {vars, [{"x", {id, '_', "char"}, $c}]}}
+}.
 
-let x = 'c'
+"let x = 1".
 
-:print vars
-// x : char
+{ ":lookup vars"
+, {match, {vars, [{"x", {id, '_', "int"}, 1}]}}
+}.
 
-let x = 1
+"let y = 2".
 
-:print vars
-// x : int
+{ ":lookup vars"
+, {match,
+   { vars
+   , [ {"y", {id, '_', "int"}, 2}
+     , {"x", {id, '_', "int"}, 1}
+     ]
+   }
+  }
+}.
 
-let y = 2
+"let y = \"string\"".
 
-:print vars
-// y : int
-// x : int
-
-let y = "string"
-
-:print vars
-// y : string
-// x : int
+{ ":lookup vars"
+, { match
+  , { vars
+    , [ {"y", {id, '_', "string"}, <<"string">>}
+      , {"x", {id, '_', "int"}, 1}
+      ]
+    }
+  }
+}.

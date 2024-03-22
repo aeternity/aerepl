@@ -1,28 +1,47 @@
-datatype state = ST(int)
-// Cannot define a state type. Use :state to set the value of the state.
+{"datatype state = ST(int)"
+, {error, repl_state_typedef}
+}.
 
-:state ST(1)
-// 1:2:Unbound variable `ST`
+{ ":state ST(1)"
+, {error_render, "1:2:Unbound variable `ST`"}
+}.
 
-:state 1
+{ ":state 1"
+, {match, ok}
+}.
 
-:type state
-// int
+{ ":type state"
+, {match, {type, {id, '_', "int"}}}
+}.
 
-datatype dt = D(int)
+{ "datatype dt = D(int)"
+, {match, ok}
+}.
 
-:state D(1)
+{ ":state D(1)"
+, {match, ok}
+}.
 
-datatype d = S(state)
+{ "datatype d = S(state)"
+, {match, ok}
+}.
 
-let x = state
+{ "let x = state"
+, {match, ok}
+}.
 
-datatype dt = X(int)
+{ "datatype dt = X(int)"
+, {match, ok}
+}.
 
-x
-// D(1)
+{ "x"
+, { render, "D(1)" }
+}.
 
-:state X(1)
+{ ":state X(1)"
+, {match, ok}
+}.
 
-:t x
-// 1:2:Unbound variable `x`
+{ ":t x"
+, {error_render, "1:2:Unbound variable `x`"}
+}.

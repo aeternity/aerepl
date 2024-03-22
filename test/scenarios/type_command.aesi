@@ -1,40 +1,66 @@
-:t 1
-// int
+{ ":t 1"
+, {match, {type, {id, '_', "int"}}}
+}.
 
-:t Call.origin
-// address
+{ ":t Call.origin"
+, {match, {type, {id, '_', "address"}}}
+}.
 
-:t #fedcba9876543210
-// bytes(8)
+{ ":t #fedcba9876543210"
+, {match, {type, {bytes_t, '_', 8}}}
+}.
 
-:t "some string"
-// string
+{ ":t \"some string\""
+, {match, {type, {id, '_', "string"}}}
+}.
 
-:t [1, 2, 3]
-// list(int)
+{ ":t [1, 2, 3]"
+, { match
+  , {type, {app_t, '_', {id, '_', "list"}, [{id, '_', "int"}]}}
+  }
+}.
 
-:t (x : int, y : int) => x + y
-// (int, int) => int
+{ ":t (x : int, y : int) => x + y"
+, { match
+  , {type, {fun_t, '_', [], [{id, '_', "int"}, {id, '_', "int"}], {id, '_', "int"}}}
+  }
+}.
 
-:t (42, "Foo", true)
-// (int * string * bool)
+{ ":t (42, \"Foo\", true)"
+, {match, {type, {tuple_t, '_', [{id, '_', "int"}, {id, '_', "string"}, {id, '_', "bool"}]}}}
+}.
 
-type accounts = map(string, address)
+"type accounts = map(string, address)".
 
-let x : accounts = {}
+"let x : accounts = {}".
 
-:t x
-// map(string, address)
+{ ":t x"
+, {match, {type, {app_t, '_', {id, '_', "map"}, [{id, '_', "string"},{id, '_', "address"}]}}}
+}.
 
-:t Oracle.query
-// (oracle('a, 'b), 'a, int, Chain.ttl, Chain.ttl) => oracle_query('a, 'b)
+{ ":t Oracle.query"
+, {match,
+   { type,
+     { fun_t, '_', []
+     , [ {app_t, '_', {id, '_', "oracle"}, [{tvar, '_', '$1'}, {tvar, '_', '$2'}]}
+       , {tvar, '_', '$1'}
+       , {id, '_', "int"}
+       , {qid, '_', ["Chain", "ttl"]}
+       , {qid, '_', ["Chain", "ttl"]}
+       ]
+     , {app_t, '_', {id, '_', "oracle_query"}, [{tvar, '_', '$1'}, {tvar, '_', '$2'}]}
+   }}
+  }
+}.
 
-:t RelativeTTL(50)
-// Chain.ttl
+{ ":t RelativeTTL(50)"
+, {match, {type, {qid, '_', ["Chain", "ttl"]}}}
+}.
 
-record balance = { owner: address, value: int }
+"record balance = { owner: address, value: int }".
 
-let x = { owner = Call.origin, value = 1 }
+"let x = { owner = Call.origin, value = 1 }".
 
-:t x
-// balance
+{ ":t x"
+, {match, {type, {qid, '_', ['_', "balance"]}}}
+}.
