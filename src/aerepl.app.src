@@ -1,6 +1,6 @@
 {application, aerepl,
  [{description, "Read-Eval-Print Loop for Sophia"},
-  {vsn, "3.3.0"},
+  {vsn, "3.3.1"},
   {mod, {aerepl, []}},
   {registered, []},
   {applications,
